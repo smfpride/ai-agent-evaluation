@@ -39,6 +39,7 @@ AI Evaluation Dashboard enables quality assurance teams to systematically test a
 - **Trigger**: User navigates to DataVerse tab in settings
 - **Progression**: Open settings → Navigate to DataVerse tab → Enter environment URL → Enter OAuth credentials (client ID, secret, tenant) → Specify test case table name → Specify evaluation result table name → Test connection → Save
 - **Success criteria**: DataVerse connection established, OAuth token acquired, test query returns data successfully
+- **Important Note**: Browser-based applications cannot directly access Microsoft Entra ID token endpoints or DataVerse APIs due to CORS policies. A backend proxy (Azure Function, API Management, or Express server) is required to handle authentication and forward requests. The UI displays a warning about this limitation in the DataVerse settings tab.
 
 ### Evaluation Execution
 - **Functionality**: Run test cases individually or in batch against the configured agent
@@ -88,6 +89,7 @@ AI Evaluation Dashboard enables quality assurance teams to systematically test a
 - **Azure OpenAI Failures**: Fallback to partial results, clear indication when judge evaluation unavailable, retry logic for transient errors
 - **DataVerse Query Limits**: Pagination with configurable page size (default 100), handles OData query constraints
 - **Multi-user Scenarios**: Refresh functionality allows users to see changes made by others, optimistic UI updates with eventual consistency
+- **CORS Restrictions**: Browser cannot directly access Microsoft Entra ID or DataVerse due to CORS policies - UI displays clear warning that a backend proxy is required for production use
 
 ## Design Direction
 

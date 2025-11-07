@@ -12,7 +12,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { CheckCircle, XCircle, CircleNotch } from '@phosphor-icons/react'
+import { CheckCircle, XCircle, CircleNotch, Warning } from '@phosphor-icons/react'
 import type { AppConfig } from '@/types'
 import { testConnection } from '@/lib/directline'
 import { testAzureOpenAIConnection } from '@/lib/judge'
@@ -305,6 +305,14 @@ export function SettingsDialog({
           </TabsContent>
 
           <TabsContent value="dataverse" className="space-y-4 mt-4">
+            <Alert className="mb-4">
+              <Warning className="h-4 w-4" />
+              <AlertDescription>
+                <strong>Browser CORS Limitation:</strong> Microsoft Entra ID and DataVerse APIs do not allow direct browser access due to CORS policies. 
+                To use DataVerse with this browser-based app, you'll need to set up a backend proxy (e.g., Azure Function, Express server) 
+                that handles authentication and forwards requests. See <code>README.md</code> and <code>DATAVERSE_CORS.md</code> for detailed solutions and example code.
+              </AlertDescription>
+            </Alert>
             <div className="flex flex-col gap-2">
               <Label htmlFor="dv-url">Environment URL *</Label>
               <Input
@@ -372,8 +380,8 @@ export function SettingsDialog({
                     <>
                       <XCircle className="h-4 w-4" />
                       <AlertDescription>
-                        Connection failed. Check your credentials and table names. 
-                        Open browser console for detailed error logs.
+                        Connection failed - this is expected due to browser CORS restrictions. 
+                        See README.md for proxy setup instructions, or check browser console if using a proxy.
                       </AlertDescription>
                     </>
                   )}
