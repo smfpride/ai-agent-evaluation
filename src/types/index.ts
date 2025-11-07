@@ -25,6 +25,28 @@ export interface DirectLineConfig {
   endpoint?: string
 }
 
+export interface AzureOpenAIConfig {
+  endpoint: string
+  apiKey: string
+  deploymentName: string
+  apiVersion?: string
+}
+
+export interface DataVerseConfig {
+  environmentUrl: string
+  clientId: string
+  clientSecret: string
+  tenantId: string
+  testCaseTable: string
+  evaluationResultTable: string
+}
+
+export interface AppConfig {
+  directLine: DirectLineConfig | null
+  azureOpenAI: AzureOpenAIConfig | null
+  dataVerse: DataVerseConfig | null
+}
+
 export interface EvaluationRun {
   id: string
   testCaseIds: string[]

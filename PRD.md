@@ -1,6 +1,6 @@
 # AI Evaluation Dashboard - Product Requirements Document
 
-AI Evaluation Dashboard enables quality assurance teams to systematically test and evaluate Copilot Studio agents by running test cases against the Direct Line API and using LLM-as-judge to assess semantic similarity between expected and actual responses.
+AI Evaluation Dashboard enables quality assurance teams to systematically test and evaluate Copilot Studio agents by running test cases against the Direct Line API and using Azure OpenAI as an LLM-as-judge to assess semantic similarity between expected and actual responses. Test cases and evaluation results are stored in Microsoft DataVerse, supporting enterprise-scale evaluation with up to 40,000+ test cases.
 
 **Experience Qualities**:
 1. **Systematic** - Provides structured, repeatable evaluation workflows that build confidence in AI agent quality
@@ -8,23 +8,37 @@ AI Evaluation Dashboard enables quality assurance teams to systematically test a
 3. **Efficient** - Streamlines batch testing with progress tracking and organized result management
 
 **Complexity Level**: Complex Application (advanced functionality with state management)
-  - Requires API integration, batch processing, persistent storage, LLM evaluation logic, and comprehensive result visualization
+  - Requires multiple API integrations (Direct Line, Azure OpenAI, DataVerse), batch processing with pagination for large datasets, enterprise authentication, and comprehensive result visualization
 
 ## Essential Features
 
 ### Test Case Management
-- **Functionality**: Create, edit, delete, and organize test cases with prompts and expected responses
-- **Purpose**: Maintain a reusable library of test scenarios for consistent evaluation
-- **Trigger**: User clicks "Add Test Case" button or imports test cases
-- **Progression**: Click add → Enter prompt text → Enter expected response → Optionally add tags/metadata → Save → Test case appears in library
-- **Success criteria**: Test cases persist between sessions, can be edited/deleted, and display clearly in organized list
+- **Functionality**: Create, edit, delete, and paginate through test cases stored in DataVerse with prompts and expected responses
+- **Purpose**: Maintain a scalable, enterprise-grade library of test scenarios supporting 40,000+ test cases
+- **Trigger**: User clicks "Add Test Case" button or navigates through paginated results
+- **Progression**: Click add → Enter prompt text → Enter expected response → Optionally add tags/metadata → Save to DataVerse → Test case appears in library with pagination controls
+- **Success criteria**: Test cases persist in DataVerse, support pagination for large datasets, can be edited/deleted, and display clearly in organized list
 
 ### Direct Line API Configuration
 - **Functionality**: Store and manage Direct Line API credentials (endpoint URL, secret key)
 - **Purpose**: Enable connection to Copilot Studio agents for testing
 - **Trigger**: User navigates to settings or first-time setup prompt
-- **Progression**: Open settings → Enter Direct Line secret → Optionally enter custom endpoint → Save → Connection validated
-- **Success criteria**: Credentials stored securely, connection status indicator shows success/failure
+- **Progression**: Open settings → Navigate to Direct Line tab → Enter Direct Line secret → Optionally enter custom endpoint → Test connection → Save
+- **Success criteria**: Credentials stored securely, connection test validates configuration successfully
+
+### Azure OpenAI Configuration
+- **Functionality**: Configure Azure OpenAI endpoint, API key, deployment name, and API version for LLM-as-judge evaluation
+- **Purpose**: Enable intelligent semantic similarity evaluation using Azure OpenAI
+- **Trigger**: User navigates to Azure OpenAI tab in settings
+- **Progression**: Open settings → Navigate to Azure OpenAI tab → Enter endpoint URL → Enter API key → Specify deployment name → Optionally set API version → Test connection → Save
+- **Success criteria**: Azure OpenAI credentials validated, test evaluation completes successfully, ready for production use
+
+### DataVerse Configuration
+- **Functionality**: Configure DataVerse environment URL, service principal credentials (client ID, secret, tenant ID), and table names for test cases and results
+- **Purpose**: Enable enterprise-scale storage and retrieval of 40,000+ test cases and evaluation results
+- **Trigger**: User navigates to DataVerse tab in settings
+- **Progression**: Open settings → Navigate to DataVerse tab → Enter environment URL → Enter OAuth credentials (client ID, secret, tenant) → Specify test case table name → Specify evaluation result table name → Test connection → Save
+- **Success criteria**: DataVerse connection established, OAuth token acquired, test query returns data successfully
 
 ### Evaluation Execution
 - **Functionality**: Run test cases individually or in batch against the configured agent
@@ -34,36 +48,46 @@ AI Evaluation Dashboard enables quality assurance teams to systematically test a
 - **Success criteria**: All selected tests execute successfully, progress accurately tracked, errors handled gracefully
 
 ### LLM-as-Judge Evaluation
-- **Functionality**: Use Spark's LLM API to evaluate semantic similarity between expected and actual responses
-- **Purpose**: Provide automated, intelligent assessment beyond exact string matching
+- **Functionality**: Use Azure OpenAI to evaluate semantic similarity between expected and actual responses
+- **Purpose**: Provide automated, intelligent assessment beyond exact string matching using enterprise Azure OpenAI deployments
 - **Trigger**: Automatically invoked after receiving agent response
-- **Progression**: Receive agent response → Construct evaluation prompt with expected vs actual → LLM analyzes semantic similarity → Receive score (0-100) and reasoning → Store results
-- **Success criteria**: LLM provides consistent, explainable scores with clear reasoning for pass/fail determination
+- **Progression**: Receive agent response → Construct evaluation prompt with expected vs actual → Send to Azure OpenAI → Parse JSON response with score and reasoning → Store results in DataVerse
+- **Success criteria**: Azure OpenAI provides consistent, explainable scores with clear reasoning for pass/fail determination, all results persisted to DataVerse
 
 ### Results Dashboard
-- **Functionality**: Display evaluation results with scores, pass/fail status, and detailed comparison
-- **Purpose**: Enable quick assessment of agent quality and identification of problematic areas
-- **Trigger**: After evaluation completes or when viewing historical results
-- **Progression**: View results list → See overall pass rate → Click individual result → View detailed comparison with expected vs actual response → Read LLM judge reasoning → Optionally re-run test
-- **Success criteria**: Results clearly organized, filterable by status, searchable, with visual indicators for quick scanning
+- **Functionality**: Display evaluation results from DataVerse with scores, pass/fail status, and detailed comparison
+- **Purpose**: Enable quick assessment of agent quality and identification of problematic areas from enterprise-scale result sets
+- **Trigger**: After evaluation completes or when viewing historical results from DataVerse
+- **Progression**: View results list from DataVerse → See overall pass rate → Click individual result → View detailed comparison with expected vs actual response → Read Azure OpenAI judge reasoning → Optionally re-run test
+- **Success criteria**: Results clearly organized, loaded from DataVerse with pagination, filterable by status, searchable, with visual indicators for quick scanning
 
 ### Historical Tracking
-- **Functionality**: Store and retrieve past evaluation runs with timestamps
-- **Purpose**: Track agent performance over time and identify regressions
-- **Trigger**: Automatic after each evaluation run
-- **Progression**: Run evaluation → Results automatically saved with timestamp → View history list → Filter by date range or test case → Compare results across runs
-- **Success criteria**: All evaluation results persist, can be filtered and sorted, and historical trends visible
+- **Functionality**: Store and retrieve past evaluation runs from DataVerse with timestamps and pagination
+- **Purpose**: Track agent performance over time leveraging DataVerse's enterprise storage and query capabilities
+- **Trigger**: Automatic storage to DataVerse after each evaluation run
+- **Progression**: Run evaluation → Results automatically saved to DataVerse with timestamp → View history list with pagination → Filter by date range or test case → Compare results across runs
+- **Success criteria**: All evaluation results persist in DataVerse, support large-scale queries with pagination, can be filtered and sorted, historical trends visible
+
+### Data Refresh
+- **Functionality**: Manual refresh button to reload test cases and results from DataVerse
+- **Purpose**: Allow users to see updates made by other users or external systems
+- **Trigger**: User clicks refresh button in header
+- **Progression**: Click refresh → Fetch latest data from DataVerse → Update UI → Show success toast
+- **Success criteria**: Data refreshes without losing user selection state, shows loading indicators, handles errors gracefully
 
 ## Edge Case Handling
 
-- **Network Failures**: Retry logic with exponential backoff for Direct Line API calls, clear error messages when max retries exceeded
-- **API Rate Limits**: Queue management with appropriate delays between requests, visual feedback on throttling
-- **Invalid Credentials**: Immediate validation feedback with actionable error messages and setup guidance
-- **Malformed Responses**: Graceful handling of unexpected response formats with error logging for debugging
-- **Empty Test Cases**: Validation prevents running evaluations without test cases, helpful empty state guides user
+- **Network Failures**: Retry logic with exponential backoff for Direct Line and DataVerse API calls, clear error messages when max retries exceeded
+- **API Rate Limits**: Queue management with appropriate delays between requests, visual feedback on throttling for both Direct Line and Azure OpenAI
+- **Invalid Credentials**: Immediate validation feedback for all three services (Direct Line, Azure OpenAI, DataVerse) with actionable error messages and setup guidance
+- **OAuth Token Expiry**: Automatic token refresh for DataVerse authentication, transparent to user
+- **Malformed Responses**: Graceful handling of unexpected response formats from all APIs with error logging for debugging
+- **Empty Test Cases**: Validation prevents running evaluations without test cases, helpful empty state guides user to configure DataVerse
 - **Concurrent Evaluations**: Prevent multiple simultaneous runs, show active evaluation status clearly
-- **Large Batch Processing**: Chunked processing with progress updates, ability to cancel mid-execution
-- **LLM Judge Failures**: Fallback to partial results, clear indication when judge evaluation unavailable
+- **Large Batch Processing**: Chunked processing with progress updates, ability to cancel mid-execution, pagination for 40,000+ test cases
+- **Azure OpenAI Failures**: Fallback to partial results, clear indication when judge evaluation unavailable, retry logic for transient errors
+- **DataVerse Query Limits**: Pagination with configurable page size (default 100), handles OData query constraints
+- **Multi-user Scenarios**: Refresh functionality allows users to see changes made by others, optimistic UI updates with eventual consistency
 
 ## Design Direction
 
@@ -119,15 +143,14 @@ Animations should feel purposeful and professional, reinforcing the systematic n
 - **Components**: 
   - **Card** (Test cases, results, metrics) - With subtle shadow and border for professional elevation
   - **Button** (Primary actions, secondary actions) - Primary for "Run Evaluation", secondary for "Add Test"
-  - **Input/Textarea** (Test prompts, expected responses) - With clear focus states and validation
-  - **Badge** (Pass/fail status, tags) - Color-coded for quick visual scanning
-  - **Table** (Results listing) - Sortable columns for organized data display
-  - **Dialog** (Settings, test case editor) - Modal overlays for focused workflows
+  - **Input/Textarea** (Test prompts, expected responses, configuration) - With clear focus states and validation
+  - **Tabs** (Settings navigation, Test Cases / Results) - Main navigation between dashboard sections and configuration tabs
+  - **Badge** (Pass/fail status, tags, counts) - Color-coded for quick visual scanning
+  - **Dialog** (Settings with nested tabs, test case editor) - Modal overlays for focused workflows
   - **Progress** (Evaluation execution) - Clear percentage and step indicators
-  - **Tabs** (Test Cases / Results / History) - Main navigation between dashboard sections
-  - **Alert** (Error messages, warnings) - Contextual notifications for issues
+  - **Alert** (Error messages, warnings, configuration status) - Contextual notifications for issues
   - **Separator** (Section dividers) - Subtle visual organization
-  - **ScrollArea** (Long lists, response text) - Smooth scrolling for content overflow
+  - **ScrollArea** (Long lists, response text, settings dialog) - Smooth scrolling for content overflow
   - **Tooltip** (Help text, additional info) - Contextual guidance on hover
 
 - **Customizations**: 
@@ -135,6 +158,8 @@ Animations should feel purposeful and professional, reinforcing the systematic n
   - Diff viewer component for expected vs actual comparison
   - Custom progress tracker showing evaluation pipeline stages
   - Metric summary cards with large numbers and trend indicators
+  - Multi-tab settings dialog for three separate service configurations
+  - Pagination controls for navigating 40,000+ test cases
 
 - **States**: 
   - Buttons: Distinct hover (slight lift), active (pressed), disabled (muted), loading (spinner)
@@ -144,8 +169,9 @@ Animations should feel purposeful and professional, reinforcing the systematic n
 
 - **Icon Selection**:
   - Play (Run evaluation), Plus (Add test case), Gear (Settings), CheckCircle (Pass), XCircle (Fail)
-  - Flask (Evaluation/testing), ArrowsClockwise (Re-run), MagnifyingGlass (Search), Funnel (Filter)
+  - Flask (Evaluation/testing), ArrowsClockwise (Refresh data), MagnifyingGlass (Search), Funnel (Filter)
   - Calendar (History), ChartBar (Metrics), Warning (Errors), Info (Help/tooltips)
+  - CircleNotch (Loading spinners for async operations)
 
 - **Spacing**: 
   - Container padding: p-6 (24px) for main sections

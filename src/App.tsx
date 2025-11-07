@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useKV } from '@github/spark/hooks'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
@@ -15,22 +15,28 @@ import {
   XCircle,
   Warning,
   CircleNotch,
+  ArrowsClockwise,
 } from '@phosphor-icons/react'
 import { TestCaseDialog } from '@/components/TestCaseDialog'
 import { TestCaseCard } from '@/components/TestCaseCard'
 import { SettingsDialog } from '@/components/SettingsDialog'
 import { ResultCard } from '@/components/ResultCard'
 import { ResultDetailDialog } from '@/components/ResultDetailDialog'
-import type { TestCase, EvaluationResult, DirectLineConfig } from '@/types'
+import type { TestCase, EvaluationResult, AppConfig } from '@/types'
 import { DirectLineService } from '@/lib/directline'
-import { evaluateResponse } from '@/lib/judge'
+import { AzureOpenAIJudge } from '@/lib/judge'
+import { DataVerseService } from '@/lib/dataverse'
 import { toast } from 'sonner'
 
 function App() {
-  const [testCases, setTestCases] = useKV<TestCase[]>('test-cases', [])
-  const [results, setResults] = useKV<EvaluationResult[]>('evaluation-results', [])
-  const [config, setConfig] = useKV<DirectLineConfig | null>('directline-config', null)
+  const [config, setConfig] = useKV<AppConfig>('app-config', {
+    directLine: null,
+    azureOpenAI: null,
+    dataVerse: null,
+  })
 
+  const [testCases, setTestCases] = useState<TestCase[]>([])
+  const [results, setResults] = useState<EvaluationResult[]>([])
   const [selectedTestCases, setSelectedTestCases] = useState<Set<string>>(new Set())
   const [testDialogOpen, setTestDialogOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -39,45 +45,101 @@ function App() {
   const [progress, setProgress] = useState({ current: 0, total: 0 })
   const [selectedResult, setSelectedResult] = useState<EvaluationResult | null>(null)
   const [resultDetailOpen, setResultDetailOpen] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [currentPage, setCurrentPage] = useState(0)
+  const [totalTestCases, setTotalTestCases] = useState(0)
+  const [totalResults, setTotalResults] = useState(0)
+  const PAGE_SIZE = 100
 
-  const safeTestCases = testCases || []
-  const safeResults = results || []
-  const safeConfig = config || null
+  const safeConfig = config || { directLine: null, azureOpenAI: null, dataVerse: null }
 
-  const handleSaveTestCase = (testCaseData: Omit<TestCase, 'id' | 'createdAt' | 'updatedAt'>) => {
-    const now = Date.now()
-    
-    if (editingTestCase) {
-      setTestCases(current =>
-        (current || []).map(tc =>
-          tc.id === editingTestCase.id
-            ? { ...tc, ...testCaseData, updatedAt: now }
-            : tc
-        )
-      )
-      toast.success('Test case updated')
-    } else {
-      const newTestCase: TestCase = {
-        ...testCaseData,
-        id: `tc-${now}`,
-        createdAt: now,
-        updatedAt: now,
-      }
-      setTestCases(current => [...(current || []), newTestCase])
-      toast.success('Test case added')
+  useEffect(() => {
+    if (safeConfig.dataVerse) {
+      loadTestCases()
+      loadResults()
     }
-    
-    setEditingTestCase(undefined)
+  }, [safeConfig.dataVerse, currentPage])
+
+  const loadTestCases = async () => {
+    if (!safeConfig.dataVerse) return
+
+    setLoading(true)
+    try {
+      const service = new DataVerseService(safeConfig.dataVerse)
+      const { testCases: fetchedCases, totalCount } = await service.fetchTestCases(
+        PAGE_SIZE,
+        currentPage * PAGE_SIZE
+      )
+      setTestCases(fetchedCases)
+      setTotalTestCases(totalCount)
+    } catch (error) {
+      toast.error('Failed to load test cases from DataVerse')
+      console.error('Load test cases error:', error)
+    } finally {
+      setLoading(false)
+    }
   }
 
-  const handleDeleteTestCase = (id: string) => {
-    setTestCases(current => (current || []).filter(tc => tc.id !== id))
-    setSelectedTestCases(prev => {
-      const next = new Set(prev)
-      next.delete(id)
-      return next
-    })
-    toast.success('Test case deleted')
+  const loadResults = async () => {
+    if (!safeConfig.dataVerse) return
+
+    try {
+      const service = new DataVerseService(safeConfig.dataVerse)
+      const { results: fetchedResults, totalCount } = await service.fetchEvaluationResults(
+        PAGE_SIZE,
+        0
+      )
+      setResults(fetchedResults)
+      setTotalResults(totalCount)
+    } catch (error) {
+      toast.error('Failed to load results from DataVerse')
+      console.error('Load results error:', error)
+    }
+  }
+
+  const handleSaveTestCase = async (testCaseData: Omit<TestCase, 'id' | 'createdAt' | 'updatedAt'>) => {
+    if (!safeConfig.dataVerse) {
+      toast.error('DataVerse not configured')
+      return
+    }
+
+    const service = new DataVerseService(safeConfig.dataVerse)
+
+    try {
+      if (editingTestCase) {
+        await service.updateTestCase(editingTestCase.id, testCaseData)
+        toast.success('Test case updated')
+        await loadTestCases()
+      } else {
+        await service.createTestCase(testCaseData)
+        toast.success('Test case added')
+        await loadTestCases()
+      }
+      setEditingTestCase(undefined)
+    } catch (error) {
+      toast.error('Failed to save test case')
+      console.error('Save test case error:', error)
+    }
+  }
+
+  const handleDeleteTestCase = async (id: string) => {
+    if (!safeConfig.dataVerse) return
+
+    const service = new DataVerseService(safeConfig.dataVerse)
+
+    try {
+      await service.deleteTestCase(id)
+      setSelectedTestCases(prev => {
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
+      toast.success('Test case deleted')
+      await loadTestCases()
+    } catch (error) {
+      toast.error('Failed to delete test case')
+      console.error('Delete test case error:', error)
+    }
   }
 
   const handleEditTestCase = (testCase: TestCase) => {
@@ -98,7 +160,7 @@ function App() {
   }
 
   const selectAll = () => {
-    setSelectedTestCases(new Set(safeTestCases.map(tc => tc.id)))
+    setSelectedTestCases(new Set(testCases.map(tc => tc.id)))
   }
 
   const deselectAll = () => {
@@ -106,8 +168,20 @@ function App() {
   }
 
   const runEvaluation = async () => {
-    if (!safeConfig) {
+    if (!safeConfig.directLine) {
       toast.error('Please configure Direct Line credentials first')
+      setSettingsOpen(true)
+      return
+    }
+
+    if (!safeConfig.azureOpenAI) {
+      toast.error('Please configure Azure OpenAI credentials first')
+      setSettingsOpen(true)
+      return
+    }
+
+    if (!safeConfig.dataVerse) {
+      toast.error('Please configure DataVerse credentials first')
       setSettingsOpen(true)
       return
     }
@@ -117,13 +191,15 @@ function App() {
       return
     }
 
-    const selectedTests = safeTestCases.filter(tc => selectedTestCases.has(tc.id))
+    const selectedTests = testCases.filter(tc => selectedTestCases.has(tc.id))
     
     setRunning(true)
     setProgress({ current: 0, total: selectedTests.length })
 
     const newResults: EvaluationResult[] = []
-    const directLine = new DirectLineService(safeConfig)
+    const directLine = new DirectLineService(safeConfig.directLine)
+    const judge = new AzureOpenAIJudge(safeConfig.azureOpenAI)
+    const dataVerse = new DataVerseService(safeConfig.dataVerse)
 
     try {
       for (let i = 0; i < selectedTests.length; i++) {
@@ -134,7 +210,7 @@ function App() {
           const startTime = Date.now()
           const actualResponse = await directLine.sendMessage(testCase.prompt)
           
-          const judgeResult = await evaluateResponse(
+          const judgeResult = await judge.evaluate(
             testCase.prompt,
             testCase.expectedResponse,
             actualResponse
@@ -154,6 +230,7 @@ function App() {
           }
 
           newResults.push(result)
+          await dataVerse.createEvaluationResult(result)
           
           directLine.resetConversation()
           
@@ -166,7 +243,7 @@ function App() {
         }
       }
 
-      setResults(current => [...newResults, ...(current || [])])
+      await loadResults()
       
       const passCount = newResults.filter(r => r.passed).length
       const totalCount = newResults.length
@@ -183,9 +260,17 @@ function App() {
     setResultDetailOpen(true)
   }
 
-  const passedResults = safeResults.filter(r => r.passed).length
-  const failedResults = safeResults.filter(r => !r.passed).length
-  const passRate = safeResults.length > 0 ? Math.round((passedResults / safeResults.length) * 100) : 0
+  const handleRefresh = async () => {
+    await loadTestCases()
+    await loadResults()
+    toast.success('Data refreshed')
+  }
+
+  const passedResults = results.filter(r => r.passed).length
+  const failedResults = results.filter(r => !r.passed).length
+  const passRate = results.length > 0 ? Math.round((passedResults / results.length) * 100) : 0
+
+  const isConfigured = safeConfig.directLine && safeConfig.azureOpenAI && safeConfig.dataVerse
 
   return (
     <div className="min-h-screen bg-background">
@@ -199,28 +284,41 @@ function App() {
                   AI Evaluation Dashboard
                 </h1>
                 <p className="text-sm text-muted-foreground">
-                  Test and evaluate Copilot Studio agents
+                  Test and evaluate Copilot Studio agents with DataVerse
                 </p>
               </div>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setSettingsOpen(true)}
-            >
-              <Gear className="mr-2 h-4 w-4" />
-              Settings
-            </Button>
+            <div className="flex items-center gap-2">
+              {isConfigured && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleRefresh}
+                  disabled={loading}
+                >
+                  <ArrowsClockwise className="mr-2 h-4 w-4" />
+                  Refresh
+                </Button>
+              )}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setSettingsOpen(true)}
+              >
+                <Gear className="mr-2 h-4 w-4" />
+                Settings
+              </Button>
+            </div>
           </div>
         </div>
       </header>
 
       <main className="container mx-auto px-6 py-6">
-        {!safeConfig && (
+        {!isConfigured && (
           <Alert className="mb-6">
             <Warning className="h-4 w-4" />
             <AlertDescription>
-              Please configure your Direct Line credentials in Settings to start running evaluations.
+              Please configure your Direct Line, Azure OpenAI, and DataVerse credentials in Settings to start.
             </AlertDescription>
           </Alert>
         )}
@@ -242,24 +340,32 @@ function App() {
 
         <Tabs defaultValue="tests" className="space-y-6">
           <TabsList>
-            <TabsTrigger value="tests">Test Cases ({safeTestCases.length})</TabsTrigger>
-            <TabsTrigger value="results">Results ({safeResults.length})</TabsTrigger>
+            <TabsTrigger value="tests">
+              Test Cases ({totalTestCases.toLocaleString()})
+            </TabsTrigger>
+            <TabsTrigger value="results">
+              Results ({totalResults.toLocaleString()})
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="tests" className="space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Button onClick={() => setTestDialogOpen(true)} size="sm">
+                <Button 
+                  onClick={() => setTestDialogOpen(true)} 
+                  size="sm"
+                  disabled={!isConfigured}
+                >
                   <Plus className="mr-2 h-4 w-4" />
                   Add Test Case
                 </Button>
-                {safeTestCases.length > 0 && (
+                {testCases.length > 0 && (
                   <>
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={selectAll}
-                      disabled={selectedTestCases.size === safeTestCases.length}
+                      disabled={selectedTestCases.size === testCases.length}
                     >
                       Select All
                     </Button>
@@ -277,7 +383,7 @@ function App() {
               {selectedTestCases.size > 0 && (
                 <Button
                   onClick={runEvaluation}
-                  disabled={running || !safeConfig}
+                  disabled={running || !isConfigured}
                   className="bg-accent text-accent-foreground hover:bg-accent/90"
                 >
                   <Play className="mr-2 h-4 w-4" weight="fill" />
@@ -286,36 +392,70 @@ function App() {
               )}
             </div>
 
-            {safeTestCases.length === 0 ? (
+            {loading ? (
+              <Card className="p-12 text-center">
+                <CircleNotch className="h-12 w-12 mx-auto mb-4 text-muted-foreground animate-spin" />
+                <h3 className="text-lg font-medium mb-2">Loading test cases...</h3>
+              </Card>
+            ) : testCases.length === 0 ? (
               <Card className="p-12 text-center">
                 <Flask className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
                 <h3 className="text-lg font-medium mb-2">No test cases yet</h3>
                 <p className="text-sm text-muted-foreground mb-4">
-                  Create your first test case to start evaluating your agent.
+                  {isConfigured 
+                    ? 'Create your first test case to start evaluating your agent.'
+                    : 'Configure your credentials in Settings first.'}
                 </p>
-                <Button onClick={() => setTestDialogOpen(true)}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add Test Case
-                </Button>
+                {isConfigured && (
+                  <Button onClick={() => setTestDialogOpen(true)}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add Test Case
+                  </Button>
+                )}
               </Card>
             ) : (
-              <div className="grid gap-3">
-                {safeTestCases.map(testCase => (
-                  <TestCaseCard
-                    key={testCase.id}
-                    testCase={testCase}
-                    selected={selectedTestCases.has(testCase.id)}
-                    onSelect={checked => checked && toggleTestCase(testCase.id)}
-                    onEdit={() => handleEditTestCase(testCase)}
-                    onDelete={() => handleDeleteTestCase(testCase.id)}
-                  />
-                ))}
-              </div>
+              <>
+                <div className="grid gap-3">
+                  {testCases.map(testCase => (
+                    <TestCaseCard
+                      key={testCase.id}
+                      testCase={testCase}
+                      selected={selectedTestCases.has(testCase.id)}
+                      onSelect={checked => checked && toggleTestCase(testCase.id)}
+                      onEdit={() => handleEditTestCase(testCase)}
+                      onDelete={() => handleDeleteTestCase(testCase.id)}
+                    />
+                  ))}
+                </div>
+                {totalTestCases > PAGE_SIZE && (
+                  <div className="flex items-center justify-center gap-2 mt-4">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(p => Math.max(0, p - 1))}
+                      disabled={currentPage === 0 || loading}
+                    >
+                      Previous
+                    </Button>
+                    <span className="text-sm text-muted-foreground">
+                      Page {currentPage + 1} of {Math.ceil(totalTestCases / PAGE_SIZE)}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(p => p + 1)}
+                      disabled={currentPage >= Math.ceil(totalTestCases / PAGE_SIZE) - 1 || loading}
+                    >
+                      Next
+                    </Button>
+                  </div>
+                )}
+              </>
             )}
           </TabsContent>
 
           <TabsContent value="results" className="space-y-4">
-            {safeResults.length > 0 && (
+            {results.length > 0 && (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                 <Card className="p-4">
                   <div className="flex items-center justify-between mb-2">
@@ -343,7 +483,7 @@ function App() {
               </div>
             )}
 
-            {safeResults.length === 0 ? (
+            {results.length === 0 ? (
               <Card className="p-12 text-center">
                 <CheckCircle className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
                 <h3 className="text-lg font-medium mb-2">No results yet</h3>
@@ -353,7 +493,7 @@ function App() {
               </Card>
             ) : (
               <div className="grid gap-3">
-                {safeResults.map(result => (
+                {results.map(result => (
                   <ResultCard
                     key={result.id}
                     result={result}
