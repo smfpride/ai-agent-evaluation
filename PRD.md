@@ -34,12 +34,12 @@ AI Evaluation Dashboard enables quality assurance teams to systematically test a
 - **Success criteria**: Azure OpenAI credentials validated, test evaluation completes successfully, ready for production use
 
 ### DataVerse Configuration
-- **Functionality**: Configure DataVerse environment URL, service principal credentials (client ID, secret, tenant ID), and table names for test cases and results
-- **Purpose**: Enable enterprise-scale storage and retrieval of 40,000+ test cases and evaluation results
+- **Functionality**: Configure DataVerse environment URL, service principal credentials (client ID, secret, tenant ID), table names, and backend proxy settings for test cases and results
+- **Purpose**: Enable enterprise-scale storage and retrieval of 40,000+ test cases and evaluation results through a secure backend proxy
 - **Trigger**: User navigates to DataVerse tab in settings
-- **Progression**: Open settings → Navigate to DataVerse tab → Enter environment URL → Enter OAuth credentials (client ID, secret, tenant) → Specify test case table name → Specify evaluation result table name → Test connection → Save
-- **Success criteria**: DataVerse connection established, OAuth token acquired, test query returns data successfully
-- **Important Note**: Browser-based applications cannot directly access Microsoft Entra ID token endpoints or DataVerse APIs due to CORS policies. A backend proxy (Azure Function, API Management, or Express server) is required to handle authentication and forward requests. The UI displays a warning about this limitation in the DataVerse settings tab.
+- **Progression**: Open settings → Navigate to DataVerse tab → Enable "Use Backend Proxy" toggle → Enter proxy URL → Enter environment URL → Enter OAuth credentials (client ID, secret, tenant) → Specify test case table name → Specify evaluation result table name → Test connection → Save
+- **Success criteria**: DataVerse connection established through proxy, test query returns data successfully, clear UI feedback on proxy status
+- **Implementation**: Backend proxy handles OAuth token acquisition and forwards requests to DataVerse, solving the browser CORS limitation. Complete proxy implementation guides available in PROXY_IMPLEMENTATION.md for Azure Functions, Express.js, and API Management options.
 
 ### Evaluation Execution
 - **Functionality**: Run test cases individually or in batch against the configured agent
@@ -81,15 +81,16 @@ AI Evaluation Dashboard enables quality assurance teams to systematically test a
 - **Network Failures**: Retry logic with exponential backoff for Direct Line and DataVerse API calls, clear error messages when max retries exceeded
 - **API Rate Limits**: Queue management with appropriate delays between requests, visual feedback on throttling for both Direct Line and Azure OpenAI
 - **Invalid Credentials**: Immediate validation feedback for all three services (Direct Line, Azure OpenAI, DataVerse) with actionable error messages and setup guidance
-- **OAuth Token Expiry**: Automatic token refresh for DataVerse authentication, transparent to user
+- **OAuth Token Expiry**: Automatic token refresh handled by backend proxy, transparent to user
 - **Malformed Responses**: Graceful handling of unexpected response formats from all APIs with error logging for debugging
-- **Empty Test Cases**: Validation prevents running evaluations without test cases, helpful empty state guides user to configure DataVerse
+- **Empty Test Cases**: Validation prevents running evaluations without test cases, helpful empty state guides user to configure DataVerse and proxy
 - **Concurrent Evaluations**: Prevent multiple simultaneous runs, show active evaluation status clearly
 - **Large Batch Processing**: Chunked processing with progress updates, ability to cancel mid-execution, pagination for 40,000+ test cases
 - **Azure OpenAI Failures**: Fallback to partial results, clear indication when judge evaluation unavailable, retry logic for transient errors
 - **DataVerse Query Limits**: Pagination with configurable page size (default 100), handles OData query constraints
 - **Multi-user Scenarios**: Refresh functionality allows users to see changes made by others, optimistic UI updates with eventual consistency
-- **CORS Restrictions**: Browser cannot directly access Microsoft Entra ID or DataVerse due to CORS policies - UI displays clear warning that a backend proxy is required for production use
+- **Proxy Configuration**: Clear validation and error messages when proxy is not configured, helpful guidance to PROXY_IMPLEMENTATION.md
+- **Proxy Connection Failures**: Detailed error messages distinguish between proxy issues vs DataVerse issues, test connection validates full chain
 
 ## Design Direction
 

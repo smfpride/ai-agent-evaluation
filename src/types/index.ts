@@ -39,6 +39,8 @@ export interface DataVerseConfig {
   tenantId: string
   testCaseTable: string
   evaluationResultTable: string
+  useProxy: boolean
+  proxyUrl?: string
 }
 
 export interface AppConfig {

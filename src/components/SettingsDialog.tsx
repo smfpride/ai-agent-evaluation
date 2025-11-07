@@ -10,9 +10,11 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { CheckCircle, XCircle, CircleNotch, Warning } from '@phosphor-icons/react'
+import { CheckCircle, XCircle, CircleNotch, Warning, Info } from '@phosphor-icons/react'
+import { ProxyArchitectureDiagram } from '@/components/ProxyArchitectureDiagram'
 import type { AppConfig } from '@/types'
 import { testConnection } from '@/lib/directline'
 import { testAzureOpenAIConnection } from '@/lib/judge'
@@ -45,6 +47,8 @@ export function SettingsDialog({
   const [dvTenantId, setDvTenantId] = useState(config.dataVerse?.tenantId || '')
   const [dvTestCaseTable, setDvTestCaseTable] = useState(config.dataVerse?.testCaseTable || '')
   const [dvResultTable, setDvResultTable] = useState(config.dataVerse?.evaluationResultTable || '')
+  const [dvUseProxy, setDvUseProxy] = useState(config.dataVerse?.useProxy ?? false)
+  const [dvProxyUrl, setDvProxyUrl] = useState(config.dataVerse?.proxyUrl || '')
 
   const [testing, setTesting] = useState<string | null>(null)
   const [testResults, setTestResults] = useState<Record<string, 'success' | 'error'>>({})
@@ -67,6 +71,8 @@ export function SettingsDialog({
       setDvTenantId(config.dataVerse.tenantId)
       setDvTestCaseTable(config.dataVerse.testCaseTable)
       setDvResultTable(config.dataVerse.evaluationResultTable)
+      setDvUseProxy(config.dataVerse.useProxy)
+      setDvProxyUrl(config.dataVerse.proxyUrl || '')
     }
   }, [config])
 
@@ -105,6 +111,8 @@ export function SettingsDialog({
   const handleTestDataVerse = async () => {
     if (!dvEnvironmentUrl.trim() || !dvClientId.trim() || !dvClientSecret.trim() || 
         !dvTenantId.trim() || !dvTestCaseTable.trim() || !dvResultTable.trim()) return
+    
+    if (dvUseProxy && !dvProxyUrl.trim()) return
 
     setTesting('dataverse')
     setTestResults(prev => ({ ...prev, dataverse: undefined as any }))
@@ -116,6 +124,8 @@ export function SettingsDialog({
       tenantId: dvTenantId.trim(),
       testCaseTable: dvTestCaseTable.trim(),
       evaluationResultTable: dvResultTable.trim(),
+      useProxy: dvUseProxy,
+      proxyUrl: dvProxyUrl.trim() || undefined,
     })
 
     setTestResults(prev => ({ ...prev, dataverse: result ? 'success' : 'error' }))
@@ -147,6 +157,8 @@ export function SettingsDialog({
             tenantId: dvTenantId.trim(),
             testCaseTable: dvTestCaseTable.trim(),
             evaluationResultTable: dvResultTable.trim(),
+            useProxy: dvUseProxy,
+            proxyUrl: dvProxyUrl.trim() || undefined,
           }
         : null,
     }
@@ -159,7 +171,8 @@ export function SettingsDialog({
     directLineEndpoint.trim() && 
     azureEndpoint.trim() && azureApiKey.trim() && azureDeployment.trim() &&
     dvEnvironmentUrl.trim() && dvClientId.trim() && dvClientSecret.trim() && 
-    dvTenantId.trim() && dvTestCaseTable.trim() && dvResultTable.trim()
+    dvTenantId.trim() && dvTestCaseTable.trim() && dvResultTable.trim() &&
+    (!dvUseProxy || dvProxyUrl.trim())
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -309,12 +322,56 @@ export function SettingsDialog({
               <Warning className="h-4 w-4" />
               <AlertDescription>
                 <strong>Browser CORS Limitation:</strong> Microsoft Entra ID and DataVerse APIs do not allow direct browser access due to CORS policies. 
-                To use DataVerse with this browser-based app, you'll need to set up a backend proxy (e.g., Azure Function, Express server) 
-                that handles authentication and forwards requests. See <code>README.md</code> and <code>DATAVERSE_CORS.md</code> for detailed solutions and example code.
+                You must use a backend proxy (Azure Function, API Management, or Express server) to handle authentication and forward requests.
+                Enable "Use Backend Proxy" below and configure your proxy URL.
               </AlertDescription>
             </Alert>
+
+            {!dvUseProxy && (
+              <ProxyArchitectureDiagram />
+            )}
+            
+            <div className="flex items-center justify-between p-4 border border-border rounded-lg bg-muted/30">
+              <div className="flex-1 mr-4">
+                <Label htmlFor="use-proxy" className="font-medium">Use Backend Proxy</Label>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Route requests through a backend proxy to handle CORS and authentication
+                </p>
+              </div>
+              <Switch
+                id="use-proxy"
+                checked={dvUseProxy}
+                onCheckedChange={setDvUseProxy}
+              />
+            </div>
+
+            {dvUseProxy && (
+              <Alert>
+                <Info className="h-4 w-4" />
+                <AlertDescription>
+                  Your proxy should handle OAuth token acquisition and forward requests to DataVerse. 
+                  See <code>PROXY_IMPLEMENTATION.md</code> for implementation examples.
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {dvUseProxy && (
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="proxy-url">Backend Proxy URL *</Label>
+                <Input
+                  id="proxy-url"
+                  value={dvProxyUrl}
+                  onChange={e => setDvProxyUrl(e.target.value)}
+                  placeholder="https://your-proxy.azurewebsites.net/api/dataverse"
+                />
+                <p className="text-sm text-muted-foreground">
+                  URL of your deployed backend proxy that forwards requests to DataVerse
+                </p>
+              </div>
+            )}
+
             <div className="flex flex-col gap-2">
-              <Label htmlFor="dv-url">Environment URL *</Label>
+              <Label htmlFor="dv-url">DataVerse Environment URL *</Label>
               <Input
                 id="dv-url"
                 value={dvEnvironmentUrl}
@@ -340,6 +397,11 @@ export function SettingsDialog({
                 onChange={e => setDvClientSecret(e.target.value)}
                 placeholder="Enter your application client secret..."
               />
+              <p className="text-sm text-muted-foreground">
+                {dvUseProxy 
+                  ? "Store this securely in your proxy backend - never expose in browser" 
+                  : "⚠️ Cannot be used without proxy due to CORS"}
+              </p>
             </div>
             <div className="flex flex-col gap-2">
               <Label htmlFor="dv-tenant-id">Tenant ID *</Label>
@@ -374,14 +436,19 @@ export function SettingsDialog({
                   {testResults.dataverse === 'success' ? (
                     <>
                       <CheckCircle className="h-4 w-4 text-success" />
-                      <AlertDescription>Connection successful!</AlertDescription>
+                      <AlertDescription>
+                        {dvUseProxy 
+                          ? "Proxy connection successful! DataVerse is accessible." 
+                          : "Connection successful!"}
+                      </AlertDescription>
                     </>
                   ) : (
                     <>
                       <XCircle className="h-4 w-4" />
                       <AlertDescription>
-                        Connection failed - this is expected due to browser CORS restrictions. 
-                        See README.md for proxy setup instructions, or check browser console if using a proxy.
+                        {dvUseProxy 
+                          ? "Proxy connection failed. Check your proxy URL and configuration in browser console." 
+                          : "Connection failed - this is expected due to browser CORS restrictions. Enable 'Use Backend Proxy' to resolve."}
                       </AlertDescription>
                     </>
                   )}
@@ -394,6 +461,7 @@ export function SettingsDialog({
               disabled={
                 !dvEnvironmentUrl.trim() || !dvClientId.trim() || !dvClientSecret.trim() || 
                 !dvTenantId.trim() || !dvTestCaseTable.trim() || !dvResultTable.trim() || 
+                (dvUseProxy && !dvProxyUrl.trim()) ||
                 testing === 'dataverse'
               }
               className="w-full"

@@ -29,7 +29,7 @@ But NOT from:
 
 ## Solutions
 
-### Option 1: Backend Proxy (Recommended)
+### Option 1: Backend Proxy (Recommended) ✅ IMPLEMENTED
 
 Set up a backend service that acts as a proxy between your browser app and DataVerse.
 
@@ -46,14 +46,42 @@ Browser App ← Your Backend Proxy → DataVerse API
 - Full control over authentication flow
 - Can implement rate limiting, caching, etc.
 
-**Implementation Options:**
+**🎉 Now Fully Supported in the App!**
 
-1. **Azure Functions** (serverless, easy deployment)
-2. **Azure API Management** (enterprise-grade, built-in features)
-3. **Express.js server** (simple, flexible)
-4. **ASP.NET Core API** (full-featured, Azure-native)
+The application now includes built-in proxy support:
 
-See the main README.md for code examples.
+1. **Enable in Settings**: DataVerse tab → Toggle "Use Backend Proxy"
+2. **Configure Proxy URL**: Enter your deployed proxy endpoint
+3. **Automatic Request Routing**: All DataVerse calls automatically route through your proxy
+
+**Complete Implementation Guide:**
+
+See **[PROXY_IMPLEMENTATION.md](./PROXY_IMPLEMENTATION.md)** for production-ready implementations:
+
+- **Azure Functions** (TypeScript) - Serverless, auto-scaling
+- **Express.js Server** (TypeScript) - Simple, flexible deployment
+- **Azure API Management** - Enterprise-grade with policies
+
+Each guide includes:
+- ✅ Complete source code ready to deploy
+- ✅ Step-by-step deployment instructions  
+- ✅ Security best practices (Key Vault, rate limiting, CORS)
+- ✅ Testing procedures
+- ✅ Troubleshooting tips
+- ✅ Cost estimates
+
+**Quick Start:**
+```bash
+# See PROXY_IMPLEMENTATION.md for full details
+func init DataVerseProxy --typescript
+# Copy implementation code
+func azure functionapp publish YOUR-APP-NAME
+```
+
+Then in the Spark app Settings:
+- DataVerse → Enable "Use Backend Proxy"
+- Enter: `https://YOUR-APP.azurewebsites.net/api/DataVerseProxy`
+- Test Connection ✓
 
 ### Option 2: Use Browser Storage Instead of DataVerse
 
@@ -122,9 +150,14 @@ Instead of using service principal (client credentials), use **user-delegated au
 ## Next Steps
 
 1. **Decide on your approach** based on your use case above
-2. **For proxy approach**: Choose your proxy technology and deploy it
-3. **Update the app**: Modify `src/lib/dataverse.ts` to call your proxy instead of DataVerse directly
-4. **Test**: Verify connection works through the proxy
+2. **For proxy approach** (recommended):
+   - Review **[PROXY_IMPLEMENTATION.md](./PROXY_IMPLEMENTATION.md)** for complete code and deployment guides
+   - Choose your deployment option (Azure Functions, Express.js, or API Management)
+   - Deploy using the provided step-by-step instructions
+   - Enable "Use Backend Proxy" in app Settings → DataVerse tab
+   - Enter your proxy URL and test the connection
+3. **Update the app**: No code changes needed - proxy support is built-in! Just configure in Settings.
+4. **Test**: Verify connection works through the proxy using the "Test Connection" button
 
 ## Additional Resources
 

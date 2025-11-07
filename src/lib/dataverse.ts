@@ -10,6 +10,19 @@ interface DataVerseEntity {
   [key: string]: unknown
 }
 
+interface ProxyRequest {
+  method: string
+  endpoint: string
+  body?: unknown
+  headers?: Record<string, string>
+}
+
+interface ProxyResponse {
+  success: boolean
+  data?: unknown
+  error?: string
+}
+
 export class DataVerseService {
   private config: DataVerseConfig
   private accessToken: string | null = null
@@ -20,6 +33,10 @@ export class DataVerseService {
   }
 
   private async getAccessToken(): Promise<string> {
+    if (this.config.useProxy) {
+      return 'proxy-handled'
+    }
+
     if (this.accessToken && Date.now() < this.tokenExpiry - 60000) {
       return this.accessToken
     }
@@ -66,43 +83,104 @@ export class DataVerseService {
     }
   }
 
+  private async makeProxyRequest(method: string, endpoint: string, body?: unknown): Promise<unknown> {
+    if (!this.config.proxyUrl) {
+      throw new Error('Proxy URL not configured')
+    }
+
+    const proxyRequest: ProxyRequest = {
+      method,
+      endpoint,
+      body,
+      headers: {
+        'OData-MaxVersion': '4.0',
+        'OData-Version': '4.0',
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      }
+    }
+
+    const response = await fetch(this.config.proxyUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-DataVerse-Config': JSON.stringify({
+          environmentUrl: this.config.environmentUrl,
+          clientId: this.config.clientId,
+          clientSecret: this.config.clientSecret,
+          tenantId: this.config.tenantId,
+        }),
+      },
+      body: JSON.stringify(proxyRequest),
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(`Proxy request failed: ${response.status} ${response.statusText} - ${errorText}`)
+    }
+
+    const proxyResponse: ProxyResponse = await response.json()
+
+    if (!proxyResponse.success) {
+      throw new Error(proxyResponse.error || 'Proxy request failed')
+    }
+
+    return proxyResponse.data
+  }
+
+  private async makeDirectRequest(url: string, options: RequestInit): Promise<Response> {
+    const token = await this.getAccessToken()
+    
+    return fetch(url, {
+      ...options,
+      headers: {
+        ...options.headers,
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  }
+
   async fetchTestCases(
     top: number = 100,
     skip: number = 0,
     filter?: string
   ): Promise<{ testCases: TestCase[]; totalCount: number }> {
-    const token = await this.getAccessToken()
     const baseUrl = `${this.config.environmentUrl}/api/data/v9.2/${this.config.testCaseTable}`
 
-    let url = `${baseUrl}?$count=true&$top=${top}&$skip=${skip}&$orderby=createdon desc`
+    let endpoint = `${baseUrl}?$count=true&$top=${top}&$skip=${skip}&$orderby=createdon desc`
     if (filter) {
-      url += `&$filter=${encodeURIComponent(filter)}`
+      endpoint += `&$filter=${encodeURIComponent(filter)}`
     }
 
     try {
-      const response = await fetch(url, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'OData-MaxVersion': '4.0',
-          'OData-Version': '4.0',
-          Accept: 'application/json',
-          'Content-Type': 'application/json',
-        },
-      })
+      let data: any
 
-      if (!response.ok) {
-        const errorText = await response.text()
-        console.error('Fetch test cases failed:', {
-          status: response.status,
-          statusText: response.statusText,
-          error: errorText,
-          url,
-          table: this.config.testCaseTable,
+      if (this.config.useProxy) {
+        data = await this.makeProxyRequest('GET', endpoint)
+      } else {
+        const response = await this.makeDirectRequest(endpoint, {
+          headers: {
+            'OData-MaxVersion': '4.0',
+            'OData-Version': '4.0',
+            Accept: 'application/json',
+            'Content-Type': 'application/json',
+          },
         })
-        throw new Error(`Failed to fetch test cases: ${response.status} ${response.statusText} - ${errorText}`)
-      }
 
-      const data = await response.json()
+        if (!response.ok) {
+          const errorText = await response.text()
+          console.error('Fetch test cases failed:', {
+            status: response.status,
+            statusText: response.statusText,
+            error: errorText,
+            url: endpoint,
+            table: this.config.testCaseTable,
+          })
+          throw new Error(`Failed to fetch test cases: ${response.status} ${response.statusText} - ${errorText}`)
+        }
+
+        data = await response.json()
+      }
 
       const testCases: TestCase[] = data.value.map((entity: DataVerseEntity) => ({
         id: entity.mcicaps_testcasesid as string,
@@ -124,7 +202,6 @@ export class DataVerseService {
   }
 
   async createTestCase(testCase: Omit<TestCase, 'id' | 'createdAt' | 'updatedAt'>): Promise<TestCase> {
-    const token = await this.getAccessToken()
     const url = `${this.config.environmentUrl}/api/data/v9.2/${this.config.testCaseTable}`
 
     const entity: DataVerseEntity = {
@@ -137,25 +214,30 @@ export class DataVerseService {
       entity.mcicaps_tags = JSON.stringify(testCase.tags)
     }
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'OData-MaxVersion': '4.0',
-        'OData-Version': '4.0',
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-        Prefer: 'return=representation',
-      },
-      body: JSON.stringify(entity),
-    })
+    let createdEntity: any
 
-    if (!response.ok) {
-      const errorText = await response.text()
-      throw new Error(`Failed to create test case: ${response.statusText} - ${errorText}`)
+    if (this.config.useProxy) {
+      createdEntity = await this.makeProxyRequest('POST', url, entity)
+    } else {
+      const response = await this.makeDirectRequest(url, {
+        method: 'POST',
+        headers: {
+          'OData-MaxVersion': '4.0',
+          'OData-Version': '4.0',
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+          Prefer: 'return=representation',
+        },
+        body: JSON.stringify(entity),
+      })
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new Error(`Failed to create test case: ${response.statusText} - ${errorText}`)
+      }
+
+      createdEntity = await response.json()
     }
-
-    const createdEntity = await response.json()
 
     return {
       id: createdEntity.mcicaps_testcasesid,
@@ -168,7 +250,6 @@ export class DataVerseService {
   }
 
   async updateTestCase(id: string, updates: Partial<Omit<TestCase, 'id' | 'createdAt' | 'updatedAt'>>): Promise<void> {
-    const token = await this.getAccessToken()
     const url = `${this.config.environmentUrl}/api/data/v9.2/${this.config.testCaseTable}(${id})`
 
     const entity: DataVerseEntity = {}
@@ -183,44 +264,48 @@ export class DataVerseService {
       entity.mcicaps_tags = JSON.stringify(updates.tags)
     }
 
-    const response = await fetch(url, {
-      method: 'PATCH',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'OData-MaxVersion': '4.0',
-        'OData-Version': '4.0',
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(entity),
-    })
+    if (this.config.useProxy) {
+      await this.makeProxyRequest('PATCH', url, entity)
+    } else {
+      const response = await this.makeDirectRequest(url, {
+        method: 'PATCH',
+        headers: {
+          'OData-MaxVersion': '4.0',
+          'OData-Version': '4.0',
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(entity),
+      })
 
-    if (!response.ok) {
-      const errorText = await response.text()
-      throw new Error(`Failed to update test case: ${response.statusText} - ${errorText}`)
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new Error(`Failed to update test case: ${response.statusText} - ${errorText}`)
+      }
     }
   }
 
   async deleteTestCase(id: string): Promise<void> {
-    const token = await this.getAccessToken()
     const url = `${this.config.environmentUrl}/api/data/v9.2/${this.config.testCaseTable}(${id})`
 
-    const response = await fetch(url, {
-      method: 'DELETE',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'OData-MaxVersion': '4.0',
-        'OData-Version': '4.0',
-      },
-    })
+    if (this.config.useProxy) {
+      await this.makeProxyRequest('DELETE', url)
+    } else {
+      const response = await this.makeDirectRequest(url, {
+        method: 'DELETE',
+        headers: {
+          'OData-MaxVersion': '4.0',
+          'OData-Version': '4.0',
+        },
+      })
 
-    if (!response.ok) {
-      throw new Error(`Failed to delete test case: ${response.statusText}`)
+      if (!response.ok) {
+        throw new Error(`Failed to delete test case: ${response.statusText}`)
+      }
     }
   }
 
   async createEvaluationResult(result: EvaluationResult): Promise<void> {
-    const token = await this.getAccessToken()
     const url = `${this.config.environmentUrl}/api/data/v9.2/${this.config.evaluationResultTable}`
 
     const entity: DataVerseEntity = {
@@ -232,21 +317,24 @@ export class DataVerseService {
       'mcicaps_testcase@odata.bind': `/${this.config.testCaseTable}(${result.testCaseId})`,
     }
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'OData-MaxVersion': '4.0',
-        'OData-Version': '4.0',
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(entity),
-    })
+    if (this.config.useProxy) {
+      await this.makeProxyRequest('POST', url, entity)
+    } else {
+      const response = await this.makeDirectRequest(url, {
+        method: 'POST',
+        headers: {
+          'OData-MaxVersion': '4.0',
+          'OData-Version': '4.0',
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(entity),
+      })
 
-    if (!response.ok) {
-      const errorText = await response.text()
-      throw new Error(`Failed to create evaluation result: ${response.statusText} - ${errorText}`)
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new Error(`Failed to create evaluation result: ${response.statusText} - ${errorText}`)
+      }
     }
   }
 
@@ -255,30 +343,34 @@ export class DataVerseService {
     skip: number = 0,
     filter?: string
   ): Promise<{ results: EvaluationResult[]; totalCount: number }> {
-    const token = await this.getAccessToken()
     const baseUrl = `${this.config.environmentUrl}/api/data/v9.2/${this.config.evaluationResultTable}`
 
-    let url = `${baseUrl}?$count=true&$top=${top}&$skip=${skip}&$orderby=createdon desc&$expand=mcicaps_testcase($select=mcicaps_testcasesid,mcicaps_prompt,mcicaps_expectedresponse)`
+    let endpoint = `${baseUrl}?$count=true&$top=${top}&$skip=${skip}&$orderby=createdon desc&$expand=mcicaps_testcase($select=mcicaps_testcasesid,mcicaps_prompt,mcicaps_expectedresponse)`
     if (filter) {
-      url += `&$filter=${encodeURIComponent(filter)}`
+      endpoint += `&$filter=${encodeURIComponent(filter)}`
     }
 
-    const response = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'OData-MaxVersion': '4.0',
-        'OData-Version': '4.0',
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-      },
-    })
+    let data: any
 
-    if (!response.ok) {
-      const errorText = await response.text()
-      throw new Error(`Failed to fetch evaluation results: ${response.statusText} - ${errorText}`)
+    if (this.config.useProxy) {
+      data = await this.makeProxyRequest('GET', endpoint)
+    } else {
+      const response = await this.makeDirectRequest(endpoint, {
+        headers: {
+          'OData-MaxVersion': '4.0',
+          'OData-Version': '4.0',
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+      })
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new Error(`Failed to fetch evaluation results: ${response.statusText} - ${errorText}`)
+      }
+
+      data = await response.json()
     }
-
-    const data = await response.json()
 
     const results: EvaluationResult[] = data.value.map((entity: DataVerseEntity) => {
       const testCase = entity.mcicaps_testcase as DataVerseEntity | undefined
@@ -311,6 +403,8 @@ export async function testDataVerseConnection(config: DataVerseConfig): Promise<
       clientId: config.clientId,
       testCaseTable: config.testCaseTable,
       evaluationResultTable: config.evaluationResultTable,
+      useProxy: config.useProxy,
+      proxyUrl: config.proxyUrl,
     })
     
     const service = new DataVerseService(config)

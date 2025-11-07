@@ -31,185 +31,50 @@ The dashboard requires three service configurations:
 
 **Browser-based applications cannot directly access Microsoft Entra ID or DataVerse APIs due to CORS policies.** The Microsoft authentication endpoints and DataVerse APIs do not include `Access-Control-Allow-Origin` headers, which prevents direct browser access.
 
-### Why This Happens
+### Solution: Backend Proxy (Now Supported!)
 
-When this app tries to:
-1. Get an OAuth token from `login.microsoftonline.com`
-2. Call DataVerse APIs at your `*.crm.dynamics.com` endpoint
+This application now includes built-in support for backend proxy configuration:
 
-The browser blocks these requests because:
-- Microsoft's authentication service doesn't allow cross-origin requests
-- DataVerse API doesn't allow direct browser access for security reasons
+1. **Enable Proxy Mode**: In Settings → DataVerse tab, toggle "Use Backend Proxy"
+2. **Enter Proxy URL**: Provide your deployed proxy endpoint
+3. **Configure Credentials**: Fill in your DataVerse connection details
+4. **Test Connection**: Verify the proxy is working correctly
 
-### Solution: Backend Proxy
+### Implementing Your Proxy
 
-To use DataVerse with this application, you need to set up a backend proxy that:
-1. Receives requests from this browser app
-2. Handles OAuth authentication with Microsoft Entra ID
-3. Makes requests to DataVerse on behalf of the browser
-4. Returns results back to the browser
+See **[PROXY_IMPLEMENTATION.md](./PROXY_IMPLEMENTATION.md)** for complete implementation guides including:
 
-### Example Proxy Implementation
+- **Azure Functions** (serverless, recommended)
+- **Express.js** (simple, flexible)
+- **Azure API Management** (enterprise-grade)
 
-Here's a simple Azure Function or Express.js proxy example:
+Each guide includes:
+- ✅ Complete, production-ready code
+- ✅ Step-by-step deployment instructions
+- ✅ Security best practices
+- ✅ Troubleshooting tips
 
-#### Azure Function (Node.js)
+The proxy handles OAuth authentication server-side and forwards requests between your browser and DataVerse.
 
-```javascript
-// function.json
-{
-  "bindings": [
-    {
-      "authLevel": "function",
-      "type": "httpTrigger",
-      "direction": "in",
-      "name": "req",
-      "methods": ["get", "post", "patch", "delete"],
-      "route": "dataverse/{*path}"
-    },
-    {
-      "type": "http",
-      "direction": "out",
-      "name": "res"
-    }
-  ]
-}
+### Quick Start with Proxy
 
-// index.js
-const fetch = require('node-fetch');
-
-module.exports = async function (context, req) {
-  const { path } = context.bindingData;
-  const method = req.method;
-  const body = req.body;
-  
-  // Get OAuth token
-  const tokenResponse = await fetch(
-    `https://login.microsoftonline.com/${process.env.TENANT_ID}/oauth2/v2.0/token`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        client_id: process.env.CLIENT_ID,
-        client_secret: process.env.CLIENT_SECRET,
-        scope: `${process.env.DATAVERSE_URL}/.default`,
-        grant_type: 'client_credentials',
-      }),
-    }
-  );
-  
-  const { access_token } = await tokenResponse.json();
-  
-  // Forward request to DataVerse
-  const dataverseResponse = await fetch(
-    `${process.env.DATAVERSE_URL}/api/data/v9.2/${path}`,
-    {
-      method,
-      headers: {
-        'Authorization': `Bearer ${access_token}`,
-        'OData-MaxVersion': '4.0',
-        'OData-Version': '4.0',
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      },
-      body: body ? JSON.stringify(body) : undefined,
-    }
-  );
-  
-  const data = await dataverseResponse.json();
-  
-  context.res = {
-    status: dataverseResponse.status,
-    headers: {
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*', // Configure appropriately
-    },
-    body: data,
-  };
-};
+```bash
+# See PROXY_IMPLEMENTATION.md for full instructions
+# Example: Deploy Azure Function
+func init DataVerseProxy --typescript
+func new --name DataVerseProxy --template "HTTP trigger"
+# Copy implementation from PROXY_IMPLEMENTATION.md
+func azure functionapp publish YOUR-FUNCTION-APP
 ```
 
-#### Express.js Server
+Then in the app:
+1. Settings → DataVerse → Enable "Use Backend Proxy"
+2. Enter: `https://YOUR-FUNCTION-APP.azurewebsites.net/api/DataVerseProxy`
+3. Test Connection
 
-```javascript
-const express = require('express');
-const cors = require('cors');
-const fetch = require('node-fetch');
+### Alternative: DATAVERSE_CORS.md
 
-const app = express();
-app.use(cors());
-app.use(express.json());
-
-let cachedToken = null;
-let tokenExpiry = 0;
-
-async function getToken() {
-  if (cachedToken && Date.now() < tokenExpiry - 60000) {
-    return cachedToken;
-  }
-  
-  const response = await fetch(
-    `https://login.microsoftonline.com/${process.env.TENANT_ID}/oauth2/v2.0/token`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        client_id: process.env.CLIENT_ID,
-        client_secret: process.env.CLIENT_SECRET,
-        scope: `${process.env.DATAVERSE_URL}/.default`,
-        grant_type: 'client_credentials',
-      }),
-    }
-  );
-  
-  const data = await response.json();
-  cachedToken = data.access_token;
-  tokenExpiry = Date.now() + data.expires_in * 1000;
-  
-  return cachedToken;
-}
-
-app.all('/api/dataverse/*', async (req, res) => {
-  const path = req.path.replace('/api/dataverse/', '');
-  const token = await getToken();
-  
-  const dataverseResponse = await fetch(
-    `${process.env.DATAVERSE_URL}/api/data/v9.2/${path}${req.url.includes('?') ? req.url.split('?')[1] : ''}`,
-    {
-      method: req.method,
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'OData-MaxVersion': '4.0',
-        'OData-Version': '4.0',
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      },
-      body: req.body ? JSON.stringify(req.body) : undefined,
-    }
-  );
-  
-  const data = await dataverseResponse.json();
-  res.status(dataverseResponse.status).json(data);
-});
-
-app.listen(3000, () => console.log('Proxy running on port 3000'));
-```
-
-### Update the App to Use Proxy
-
-Once your proxy is deployed, update the `src/lib/dataverse.ts` file to use your proxy URL instead of calling DataVerse directly:
-
-```typescript
-// In getAccessToken(), remove the token acquisition code
-// In all fetch calls, replace:
-const url = `${this.config.environmentUrl}/api/data/v9.2/...`
-// With:
-const url = `https://your-proxy.azurewebsites.net/api/dataverse/...`
-```
-
-### Alternative: Local Storage
-
-For development and testing without DataVerse, you can modify the app to use browser localStorage instead. This won't provide enterprise-scale storage but allows testing the evaluation workflow.
+For detailed explanation of the CORS issue and other solution options (localStorage, user authentication), see [DATAVERSE_CORS.md](./DATAVERSE_CORS.md).
 
 ## Getting Started
 
