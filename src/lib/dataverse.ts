@@ -32,23 +32,38 @@ export class DataVerseService {
       grant_type: 'client_credentials',
     })
 
-    const response = await fetch(tokenUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: params.toString(),
-    })
+    try {
+      const response = await fetch(tokenUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: params.toString(),
+      })
 
-    if (!response.ok) {
-      throw new Error(`Failed to get access token: ${response.statusText}`)
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error('Token request failed:', {
+          status: response.status,
+          statusText: response.statusText,
+          error: errorText,
+          tokenUrl,
+          tenantId: this.config.tenantId,
+          clientId: this.config.clientId,
+          scope: `${this.config.environmentUrl}/.default`,
+        })
+        throw new Error(`Failed to get access token: ${response.status} ${response.statusText} - ${errorText}`)
+      }
+
+      const data: AccessTokenResponse = await response.json()
+      this.accessToken = data.access_token
+      this.tokenExpiry = Date.now() + data.expires_in * 1000
+
+      return this.accessToken
+    } catch (error) {
+      console.error('Access token error:', error)
+      throw error
     }
-
-    const data: AccessTokenResponse = await response.json()
-    this.accessToken = data.access_token
-    this.tokenExpiry = Date.now() + data.expires_in * 1000
-
-    return this.accessToken
   }
 
   async fetchTestCases(
@@ -64,34 +79,47 @@ export class DataVerseService {
       url += `&$filter=${encodeURIComponent(filter)}`
     }
 
-    const response = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'OData-MaxVersion': '4.0',
-        'OData-Version': '4.0',
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-      },
-    })
+    try {
+      const response = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'OData-MaxVersion': '4.0',
+          'OData-Version': '4.0',
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+      })
 
-    if (!response.ok) {
-      throw new Error(`Failed to fetch test cases: ${response.statusText}`)
-    }
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error('Fetch test cases failed:', {
+          status: response.status,
+          statusText: response.statusText,
+          error: errorText,
+          url,
+          table: this.config.testCaseTable,
+        })
+        throw new Error(`Failed to fetch test cases: ${response.status} ${response.statusText} - ${errorText}`)
+      }
 
-    const data = await response.json()
+      const data = await response.json()
 
-    const testCases: TestCase[] = data.value.map((entity: DataVerseEntity) => ({
-      id: entity.mcicaps_testcasesid as string,
-      prompt: entity.mcicaps_prompt as string,
-      expectedResponse: entity.mcicaps_expectedresponse as string,
-      tags: entity.mcicaps_tags ? JSON.parse(entity.mcicaps_tags as string) : undefined,
-      createdAt: entity.createdon ? new Date(entity.createdon as string).getTime() : Date.now(),
-      updatedAt: entity.modifiedon ? new Date(entity.modifiedon as string).getTime() : Date.now(),
-    }))
+      const testCases: TestCase[] = data.value.map((entity: DataVerseEntity) => ({
+        id: entity.mcicaps_testcasesid as string,
+        prompt: entity.mcicaps_prompt as string,
+        expectedResponse: entity.mcicaps_expectedresponse as string,
+        tags: entity.mcicaps_tags ? JSON.parse(entity.mcicaps_tags as string) : undefined,
+        createdAt: entity.createdon ? new Date(entity.createdon as string).getTime() : Date.now(),
+        updatedAt: entity.modifiedon ? new Date(entity.modifiedon as string).getTime() : Date.now(),
+      }))
 
-    return {
-      testCases,
-      totalCount: data['@odata.count'] || 0,
+      return {
+        testCases,
+        totalCount: data['@odata.count'] || 0,
+      }
+    } catch (error) {
+      console.error('Fetch test cases error:', error)
+      throw error
     }
   }
 
@@ -277,11 +305,25 @@ export class DataVerseService {
 
 export async function testDataVerseConnection(config: DataVerseConfig): Promise<boolean> {
   try {
+    console.log('Testing DataVerse connection with config:', {
+      environmentUrl: config.environmentUrl,
+      tenantId: config.tenantId,
+      clientId: config.clientId,
+      testCaseTable: config.testCaseTable,
+      evaluationResultTable: config.evaluationResultTable,
+    })
+    
     const service = new DataVerseService(config)
-    await service.fetchTestCases(1, 0)
+    const result = await service.fetchTestCases(1, 0)
+    
+    console.log('DataVerse connection test successful. Found test cases:', result.totalCount)
     return true
   } catch (error) {
     console.error('DataVerse connection test failed:', error)
+    if (error instanceof Error) {
+      console.error('Error message:', error.message)
+      console.error('Error stack:', error.stack)
+    }
     return false
   }
 }

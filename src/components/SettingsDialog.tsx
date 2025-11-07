@@ -31,8 +31,8 @@ export function SettingsDialog({
   config,
   onSave,
 }: SettingsDialogProps) {
-  const [directLineSecret, setDirectLineSecret] = useState(config.directLine?.secret || '')
   const [directLineEndpoint, setDirectLineEndpoint] = useState(config.directLine?.endpoint || '')
+  const [directLineSecret, setDirectLineSecret] = useState(config.directLine?.secret || '')
   
   const [azureEndpoint, setAzureEndpoint] = useState(config.azureOpenAI?.endpoint || '')
   const [azureApiKey, setAzureApiKey] = useState(config.azureOpenAI?.apiKey || '')
@@ -51,8 +51,8 @@ export function SettingsDialog({
 
   useEffect(() => {
     if (config.directLine) {
-      setDirectLineSecret(config.directLine.secret)
-      setDirectLineEndpoint(config.directLine.endpoint || '')
+      setDirectLineEndpoint(config.directLine.endpoint)
+      setDirectLineSecret(config.directLine.secret || '')
     }
     if (config.azureOpenAI) {
       setAzureEndpoint(config.azureOpenAI.endpoint)
@@ -71,14 +71,14 @@ export function SettingsDialog({
   }, [config])
 
   const handleTestDirectLine = async () => {
-    if (!directLineSecret.trim()) return
+    if (!directLineEndpoint.trim()) return
 
     setTesting('directline')
     setTestResults(prev => ({ ...prev, directline: undefined as any }))
 
     const result = await testConnection({
-      secret: directLineSecret.trim(),
-      endpoint: directLineEndpoint.trim() || undefined,
+      endpoint: directLineEndpoint.trim(),
+      secret: directLineSecret.trim() || undefined,
     })
 
     setTestResults(prev => ({ ...prev, directline: result ? 'success' : 'error' }))
@@ -124,10 +124,10 @@ export function SettingsDialog({
 
   const handleSave = () => {
     const newConfig: AppConfig = {
-      directLine: directLineSecret.trim()
+      directLine: directLineEndpoint.trim()
         ? {
-            secret: directLineSecret.trim(),
-            endpoint: directLineEndpoint.trim() || undefined,
+            endpoint: directLineEndpoint.trim(),
+            secret: directLineSecret.trim() || undefined,
           }
         : null,
       azureOpenAI: azureEndpoint.trim() && azureApiKey.trim() && azureDeployment.trim()
@@ -156,7 +156,7 @@ export function SettingsDialog({
   }
 
   const isConfigValid = 
-    directLineSecret.trim() && 
+    directLineEndpoint.trim() && 
     azureEndpoint.trim() && azureApiKey.trim() && azureDeployment.trim() &&
     dvEnvironmentUrl.trim() && dvClientId.trim() && dvClientSecret.trim() && 
     dvTenantId.trim() && dvTestCaseTable.trim() && dvResultTable.trim()
@@ -180,22 +180,22 @@ export function SettingsDialog({
 
           <TabsContent value="directline" className="space-y-4 mt-4">
             <div className="flex flex-col gap-2">
-              <Label htmlFor="directline-secret">Direct Line Secret *</Label>
+              <Label htmlFor="directline-endpoint">Direct Line Endpoint *</Label>
+              <Input
+                id="directline-endpoint"
+                value={directLineEndpoint}
+                onChange={e => setDirectLineEndpoint(e.target.value)}
+                placeholder="https://your-endpoint.azurewebsites.net/api/messages"
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="directline-secret">Secret (optional)</Label>
               <Input
                 id="directline-secret"
                 type="password"
                 value={directLineSecret}
                 onChange={e => setDirectLineSecret(e.target.value)}
-                placeholder="Enter your Direct Line secret..."
-              />
-            </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="directline-endpoint">Custom Endpoint (optional)</Label>
-              <Input
-                id="directline-endpoint"
-                value={directLineEndpoint}
-                onChange={e => setDirectLineEndpoint(e.target.value)}
-                placeholder="https://directline.botframework.com/v3/directline"
+                placeholder="Enter secret if required..."
               />
             </div>
             {testResults.directline && (
@@ -209,7 +209,7 @@ export function SettingsDialog({
                   ) : (
                     <>
                       <XCircle className="h-4 w-4" />
-                      <AlertDescription>Connection failed. Check your credentials.</AlertDescription>
+                      <AlertDescription>Connection failed. Check your endpoint.</AlertDescription>
                     </>
                   )}
                 </div>
@@ -218,7 +218,7 @@ export function SettingsDialog({
             <Button
               variant="outline"
               onClick={handleTestDirectLine}
-              disabled={!directLineSecret.trim() || testing === 'directline'}
+              disabled={!directLineEndpoint.trim() || testing === 'directline'}
               className="w-full"
             >
               {testing === 'directline' ? (
@@ -371,7 +371,10 @@ export function SettingsDialog({
                   ) : (
                     <>
                       <XCircle className="h-4 w-4" />
-                      <AlertDescription>Connection failed. Check your credentials.</AlertDescription>
+                      <AlertDescription>
+                        Connection failed. Check your credentials and table names. 
+                        Open browser console for detailed error logs.
+                      </AlertDescription>
                     </>
                   )}
                 </div>

@@ -1,7 +1,5 @@
 import type { DirectLineConfig } from '@/types'
 
-const DEFAULT_ENDPOINT = 'https://directline.botframework.com/v3/directline'
-
 interface DirectLineConversation {
   conversationId: string
   token: string
@@ -25,18 +23,27 @@ export class DirectLineService {
     this.config = config
   }
 
+  private getHeaders(): HeadersInit {
+    const headers: HeadersInit = {
+      'Content-Type': 'application/json',
+    }
+    
+    if (this.config.secret) {
+      headers['Authorization'] = `Bearer ${this.config.secret}`
+    }
+    
+    return headers
+  }
+
   async startConversation(): Promise<void> {
-    const endpoint = this.config.endpoint || DEFAULT_ENDPOINT
-    const response = await fetch(`${endpoint}/conversations`, {
+    const response = await fetch(`${this.config.endpoint}/conversations`, {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${this.config.secret}`,
-        'Content-Type': 'application/json',
-      },
+      headers: this.getHeaders(),
     })
 
     if (!response.ok) {
-      throw new Error(`Failed to start conversation: ${response.statusText}`)
+      const errorText = await response.text()
+      throw new Error(`Failed to start conversation: ${response.statusText} - ${errorText}`)
     }
 
     const data: DirectLineConversation = await response.json()
@@ -49,15 +56,11 @@ export class DirectLineService {
       await this.startConversation()
     }
 
-    const endpoint = this.config.endpoint || DEFAULT_ENDPOINT
     const response = await fetch(
-      `${endpoint}/conversations/${this.conversationId}/activities`,
+      `${this.config.endpoint}/conversations/${this.conversationId}/activities`,
       {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${this.config.secret}`,
-          'Content-Type': 'application/json',
-        },
+        headers: this.getHeaders(),
         body: JSON.stringify({
           type: 'message',
           from: { id: 'user' },
@@ -67,30 +70,31 @@ export class DirectLineService {
     )
 
     if (!response.ok) {
-      throw new Error(`Failed to send message: ${response.statusText}`)
+      const errorText = await response.text()
+      throw new Error(`Failed to send message: ${response.statusText} - ${errorText}`)
     }
 
     return this.waitForResponse()
   }
 
   private async waitForResponse(maxAttempts = 30): Promise<string> {
-    const endpoint = this.config.endpoint || DEFAULT_ENDPOINT
-    
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       await new Promise(resolve => setTimeout(resolve, 1000))
 
       const url = this.watermark
-        ? `${endpoint}/conversations/${this.conversationId}/activities?watermark=${this.watermark}`
-        : `${endpoint}/conversations/${this.conversationId}/activities`
+        ? `${this.config.endpoint}/conversations/${this.conversationId}/activities?watermark=${this.watermark}`
+        : `${this.config.endpoint}/conversations/${this.conversationId}/activities`
 
-      const response = await fetch(url, {
-        headers: {
-          'Authorization': `Bearer ${this.config.secret}`,
-        },
-      })
+      const headers: HeadersInit = {}
+      if (this.config.secret) {
+        headers['Authorization'] = `Bearer ${this.config.secret}`
+      }
+
+      const response = await fetch(url, { headers })
 
       if (!response.ok) {
-        throw new Error(`Failed to get activities: ${response.statusText}`)
+        const errorText = await response.text()
+        throw new Error(`Failed to get activities: ${response.statusText} - ${errorText}`)
       }
 
       const data: { activities: DirectLineActivity[]; watermark: string } = await response.json()

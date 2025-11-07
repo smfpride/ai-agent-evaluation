@@ -21,8 +21,8 @@ export interface EvaluationResult {
 }
 
 export interface DirectLineConfig {
-  secret: string
-  endpoint?: string
+  endpoint: string
+  secret?: string
 }
 
 export interface AzureOpenAIConfig {
