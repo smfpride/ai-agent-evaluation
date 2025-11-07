@@ -59,7 +59,7 @@ export class DataVerseService {
     const token = await this.getAccessToken()
     const baseUrl = `${this.config.environmentUrl}/api/data/v9.2/${this.config.testCaseTable}`
 
-    let url = `${baseUrl}?$count=true&$top=${top}&$skip=${skip}`
+    let url = `${baseUrl}?$count=true&$top=${top}&$skip=${skip}&$orderby=createdon desc`
     if (filter) {
       url += `&$filter=${encodeURIComponent(filter)}`
     }
@@ -81,10 +81,10 @@ export class DataVerseService {
     const data = await response.json()
 
     const testCases: TestCase[] = data.value.map((entity: DataVerseEntity) => ({
-      id: entity.id as string,
-      prompt: entity.prompt as string,
-      expectedResponse: entity.expectedresponse as string,
-      tags: entity.tags ? JSON.parse(entity.tags as string) : undefined,
+      id: entity.mcicaps_testcasesid as string,
+      prompt: entity.mcicaps_prompt as string,
+      expectedResponse: entity.mcicaps_expectedresponse as string,
+      tags: entity.mcicaps_tags ? JSON.parse(entity.mcicaps_tags as string) : undefined,
       createdAt: entity.createdon ? new Date(entity.createdon as string).getTime() : Date.now(),
       updatedAt: entity.modifiedon ? new Date(entity.modifiedon as string).getTime() : Date.now(),
     }))
@@ -100,9 +100,13 @@ export class DataVerseService {
     const url = `${this.config.environmentUrl}/api/data/v9.2/${this.config.testCaseTable}`
 
     const entity: DataVerseEntity = {
-      prompt: testCase.prompt,
-      expectedresponse: testCase.expectedResponse,
-      tags: testCase.tags ? JSON.stringify(testCase.tags) : undefined,
+      mcicaps_prompt: testCase.prompt,
+      mcicaps_expectedresponse: testCase.expectedResponse,
+      mcicaps_testcasename: testCase.prompt.substring(0, 100),
+    }
+
+    if (testCase.tags) {
+      entity.mcicaps_tags = JSON.stringify(testCase.tags)
     }
 
     const response = await fetch(url, {
@@ -113,24 +117,25 @@ export class DataVerseService {
         'OData-Version': '4.0',
         Accept: 'application/json',
         'Content-Type': 'application/json',
+        Prefer: 'return=representation',
       },
       body: JSON.stringify(entity),
     })
 
     if (!response.ok) {
-      throw new Error(`Failed to create test case: ${response.statusText}`)
+      const errorText = await response.text()
+      throw new Error(`Failed to create test case: ${response.statusText} - ${errorText}`)
     }
 
-    const entityId = response.headers.get('OData-EntityId')?.split('(')[1].split(')')[0]
     const createdEntity = await response.json()
 
     return {
-      id: entityId || createdEntity.id,
+      id: createdEntity.mcicaps_testcasesid,
       prompt: testCase.prompt,
       expectedResponse: testCase.expectedResponse,
       tags: testCase.tags,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
+      createdAt: createdEntity.createdon ? new Date(createdEntity.createdon).getTime() : Date.now(),
+      updatedAt: createdEntity.modifiedon ? new Date(createdEntity.modifiedon).getTime() : Date.now(),
     }
   }
 
@@ -139,9 +144,16 @@ export class DataVerseService {
     const url = `${this.config.environmentUrl}/api/data/v9.2/${this.config.testCaseTable}(${id})`
 
     const entity: DataVerseEntity = {}
-    if (updates.prompt !== undefined) entity.prompt = updates.prompt
-    if (updates.expectedResponse !== undefined) entity.expectedresponse = updates.expectedResponse
-    if (updates.tags !== undefined) entity.tags = JSON.stringify(updates.tags)
+    if (updates.prompt !== undefined) {
+      entity.mcicaps_prompt = updates.prompt
+      entity.mcicaps_testcasename = updates.prompt.substring(0, 100)
+    }
+    if (updates.expectedResponse !== undefined) {
+      entity.mcicaps_expectedresponse = updates.expectedResponse
+    }
+    if (updates.tags !== undefined) {
+      entity.mcicaps_tags = JSON.stringify(updates.tags)
+    }
 
     const response = await fetch(url, {
       method: 'PATCH',
@@ -156,7 +168,8 @@ export class DataVerseService {
     })
 
     if (!response.ok) {
-      throw new Error(`Failed to update test case: ${response.statusText}`)
+      const errorText = await response.text()
+      throw new Error(`Failed to update test case: ${response.statusText} - ${errorText}`)
     }
   }
 
@@ -183,16 +196,12 @@ export class DataVerseService {
     const url = `${this.config.environmentUrl}/api/data/v9.2/${this.config.evaluationResultTable}`
 
     const entity: DataVerseEntity = {
-      id: result.id,
-      testcaseid: result.testCaseId,
-      prompt: result.prompt,
-      expectedresponse: result.expectedResponse,
-      actualresponse: result.actualResponse,
-      score: result.score,
-      reasoning: result.reasoning,
-      passed: result.passed,
-      timestamp: result.timestamp,
-      executiontime: result.executionTime,
+      mcicaps_evaluationresultname: `Result ${new Date().toISOString()}`,
+      mcicaps_actualresponse: result.actualResponse,
+      mcicaps_score: result.score,
+      mcicaps_reasoning: result.reasoning,
+      mcicaps_passed: result.passed,
+      'mcicaps_testcase@odata.bind': `/${this.config.testCaseTable}(${result.testCaseId})`,
     }
 
     const response = await fetch(url, {
@@ -208,7 +217,8 @@ export class DataVerseService {
     })
 
     if (!response.ok) {
-      throw new Error(`Failed to create evaluation result: ${response.statusText}`)
+      const errorText = await response.text()
+      throw new Error(`Failed to create evaluation result: ${response.statusText} - ${errorText}`)
     }
   }
 
@@ -220,7 +230,7 @@ export class DataVerseService {
     const token = await this.getAccessToken()
     const baseUrl = `${this.config.environmentUrl}/api/data/v9.2/${this.config.evaluationResultTable}`
 
-    let url = `${baseUrl}?$count=true&$top=${top}&$skip=${skip}&$orderby=timestamp desc`
+    let url = `${baseUrl}?$count=true&$top=${top}&$skip=${skip}&$orderby=createdon desc&$expand=mcicaps_testcase($select=mcicaps_testcasesid,mcicaps_prompt,mcicaps_expectedresponse)`
     if (filter) {
       url += `&$filter=${encodeURIComponent(filter)}`
     }
@@ -236,23 +246,27 @@ export class DataVerseService {
     })
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch evaluation results: ${response.statusText}`)
+      const errorText = await response.text()
+      throw new Error(`Failed to fetch evaluation results: ${response.statusText} - ${errorText}`)
     }
 
     const data = await response.json()
 
-    const results: EvaluationResult[] = data.value.map((entity: DataVerseEntity) => ({
-      id: entity.id as string,
-      testCaseId: entity.testcaseid as string,
-      prompt: entity.prompt as string,
-      expectedResponse: entity.expectedresponse as string,
-      actualResponse: entity.actualresponse as string,
-      score: entity.score as number,
-      reasoning: entity.reasoning as string,
-      passed: entity.passed as boolean,
-      timestamp: entity.timestamp as number,
-      executionTime: entity.executiontime as number,
-    }))
+    const results: EvaluationResult[] = data.value.map((entity: DataVerseEntity) => {
+      const testCase = entity.mcicaps_testcase as DataVerseEntity | undefined
+      return {
+        id: entity.mcicaps_evaluationresultsid as string,
+        testCaseId: testCase?.mcicaps_testcasesid as string || '',
+        prompt: testCase?.mcicaps_prompt as string || '',
+        expectedResponse: testCase?.mcicaps_expectedresponse as string || '',
+        actualResponse: entity.mcicaps_actualresponse as string,
+        score: entity.mcicaps_score as number,
+        reasoning: entity.mcicaps_reasoning as string,
+        passed: entity.mcicaps_passed as boolean,
+        timestamp: entity.createdon ? new Date(entity.createdon as string).getTime() : Date.now(),
+        executionTime: 0,
+      }
+    })
 
     return {
       results,

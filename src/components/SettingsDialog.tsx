@@ -348,7 +348,7 @@ export function SettingsDialog({
                 id="dv-testcase-table"
                 value={dvTestCaseTable}
                 onChange={e => setDvTestCaseTable(e.target.value)}
-                placeholder="cr7e2_testcases"
+                placeholder="mcicaps_testcases"
               />
             </div>
             <div className="flex flex-col gap-2">
@@ -357,7 +357,7 @@ export function SettingsDialog({
                 id="dv-result-table"
                 value={dvResultTable}
                 onChange={e => setDvResultTable(e.target.value)}
-                placeholder="cr7e2_evaluationresults"
+                placeholder="mcicaps_evaluationresults"
               />
             </div>
             {testResults.dataverse && (
