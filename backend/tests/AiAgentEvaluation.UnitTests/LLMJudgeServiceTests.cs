@@ -1,0 +1,333 @@
+using AiAgentEvaluation.Models;
+using AiAgentEvaluation.Services;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using Moq;
+using Xunit;
+using System.Reflection;
+
+namespace AiAgentEvaluation.UnitTests;
+
+/// <summary>
+/// Unit tests for LLMJudgeService
+/// </summary>
+public class LLMJudgeServiceTests
+{
+    private readonly Mock<ILogger<LLMJudgeService>> _mockLogger;
+    private readonly Mock<IBlobStorageService> _mockBlobStorageService;
+    private readonly IOptions<AppSettings> _settings;
+
+    public LLMJudgeServiceTests()
+    {
+        _mockLogger = new Mock<ILogger<LLMJudgeService>>();
+        _mockBlobStorageService = new Mock<IBlobStorageService>();
+        
+        _settings = Options.Create(new AppSettings
+        {
+            AzureOpenAI = new AzureOpenAISettings
+            {
+                Endpoint = "https://test.openai.azure.com/",
+                DeploymentName = "gpt-4",
+                MaxTokens = 1000,
+                Temperature = 0.3
+            }
+        });
+    }
+
+    [Fact]
+    public void Constructor_WithValidSettings_InitializesSuccessfully()
+    {
+        // Act & Assert - Should not throw
+        using var service = new LLMJudgeService(_mockLogger.Object, _settings, _mockBlobStorageService.Object);
+        Assert.NotNull(service);
+    }
+
+    [Fact]
+    public void Constructor_WithNullEndpoint_ThrowsException()
+    {
+        // Arrange
+        var invalidSettings = Options.Create(new AppSettings
+        {
+            AzureOpenAI = new AzureOpenAISettings
+            {
+                Endpoint = null!,
+                DeploymentName = "gpt-4"
+            }
+        });
+
+        // Act & Assert
+        Assert.Throws<InvalidOperationException>(() =>
+            new LLMJudgeService(_mockLogger.Object, invalidSettings, _mockBlobStorageService.Object));
+    }
+
+    [Theory]
+    [InlineData(TestType.Similarity, "similarity-evaluation-prompt.txt")]
+    [InlineData(TestType.Accuracy, "accuracy-evaluation-prompt.txt")]
+    [InlineData(TestType.Relevancy, "relevancy-evaluation-prompt.txt")]
+    public async Task GetPromptTemplateAsync_ForTestType_ReturnsCorrectTemplate(int testType, string expectedTemplateName)
+    {
+        // Arrange
+        var templateContent = "Test template content for {TestType}";
+        _mockBlobStorageService
+            .Setup(x => x.GetPromptTemplateAsync(expectedTemplateName, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(templateContent);
+
+        using var service = new LLMJudgeService(_mockLogger.Object, _settings, _mockBlobStorageService.Object);
+
+        // Act
+        var result = await service.GetPromptTemplateAsync(testType);
+
+        // Assert
+        Assert.Equal(templateContent, result);
+        _mockBlobStorageService.Verify(
+            x => x.GetPromptTemplateAsync(expectedTemplateName, It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task GetPromptTemplateAsync_WhenBlobStorageFails_ReturnsDefaultTemplate()
+    {
+        // Arrange
+        _mockBlobStorageService
+            .Setup(x => x.GetPromptTemplateAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new Exception("Blob storage error"));
+
+        using var service = new LLMJudgeService(_mockLogger.Object, _settings, _mockBlobStorageService.Object);
+
+        // Act
+        var result = await service.GetPromptTemplateAsync(TestType.Similarity);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Contains("similarity", result.ToLowerInvariant());
+    }
+
+    [Fact]
+    public void ParseLLMResponse_WithValidJsonScore_ReturnsCorrectScore()
+    {
+        // Arrange
+        var jsonResponse = @"{
+            ""score"": 8.5,
+            ""reasoning"": ""The response is highly similar to the expected output.""
+        }";
+        
+        using var service = new LLMJudgeService(_mockLogger.Object, _settings, _mockBlobStorageService.Object);
+        var parseMethod = GetPrivateMethod(service, "ParseLLMResponse");
+
+        // Act
+        var result = (LLMJudgeResponse)parseMethod.Invoke(service, new object[] { jsonResponse })!;
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal(8.5m, result.Score);
+        Assert.Equal("The response is highly similar to the expected output.", result.Reasoning);
+    }
+
+    [Fact]
+    public void ParseLLMResponse_WithStringScore_ParsesCorrectly()
+    {
+        // Arrange
+        var jsonResponse = @"{
+            ""score"": ""7"",
+            ""reasoning"": ""Good match with minor differences.""
+        }";
+        
+        using var service = new LLMJudgeService(_mockLogger.Object, _settings, _mockBlobStorageService.Object);
+        var parseMethod = GetPrivateMethod(service, "ParseLLMResponse");
+
+        // Act
+        var result = (LLMJudgeResponse)parseMethod.Invoke(service, new object[] { jsonResponse })!;
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal(7m, result.Score);
+    }
+
+    [Fact]
+    public void ParseLLMResponse_WithScoreOutOfRange_NormalizesScore()
+    {
+        // Arrange
+        var jsonResponse = @"{
+            ""score"": 15,
+            ""reasoning"": ""Score too high""
+        }";
+        
+        using var service = new LLMJudgeService(_mockLogger.Object, _settings, _mockBlobStorageService.Object);
+        var parseMethod = GetPrivateMethod(service, "ParseLLMResponse");
+
+        // Act
+        var result = (LLMJudgeResponse)parseMethod.Invoke(service, new object[] { jsonResponse })!;
+
+        // Assert - Score should be capped at 10
+        Assert.NotNull(result);
+        Assert.Equal(10m, result.Score);
+    }
+
+    [Fact]
+    public void ParseLLMResponse_WithNegativeScore_NormalizesToZero()
+    {
+        // Arrange
+        var jsonResponse = @"{
+            ""score"": -3,
+            ""reasoning"": ""Negative score""
+        }";
+        
+        using var service = new LLMJudgeService(_mockLogger.Object, _settings, _mockBlobStorageService.Object);
+        var parseMethod = GetPrivateMethod(service, "ParseLLMResponse");
+
+        // Act
+        var result = (LLMJudgeResponse)parseMethod.Invoke(service, new object[] { jsonResponse })!;
+
+        // Assert - Score should be normalized to 0
+        Assert.NotNull(result);
+        Assert.Equal(0m, result.Score);
+    }
+
+    [Theory]
+    [InlineData("The response scores 8 out of 10", 8)]
+    [InlineData("Rating: 7.5", 7.5)]
+    [InlineData("Score: 6", 6)]
+    [InlineData("This gets 9 points", 9)]
+    public void ParseLLMResponseWithRegex_ExtractsScoreCorrectly(string responseText, decimal expectedScore)
+    {
+        // Arrange
+        using var service = new LLMJudgeService(_mockLogger.Object, _settings, _mockBlobStorageService.Object);
+        var parseMethod = GetPrivateMethod(service, "ParseLLMResponseWithRegex");
+
+        // Act
+        var result = (LLMJudgeResponse)parseMethod.Invoke(service, new object[] { responseText })!;
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal(expectedScore, result.Score);
+    }
+
+    [Theory]
+    [InlineData("This is an excellent response", 9)]
+    [InlineData("The result is good overall", 7)]
+    [InlineData("This is an average response", 5)]
+    [InlineData("The quality is poor", 3)]
+    [InlineData("This is a terrible response", 1)]
+    public void ParseLLMResponseWithRegex_InfersScoreFromKeywords(string responseText, decimal expectedScore)
+    {
+        // Arrange
+        using var service = new LLMJudgeService(_mockLogger.Object, _settings, _mockBlobStorageService.Object);
+        var parseMethod = GetPrivateMethod(service, "ParseLLMResponseWithRegex");
+
+        // Act
+        var result = (LLMJudgeResponse)parseMethod.Invoke(service, new object[] { responseText })!;
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal(expectedScore, result.Score);
+    }
+
+    [Fact]
+    public void BuildEvaluationPrompt_ReplacesAllPlaceholders()
+    {
+        // Arrange
+        var template = "Test: {TestType}, Input: {UserInput}, Expected: {ExpectedResponse}, Actual: {ActualResponse}, Conv: {ConversationId}";
+        var request = new LLMJudgeRequest
+        {
+            TestType = TestType.Similarity,
+            UserInput = "Test input",
+            ExpectedResponse = "Expected output",
+            ActualResponse = "Actual output",
+            ConversationId = "conv123"
+        };
+
+        using var service = new LLMJudgeService(_mockLogger.Object, _settings, _mockBlobStorageService.Object);
+        var buildMethod = GetPrivateMethod(service, "BuildEvaluationPrompt");
+
+        // Act
+        var result = (string)buildMethod.Invoke(service, new object[] { template, request })!;
+
+        // Assert
+        Assert.Contains("Similarity", result);
+        Assert.Contains("Test input", result);
+        Assert.Contains("Expected output", result);
+        Assert.Contains("Actual output", result);
+        Assert.Contains("conv123", result);
+        Assert.DoesNotContain("{", result);
+    }
+
+    [Fact]
+    public void BuildEvaluationPrompt_WithNullConversationId_UsesNA()
+    {
+        // Arrange
+        var template = "Conv: {ConversationId}";
+        var request = new LLMJudgeRequest
+        {
+            TestType = TestType.Similarity,
+            UserInput = "Test",
+            ExpectedResponse = "Expected",
+            ActualResponse = "Actual",
+            ConversationId = null
+        };
+
+        using var service = new LLMJudgeService(_mockLogger.Object, _settings, _mockBlobStorageService.Object);
+        var buildMethod = GetPrivateMethod(service, "BuildEvaluationPrompt");
+
+        // Act
+        var result = (string)buildMethod.Invoke(service, new object[] { template, request })!;
+
+        // Assert
+        Assert.Contains("N/A", result);
+    }
+
+    [Theory]
+    [InlineData(TestType.Similarity, "Similarity")]
+    [InlineData(TestType.Accuracy, "Accuracy")]
+    [InlineData(TestType.Relevancy, "Relevancy")]
+    [InlineData(999, "Unknown")]
+    public void TestType_GetName_ReturnsCorrectName(int testType, string expectedName)
+    {
+        // Act
+        var result = TestType.GetName(testType);
+
+        // Assert
+        Assert.Equal(expectedName, result);
+    }
+
+    [Fact]
+    public void ParseLLMResponse_WithMalformedJson_FallsBackToRegex()
+    {
+        // Arrange
+        var malformedResponse = "Not valid JSON but score: 7";
+        
+        using var service = new LLMJudgeService(_mockLogger.Object, _settings, _mockBlobStorageService.Object);
+        var parseMethod = GetPrivateMethod(service, "ParseLLMResponse");
+
+        // Act
+        var result = (LLMJudgeResponse)parseMethod.Invoke(service, new object[] { malformedResponse })!;
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal(7m, result.Score);
+    }
+
+    [Fact]
+    public void ParseLLMResponse_WithNoScore_ReturnsDefaultScore()
+    {
+        // Arrange
+        var noScoreResponse = "This is a response without any score indicators";
+        
+        using var service = new LLMJudgeService(_mockLogger.Object, _settings, _mockBlobStorageService.Object);
+        var parseMethod = GetPrivateMethod(service, "ParseLLMResponse");
+
+        // Act
+        var result = (LLMJudgeResponse)parseMethod.Invoke(service, new object[] { noScoreResponse })!;
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal(5m, result.Score); // Default neutral score
+    }
+
+    // Helper method to access private methods via reflection
+    private MethodInfo GetPrivateMethod(object obj, string methodName)
+    {
+        var method = obj.GetType().GetMethod(methodName, BindingFlags.NonPublic | BindingFlags.Instance);
+        Assert.NotNull(method);
+        return method;
+    }
+}

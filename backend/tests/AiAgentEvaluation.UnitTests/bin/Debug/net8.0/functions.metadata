@@ -1,0 +1,122 @@
+[
+  {
+    "name": "MonitorEvaluationRuns",
+    "scriptFile": "AiAgentEvaluation.dll",
+    "entryPoint": "AiAgentEvaluation.Functions.MonitorFunction.MonitorEvaluationRuns",
+    "language": "dotnet-isolated",
+    "properties": {
+      "IsCodeless": false
+    },
+    "bindings": [
+      {
+        "name": "myTimer",
+        "direction": "In",
+        "type": "timerTrigger",
+        "schedule": "0 */2 * * * *",
+        "properties": {}
+      }
+    ]
+  },
+  {
+    "name": "HealthCheck",
+    "scriptFile": "AiAgentEvaluation.dll",
+    "entryPoint": "AiAgentEvaluation.Functions.MonitorFunction.HealthCheck",
+    "language": "dotnet-isolated",
+    "properties": {
+      "IsCodeless": false
+    },
+    "bindings": [
+      {
+        "name": "req",
+        "direction": "In",
+        "type": "httpTrigger",
+        "authLevel": "Anonymous",
+        "methods": [
+          "get"
+        ],
+        "route": "api/health",
+        "properties": {}
+      },
+      {
+        "name": "$return",
+        "type": "http",
+        "direction": "Out"
+      }
+    ]
+  },
+  {
+    "name": "StartEvaluationRun",
+    "scriptFile": "AiAgentEvaluation.dll",
+    "entryPoint": "AiAgentEvaluation.Functions.OrchestratorFunction.StartEvaluationRun",
+    "language": "dotnet-isolated",
+    "properties": {
+      "IsCodeless": false
+    },
+    "bindings": [
+      {
+        "name": "req",
+        "direction": "In",
+        "type": "httpTrigger",
+        "authLevel": "Function",
+        "methods": [
+          "post"
+        ],
+        "route": "evaluations/start",
+        "properties": {}
+      },
+      {
+        "name": "$return",
+        "type": "http",
+        "direction": "Out"
+      }
+    ]
+  },
+  {
+    "name": "GetEvaluationRunStatus",
+    "scriptFile": "AiAgentEvaluation.dll",
+    "entryPoint": "AiAgentEvaluation.Functions.OrchestratorFunction.GetEvaluationRunStatus",
+    "language": "dotnet-isolated",
+    "properties": {
+      "IsCodeless": false
+    },
+    "bindings": [
+      {
+        "name": "req",
+        "direction": "In",
+        "type": "httpTrigger",
+        "authLevel": "Function",
+        "methods": [
+          "get"
+        ],
+        "route": "evaluations/{evaluationRunId}/status",
+        "properties": {}
+      },
+      {
+        "name": "$return",
+        "type": "http",
+        "direction": "Out"
+      }
+    ]
+  },
+  {
+    "name": "ProcessTestCase",
+    "scriptFile": "AiAgentEvaluation.dll",
+    "entryPoint": "AiAgentEvaluation.Functions.WorkerFunction.ProcessTestCase",
+    "language": "dotnet-isolated",
+    "properties": {
+      "IsCodeless": false
+    },
+    "bindings": [
+      {
+        "name": "messageBody",
+        "direction": "In",
+        "type": "serviceBusTrigger",
+        "dataType": "String",
+        "queueName": "test-case-processing",
+        "connection": "ServiceBusConnectionString",
+        "cardinality": "One",
+        "properties": {}
+      }
+    ]
+  }
+]

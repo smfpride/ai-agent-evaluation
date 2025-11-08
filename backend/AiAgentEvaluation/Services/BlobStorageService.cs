@@ -145,6 +145,26 @@ public class BlobStorageService : IBlobStorageService, IDisposable
         }
     }
 
+    public async Task UploadPromptTemplateAsync(string templateName, string content, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Uploading prompt template {TemplateName} to blob storage", templateName);
+        
+        await _resilientService.ExecuteAsync(async ct =>
+        {
+            var blobClient = _containerClient.GetBlobClient(templateName);
+            
+            // Convert content to BinaryData
+            var binaryData = BinaryData.FromString(content);
+            
+            // Upload the blob, overwriting if it exists
+            await blobClient.UploadAsync(binaryData, overwrite: true, cancellationToken: ct);
+            
+            _logger.LogInformation("Successfully uploaded prompt template {TemplateName}", templateName);
+        }, "UploadPromptTemplate",
+        exception => exception is RequestFailedException || exception is HttpRequestException,
+        cancellationToken);
+    }
+
     private static string GetDefaultTemplate(string templateName) => templateName switch
     {
         "similarity-evaluation-prompt.txt" => @"
