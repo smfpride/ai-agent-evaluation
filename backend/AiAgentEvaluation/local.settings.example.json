@@ -18,7 +18,12 @@
     "_ServiceBusConnectionString": "Endpoint=sb://your-namespace.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=your-key",
     "_DataverseConnectionString": "AuthType=OAuth;Url=https://yourorg.crm.dynamics.com/;AppId=your-app-id;AppSecret=your-secret;LoginPrompt=Never",
     "_AzureOpenAIApiKey": "your-azure-openai-api-key",
-    "_CopilotStudioDirectLineSecret": "your-copilot-studio-direct-line-secret",
+    
+    "_README4A": "=== COPILOT STUDIO CONFIGURATION ===",
+    "_README4B": "Configure your Copilot Studio token endpoint:",
+    "_CopilotStudio:TokenEndpoint": "https://5b015d5390b8ef2b879fc33717257d.0d.environment.api.powerplatform.com/powervirtualagents/botsbyschema/msdyn_indPersonalShoppingAgent/directline/token?api-version=2022-03-01-preview",
+    "_CopilotStudio:DirectLineEndpoint": "https://directline.botframework.com",
+    "_CopilotStudio:TimeoutSeconds": "30",
     
     "_README5": "=== APPLICATION CONFIGURATION ===",
     "DefaultEvaluationTimeoutMinutes": "5",
@@ -32,7 +37,8 @@
     "_README8": "1. Copy this file to local.settings.json in the AiAgentEvaluation folder",
     "_README9": "2. Remove the underscore prefix from the settings you want to use for local development", 
     "_README10": "3. Replace placeholder values with your actual configuration",
-    "_README11": "4. The function will automatically fall back to connection strings when managed identity is not available"
+    "_README11": "4. For Copilot Studio: Remove underscore from _CopilotStudio:TokenEndpoint and update with your URL",
+    "_README12": "5. The function will automatically fall back to connection strings when managed identity is not available"
   },
   "Host": {
     "LocalHttpPort": 7071,

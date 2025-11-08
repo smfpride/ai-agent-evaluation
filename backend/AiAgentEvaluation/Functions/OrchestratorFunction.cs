@@ -89,6 +89,7 @@ public class OrchestratorFunction
                 testCases.Count, request.EvaluationRunId);
 
             // Create Service Bus messages for all test cases
+            var passingThreshold = evaluationRun.PassingThreshold ?? 0.7m;
             var messages = testCases.Select(testCase => new ProcessTestCaseMessage
             {
                 EvaluationRunId = request.EvaluationRunId,
@@ -98,6 +99,7 @@ public class OrchestratorFunction
                 ExpectedResponse = testCase.ExpectedResponse,
                 TestType = testCase.TestType,
                 ConversationId = testCase.ConversationId,
+                PassingThreshold = passingThreshold,
                 RetryCount = 0,
                 MaxRetries = 3
             }).ToList();
@@ -105,20 +107,35 @@ public class OrchestratorFunction
             // Send messages to Service Bus in batches
             await _serviceBusService.SendBatchTestCaseMessagesAsync(messages, cancellationToken);
 
+            // Calculate estimated completion time
+            // Estimate: ~30 seconds per test case on average (copilot + LLM judge)
+            // With concurrency, divide by max concurrent (assume 100 concurrent by default)
+            var startTime = DateTime.UtcNow;
+            var estimatedSecondsPerTest = 30;
+            var estimatedConcurrency = Math.Min(100, request.MaxConcurrency);
+            var estimatedTotalSeconds = (testCases.Count * estimatedSecondsPerTest) / estimatedConcurrency;
+            var estimatedCompletionTime = startTime.AddSeconds(estimatedTotalSeconds);
+
+            // Build status URL
+            var hostUrl = req.Url.GetLeftPart(UriPartial.Authority);
+            var statusUrl = $"{hostUrl}/api/evaluations/{request.EvaluationRunId}/status";
+
             // Create response
             var response = new StartEvaluationRunResponse
             {
                 EvaluationRunId = request.EvaluationRunId,
                 Status = "Running",
                 TotalTestCases = testCases.Count,
-                StartTime = DateTime.UtcNow,
+                StartTime = startTime,
+                EstimatedCompletionTime = estimatedCompletionTime,
+                StatusUrl = statusUrl,
                 Message = $"Evaluation run started successfully with {testCases.Count} test cases"
             };
 
             _logger.LogInformation("Successfully started evaluation run {EvaluationRunId} with {TestCaseCount} test cases", 
                 request.EvaluationRunId, testCases.Count);
 
-            return await CreateJsonResponse(req, HttpStatusCode.OK, response);
+            return await CreateJsonResponse(req, HttpStatusCode.Accepted, response);
         }
         catch (Exception ex)
         {

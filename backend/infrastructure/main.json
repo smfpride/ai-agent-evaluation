@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.38.33.27573",
-      "templateHash": "15469642169438053812"
+      "templateHash": "988297008968677916"
     }
   },
   "parameters": {
@@ -320,6 +320,30 @@
               "value": "[reference(resourceId('Microsoft.Insights/components', variables('applicationInsightsName')), '2020-02-02').ConnectionString]"
             },
             {
+              "name": "StorageAccountName",
+              "value": "[variables('storageAccountNameValid')]"
+            },
+            {
+              "name": "ServiceBusNamespace",
+              "value": "[variables('serviceBusNamespaceName')]"
+            },
+            {
+              "name": "AzureOpenAIEndpoint",
+              "value": "[reference(resourceId('Microsoft.CognitiveServices/accounts', variables('azureOpenAIAccountName')), '2024-06-01-preview').endpoint]"
+            },
+            {
+              "name": "DataverseBaseUrl",
+              "value": "[format('@Microsoft.KeyVault(VaultName={0};SecretName=DataverseBaseUrl)', variables('keyVaultName'))]"
+            },
+            {
+              "name": "CopilotStudioDirectLineSecret",
+              "value": "[format('@Microsoft.KeyVault(VaultName={0};SecretName=CopilotStudioDirectLineSecret)', variables('keyVaultName'))]"
+            },
+            {
+              "name": "KeyVaultUrl",
+              "value": "[reference(resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName')), '2023-07-01').vaultUri]"
+            },
+            {
               "name": "ServiceBusConnectionString",
               "value": "[format('@Microsoft.KeyVault(VaultName={0};SecretName=ServiceBusConnectionString)', variables('keyVaultName'))]"
             },
@@ -328,24 +352,12 @@
               "value": "[format('@Microsoft.KeyVault(VaultName={0};SecretName=DataverseConnectionString)', variables('keyVaultName'))]"
             },
             {
-              "name": "CopilotStudioDirectLineSecret",
-              "value": "[format('@Microsoft.KeyVault(VaultName={0};SecretName=CopilotStudioDirectLineSecret)', variables('keyVaultName'))]"
-            },
-            {
-              "name": "AzureOpenAIEndpoint",
-              "value": "[reference(resourceId('Microsoft.CognitiveServices/accounts', variables('azureOpenAIAccountName')), '2024-06-01-preview').endpoint]"
-            },
-            {
               "name": "AzureOpenAIApiKey",
               "value": "[format('@Microsoft.KeyVault(VaultName={0};SecretName=AzureOpenAIApiKey)', variables('keyVaultName'))]"
             },
             {
               "name": "StorageAccountConnectionString",
               "value": "[format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix={2}', variables('storageAccountNameValid'), listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountNameValid')), '2023-05-01').keys[0].value, environment().suffixes.storage)]"
-            },
-            {
-              "name": "KeyVaultUrl",
-              "value": "[reference(resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName')), '2023-07-01').vaultUri]"
             },
             {
               "name": "DefaultEvaluationTimeoutMinutes",
@@ -367,6 +379,7 @@
         "[resourceId('Microsoft.Web/serverfarms', format('{0}-plan', variables('functionAppName')))]",
         "[resourceId('Microsoft.CognitiveServices/accounts', variables('azureOpenAIAccountName'))]",
         "[resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName'))]",
+        "[resourceId('Microsoft.ServiceBus/namespaces', variables('serviceBusNamespaceName'))]",
         "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountNameValid'))]"
       ]
     },
@@ -419,9 +432,9 @@
       "type": "Microsoft.Authorization/roleAssignments",
       "apiVersion": "2022-04-01",
       "scope": "[format('Microsoft.CognitiveServices/accounts/{0}', variables('azureOpenAIAccountName'))]",
-      "name": "[guid(resourceId('Microsoft.CognitiveServices/accounts', variables('azureOpenAIAccountName')), resourceId('Microsoft.Web/sites', variables('functionAppName')), 'CognitiveServicesUser')]",
+      "name": "[guid(resourceId('Microsoft.CognitiveServices/accounts', variables('azureOpenAIAccountName')), resourceId('Microsoft.Web/sites', variables('functionAppName')), 'CognitiveServicesOpenAIUser')]",
       "properties": {
-        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'a97b65f3-24c7-4388-baec-2e87135dc908')]",
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')]",
         "principalId": "[reference(resourceId('Microsoft.Web/sites', variables('functionAppName')), '2023-12-01', 'full').identity.principalId]",
         "principalType": "ServicePrincipal"
       },
@@ -451,6 +464,17 @@
       },
       "dependsOn": [
         "[resourceId('Microsoft.CognitiveServices/accounts', variables('azureOpenAIAccountName'))]",
+        "[resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.KeyVault/vaults/secrets",
+      "apiVersion": "2023-07-01",
+      "name": "[format('{0}/{1}', variables('keyVaultName'), 'DataverseBaseUrl')]",
+      "properties": {
+        "value": "PLACEHOLDER - Update with actual Dataverse base URL (e.g., https://orgname.crm.dynamics.com/)"
+      },
+      "dependsOn": [
         "[resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName'))]"
       ]
     },

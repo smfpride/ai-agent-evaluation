@@ -16,8 +16,16 @@ AI Evaluation Dashboard enables quality assurance teams to systematically test a
 The dashboard requires three service configurations:
 
 ### 1. Direct Line API
-- **Endpoint**: Your Copilot Studio Direct Line endpoint
-- **Secret**: Optional authentication secret
+
+The system uses Copilot Studio's token endpoint approach for enhanced security:
+
+- **Token Endpoint**: Your Copilot Studio token endpoint URL
+- **Example**: `https://example.powerplatform.com/powervirtualagents/botsbyschema/agentname/directline/token?api-version=2022-03-01-preview`
+- **Benefits**: Enhanced security with automatic token rotation, no long-lived secrets
+
+The system automatically fetches and refreshes Direct Line tokens as needed.
+
+**📖 See [Copilot Studio Token Endpoint Integration Guide](./docs/copilot-studio-token-endpoint-integration.md) for detailed setup instructions.**
 
 ### 2. Azure OpenAI
 - **Endpoint**: Your Azure OpenAI resource endpoint

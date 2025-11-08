@@ -51,7 +51,14 @@ builder.Services.AddHttpClient();
 
 // Add custom services
 builder.Services.AddScoped<IDataverseService, DataverseService>();
-builder.Services.AddScoped<ICopilotStudioService, CopilotStudioService>();
+builder.Services.AddScoped<ICopilotStudioService>(serviceProvider =>
+{
+    var logger = serviceProvider.GetRequiredService<ILogger<CopilotStudioService>>();
+    var settings = serviceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<AppSettings>>();
+    var httpClient = serviceProvider.GetRequiredService<HttpClient>();
+    var httpClientFactory = serviceProvider.GetRequiredService<IHttpClientFactory>();
+    return new CopilotStudioService(logger, settings, httpClient, httpClientFactory);
+});
 builder.Services.AddScoped<ILLMJudgeService, LLMJudgeService>();
 builder.Services.AddScoped<IServiceBusService, ServiceBusService>();
 builder.Services.AddScoped<IBlobStorageService, BlobStorageService>();

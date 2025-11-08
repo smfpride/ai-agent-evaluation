@@ -10,4 +10,5 @@ public interface ICopilotStudioService
     Task<CopilotDirectLineResponse> SendMessageAsync(string agentId, string userInput, string? conversationId = null, CancellationToken cancellationToken = default);
     Task<string> StartConversationAsync(string agentId, CancellationToken cancellationToken = default);
     Task EndConversationAsync(string conversationId, CancellationToken cancellationToken = default);
+    Task<bool> CheckHealthAsync(CancellationToken cancellationToken = default);
 }

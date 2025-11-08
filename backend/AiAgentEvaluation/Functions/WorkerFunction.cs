@@ -102,12 +102,16 @@ public class WorkerFunction
             // Step 3: Save the evaluation result to Dataverse
             stopwatch.Stop();
 
+            // Calculate passed status based on threshold
+            var passed = judgeResponse.Score >= message.PassingThreshold;
+
             var createResultRequest = new CreateEvaluationResultRequest
             {
                 EvaluationRunId = message.EvaluationRunId,
                 TestCaseId = message.TestCaseId,
                 ActualResponse = copilotResponse.Response,
                 Score = judgeResponse.Score,
+                Passed = passed,
                 Reasoning = judgeResponse.Reasoning,
                 ConversationId = copilotResponse.ConversationId,
                 ExecutionTimeMs = (int)stopwatch.ElapsedMilliseconds
@@ -115,8 +119,14 @@ public class WorkerFunction
 
             var resultId = await _dataverseService.CreateEvaluationResultAsync(createResultRequest, cancellationToken);
 
-            _logger.LogInformation("Successfully processed test case {TestCaseId} - Result ID: {ResultId}, Score: {Score}, Total time: {TotalTime}ms", 
-                message.TestCaseId, resultId, judgeResponse.Score, stopwatch.ElapsedMilliseconds);
+            // Increment the completed test cases counter atomically
+            await _dataverseService.IncrementCompletedTestCasesAsync(
+                message.EvaluationRunId, 
+                failed: false, 
+                cancellationToken);
+
+            _logger.LogInformation("Successfully processed test case {TestCaseId} - Result ID: {ResultId}, Score: {Score}, Passed: {Passed}, Total time: {TotalTime}ms", 
+                message.TestCaseId, resultId, judgeResponse.Score, passed, stopwatch.ElapsedMilliseconds);
         }
         catch (Exception ex)
         {
@@ -150,6 +160,7 @@ public class WorkerFunction
                     ExpectedResponse = message.ExpectedResponse,
                     TestType = message.TestType,
                     ConversationId = message.ConversationId,
+                    PassingThreshold = message.PassingThreshold,
                     RetryCount = message.RetryCount + 1,
                     MaxRetries = message.MaxRetries
                 };
@@ -174,6 +185,12 @@ public class WorkerFunction
             };
 
             await _dataverseService.CreateEvaluationResultAsync(createResultRequest, cancellationToken);
+
+            // Increment the completed test cases counter (as failed)
+            await _dataverseService.IncrementCompletedTestCasesAsync(
+                message.EvaluationRunId, 
+                failed: true, 
+                cancellationToken);
 
             _logger.LogError("Failed to process test case {TestCaseId} after {MaxRetries} retries. Error: {ErrorMessage}", 
                 message.TestCaseId, message.MaxRetries, errorMessage);

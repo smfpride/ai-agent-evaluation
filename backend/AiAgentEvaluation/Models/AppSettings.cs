@@ -25,10 +25,30 @@ public class DataverseSettings
 
 public class CopilotStudioSettings
 {
-    public string DirectLineSecret { get; set; } = string.Empty;
+    /// <summary>
+    /// Copilot Studio token endpoint URL
+    /// Example: "https://5b015d5390b8ef2b879fc33717257d.0d.environment.api.powerplatform.com/powervirtualagents/botsbyschema/msdyn_indPersonalShoppingAgent/directline/token?api-version=2022-03-01-preview"
+    /// </summary>
+    public string TokenEndpoint { get; set; } = string.Empty;
+    
+    /// <summary>
+    /// Direct Line API base URL (typically https://directline.botframework.com)
+    /// </summary>
     public string DirectLineEndpoint { get; set; } = "https://directline.botframework.com";
+    
+    /// <summary>
+    /// Default bot/agent ID for conversations
+    /// </summary>
     public string DefaultBotId { get; set; } = string.Empty;
+    
+    /// <summary>
+    /// HTTP timeout in seconds
+    /// </summary>
     public int TimeoutSeconds { get; set; } = 30;
+    
+    /// <summary>
+    /// Maximum retry attempts for failed requests
+    /// </summary>
     public int MaxRetryAttempts { get; set; } = 3;
 }
 

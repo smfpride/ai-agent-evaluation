@@ -1,0 +1,36 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": {
+      "value": "eastus"
+    },
+    "environmentName": {
+      "value": "staging"
+    },
+    "appName": {
+      "value": "ai-agent-eval"
+    },
+    "functionAppSku": {
+      "value": "EP1"
+    },
+    "functionAppTier": {
+      "value": "ElasticPremium"
+    },
+    "serviceBusSkuName": {
+      "value": "Standard"
+    },
+    "storageAccountType": {
+      "value": "Standard_LRS"
+    },
+    "azureOpenAILocation": {
+      "value": "eastus"
+    },
+    "azureOpenAISkuName": {
+      "value": "S0"
+    },
+    "applicationInsightsType": {
+      "value": "web"
+    }
+  }
+}

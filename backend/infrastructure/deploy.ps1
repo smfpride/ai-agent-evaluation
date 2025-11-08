@@ -27,14 +27,14 @@
 .PARAMETER DataverseBaseUrl
     Dataverse base URL (e.g., https://orgname.crm.dynamics.com/)
 
-.PARAMETER CopilotStudioDirectLineSecret
-    Copilot Studio Direct Line API secret
+.PARAMETER CopilotStudioTokenEndpoint
+    Copilot Studio token endpoint URL (e.g., https://...powerplatform.com/.../directline/token...)
 
 .PARAMETER SkipSecretUpdate
     Skip updating Key Vault secrets (useful for testing infrastructure only)
 
 .EXAMPLE
-    .\deploy.ps1 -SubscriptionId "12345678-1234-1234-1234-123456789012" -ResourceGroupName "rg-ai-agent-eval" -DataverseBaseUrl "https://orgname.crm.dynamics.com/" -CopilotStudioDirectLineSecret "your-secret-here"
+    .\deploy.ps1 -SubscriptionId "12345678-1234-1234-1234-123456789012" -ResourceGroupName "rg-ai-agent-eval" -DataverseBaseUrl "https://orgname.crm.dynamics.com/" -CopilotStudioTokenEndpoint "https://your-token-endpoint-url"
 #>
 
 param(
@@ -57,7 +57,7 @@ param(
     [string]$DataverseBaseUrl,
     
     [Parameter(Mandatory = $false)]
-    [string]$CopilotStudioDirectLineSecret,
+    [string]$CopilotStudioTokenEndpoint,
     
     [Parameter(Mandatory = $false)]
     [switch]$SkipSecretUpdate
@@ -169,13 +169,13 @@ if (-not $SkipSecretUpdate) {
             Write-Warning "⚠️ DataverseBaseUrl not provided - please update manually in Key Vault"
         }
         
-        if ($CopilotStudioDirectLineSecret) {
-            Write-Host "Updating Copilot Studio Direct Line Secret..." -ForegroundColor Yellow
-            Set-AzKeyVaultSecret -VaultName $keyVaultName -Name "CopilotStudioDirectLineSecret" -SecretValue (ConvertTo-SecureString $CopilotStudioDirectLineSecret -AsPlainText -Force)
-            Write-Host "✅ Copilot Studio Direct Line Secret updated" -ForegroundColor Green
+        if ($CopilotStudioTokenEndpoint) {
+            Write-Host "Updating Copilot Studio Token Endpoint..." -ForegroundColor Yellow
+            Set-AzKeyVaultSecret -VaultName $keyVaultName -Name "CopilotStudioTokenEndpoint" -SecretValue (ConvertTo-SecureString $CopilotStudioTokenEndpoint -AsPlainText -Force)
+            Write-Host "✅ Copilot Studio Token Endpoint updated" -ForegroundColor Green
         }
         else {
-            Write-Warning "⚠️ CopilotStudioDirectLineSecret not provided - please update manually in Key Vault"
+            Write-Warning "⚠️ CopilotStudioTokenEndpoint not provided - please update manually in Key Vault"
         }
     }
     catch {

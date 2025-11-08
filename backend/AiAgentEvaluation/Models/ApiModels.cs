@@ -41,6 +41,12 @@ public class StartEvaluationRunResponse
     [JsonPropertyName("startTime")]
     public DateTime StartTime { get; set; }
 
+    [JsonPropertyName("estimatedCompletionTime")]
+    public DateTime? EstimatedCompletionTime { get; set; }
+
+    [JsonPropertyName("statusUrl")]
+    public string? StatusUrl { get; set; }
+
     [JsonPropertyName("message")]
     public string? Message { get; set; }
 }
@@ -72,6 +78,9 @@ public class ProcessTestCaseMessage
 
     [JsonPropertyName("conversationId")]
     public string? ConversationId { get; set; }
+
+    [JsonPropertyName("passingThreshold")]
+    public decimal PassingThreshold { get; set; } = 0.7m;
 
     [JsonPropertyName("retryCount")]
     public int RetryCount { get; set; } = 0;

@@ -23,18 +23,19 @@ param azureOpenAISkuName string = 'S0'
 @description('Application Insights configuration')
 param applicationInsightsType string = 'web'
 
-// Variables
-var resourcePrefix = '${appName}-${environmentName}-${uniqueSuffix}'
-var storageAccountName = replace('${appName}${environmentName}${uniqueSuffix}', '-', '')
-var functionAppName = '${resourcePrefix}-func'
-var serviceBusNamespaceName = '${resourcePrefix}-sb'
-var keyVaultName = '${resourcePrefix}-kv'
-var applicationInsightsName = '${resourcePrefix}-ai'
-var logAnalyticsWorkspaceName = '${resourcePrefix}-logs'
-var azureOpenAIAccountName = '${resourcePrefix}-openai'
+// Variables - Simplified naming for Azure constraints
+var shortPrefix = 'aie${environmentName}${take(uniqueSuffix, 4)}'  // ai-eval shortened to aie
+var storageAccountName = replace('st${shortPrefix}', '-', '')  // Storage account needs 'st' prefix
+var functionAppName = 'func-${shortPrefix}'
+var serviceBusNamespaceName = 'sbus-${shortPrefix}'  // Changed from -sb (reserved) to sbus
+var keyVaultName = 'kv-${shortPrefix}'  // Short kv prefix
+var applicationInsightsName = 'ai-${shortPrefix}'
+var logAnalyticsWorkspaceName = 'logs-${shortPrefix}'
+var azureOpenAIAccountName = 'openai-${shortPrefix}'
 
-// Resource naming validation
-var storageAccountNameValid = length(storageAccountName) <= 24 ? storageAccountName : substring(storageAccountName, 0, 24)
+// Resource naming validation (ensure all names meet Azure constraints)
+var storageAccountNameValid = length(storageAccountName) <= 24 ? storageAccountName : 'st${take(shortPrefix, 20)}'
+var keyVaultNameValid = length(keyVaultName) <= 24 ? keyVaultName : take(keyVaultName, 24)
 
 // Deploy Log Analytics Workspace
 resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
@@ -140,7 +141,7 @@ resource testCaseProcessingQueue 'Microsoft.ServiceBus/namespaces/queues@2022-10
 
 // Deploy Key Vault
 resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
-  name: keyVaultName
+  name: keyVaultNameValid
   location: location
   properties: {
     sku: {
@@ -273,8 +274,8 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
           value: '@Microsoft.KeyVault(VaultName=${keyVault.name};SecretName=DataverseBaseUrl)'
         }
         {
-          name: 'CopilotStudioDirectLineSecret'
-          value: '@Microsoft.KeyVault(VaultName=${keyVault.name};SecretName=CopilotStudioDirectLineSecret)'
+          name: 'CopilotStudioTokenEndpoint'
+          value: '@Microsoft.KeyVault(VaultName=${keyVault.name};SecretName=CopilotStudioTokenEndpoint)'
         }
         {
           name: 'KeyVaultUrl'
@@ -390,11 +391,11 @@ resource dataverseConnectionStringSecret 'Microsoft.KeyVault/vaults/secrets@2023
   }
 }
 
-resource copilotStudioSecretSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+resource copilotStudioTokenEndpointSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   parent: keyVault
-  name: 'CopilotStudioDirectLineSecret'
+  name: 'CopilotStudioTokenEndpoint'
   properties: {
-    value: 'PLACEHOLDER - Update with actual Copilot Studio Direct Line secret'
+    value: 'PLACEHOLDER - Update with actual Copilot Studio token endpoint URL'
   }
 }
 

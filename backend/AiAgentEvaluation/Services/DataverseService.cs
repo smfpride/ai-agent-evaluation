@@ -481,6 +481,7 @@ public class DataverseService : IDataverseService, IDisposable
                     "mcicaps_failedtestcases",
                     "mcicaps_starttime",
                     "mcicaps_endtime",
+                    "mcicaps_lastprogressupdate",
                     "statuscode",
                     "statecode",
                     "createdon"
@@ -516,6 +517,7 @@ public class DataverseService : IDataverseService, IDisposable
                     FailedTestCases = entity.GetAttributeValue<int>("mcicaps_failedtestcases"),
                     StartTime = entity.GetAttributeValue<DateTime?>("mcicaps_starttime"),
                     EndTime = entity.GetAttributeValue<DateTime?>("mcicaps_endtime"),
+                    LastProgressUpdate = entity.GetAttributeValue<DateTime?>("mcicaps_lastprogressupdate"),
                     StateCode = entity.GetAttributeValue<int>("statecode"),
                     StatusCode = entity.GetAttributeValue<OptionSetValue>("statuscode")?.Value ?? 1,
                     CreatedOn = entity.GetAttributeValue<DateTime>("createdon")
@@ -628,6 +630,73 @@ public class DataverseService : IDataverseService, IDisposable
             
             _logger.LogInformation("Successfully updated evaluation run {EvaluationRunId} completion", evaluationRunId);
         }, "UpdateEvaluationRunCompletion",
+        exception => exception is FaultException<OrganizationServiceFault>,
+        cancellationToken);
+    }
+
+    public async Task IncrementCompletedTestCasesAsync(Guid evaluationRunId, bool failed, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Incrementing completed test cases for evaluation run {EvaluationRunId}, failed={Failed}", 
+            evaluationRunId, failed);
+        
+        if (_serviceClient == null || !_serviceClient.IsReady)
+        {
+            throw new InvalidOperationException("Dataverse service client is not ready");
+        }
+
+        await _resilientService.ExecuteAsync(async ct =>
+        {
+            // Retrieve current values
+            var query = new QueryExpression("mcicaps_evaluationruns")
+            {
+                ColumnSet = new ColumnSet("mcicaps_completedtestcases", "mcicaps_failedtestcases", "mcicaps_totaltestcases"),
+                Criteria = new FilterExpression
+                {
+                    Conditions =
+                    {
+                        new ConditionExpression("mcicaps_evaluationrunsid", ConditionOperator.Equal, evaluationRunId)
+                    }
+                }
+            };
+
+            var result = await Task.Run(() => _serviceClient.RetrieveMultiple(query), ct);
+            
+            if (result.Entities.Count == 0)
+            {
+                _logger.LogWarning("Evaluation run {EvaluationRunId} not found for progress increment", evaluationRunId);
+                return;
+            }
+
+            var entity = result.Entities[0];
+            var completedTestCases = entity.GetAttributeValue<int>("mcicaps_completedtestcases");
+            var failedTestCases = entity.GetAttributeValue<int>("mcicaps_failedtestcases");
+            var totalTestCases = entity.GetAttributeValue<int>("mcicaps_totaltestcases");
+
+            // Increment counters
+            var newCompletedCount = completedTestCases + 1;
+            var updateEntity = new Entity("mcicaps_evaluationruns", evaluationRunId);
+            updateEntity["mcicaps_completedtestcases"] = newCompletedCount;
+            
+            if (failed)
+            {
+                updateEntity["mcicaps_failedtestcases"] = failedTestCases + 1;
+            }
+
+            // Calculate and update progress percentage
+            if (totalTestCases > 0)
+            {
+                var progressPercentage = ((decimal)newCompletedCount / totalTestCases) * 100;
+                updateEntity["mcicaps_progresspercentage"] = Math.Round(progressPercentage, 2);
+            }
+
+            // Update last progress timestamp
+            updateEntity["mcicaps_lastprogressupdate"] = DateTime.UtcNow;
+
+            await Task.Run(() => _serviceClient.Update(updateEntity), ct);
+            
+            _logger.LogInformation("Successfully incremented completed test cases for evaluation run {EvaluationRunId}: {CompletedCount}/{TotalCount}", 
+                evaluationRunId, newCompletedCount, totalTestCases);
+        }, "IncrementCompletedTestCases",
         exception => exception is FaultException<OrganizationServiceFault>,
         cancellationToken);
     }

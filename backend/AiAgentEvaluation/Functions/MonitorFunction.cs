@@ -16,6 +16,7 @@ public class MonitorFunction
     private readonly ILLMJudgeService _llmJudgeService;
     private readonly IBlobStorageService _blobStorageService;
     private const int MaxRunningTimeMinutes = 120; // 2 hours max runtime
+    private const int MaxNoProgressMinutes = 30; // 30 minutes with no progress = stalled
     private const decimal DefaultPassingThreshold = 0.7m; // 70% default threshold
 
     public MonitorFunction(
@@ -94,6 +95,45 @@ public class MonitorFunction
             {
                 _logger.LogWarning("Evaluation run {EvaluationRunId} has been running for {Minutes} minutes, marking as errored",
                     evaluationRun.Id, runningTime.TotalMinutes);
+                
+                await _dataverseService.UpdateEvaluationRunCompletionAsync(
+                    evaluationRun.Id,
+                    EvaluationRunStatus.Errored,
+                    null,
+                    false,
+                    DateTime.UtcNow,
+                    cancellationToken);
+                return;
+            }
+        }
+
+        // Check if evaluation has made no progress for extended period
+        if (evaluationRun.LastProgressUpdate.HasValue)
+        {
+            var timeSinceProgress = DateTime.UtcNow - evaluationRun.LastProgressUpdate.Value;
+            if (timeSinceProgress.TotalMinutes > MaxNoProgressMinutes)
+            {
+                _logger.LogWarning("Evaluation run {EvaluationRunId} has made no progress for {Minutes} minutes, marking as errored",
+                    evaluationRun.Id, timeSinceProgress.TotalMinutes);
+                
+                await _dataverseService.UpdateEvaluationRunCompletionAsync(
+                    evaluationRun.Id,
+                    EvaluationRunStatus.Errored,
+                    null,
+                    false,
+                    DateTime.UtcNow,
+                    cancellationToken);
+                return;
+            }
+        }
+        else if (evaluationRun.StartTime.HasValue)
+        {
+            // If no progress update yet, use start time as baseline
+            var timeSinceStart = DateTime.UtcNow - evaluationRun.StartTime.Value;
+            if (timeSinceStart.TotalMinutes > MaxNoProgressMinutes)
+            {
+                _logger.LogWarning("Evaluation run {EvaluationRunId} has had no progress since start ({Minutes} minutes), marking as errored",
+                    evaluationRun.Id, timeSinceStart.TotalMinutes);
                 
                 await _dataverseService.UpdateEvaluationRunCompletionAsync(
                     evaluationRun.Id,

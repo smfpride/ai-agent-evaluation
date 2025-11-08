@@ -37,6 +37,9 @@ public class EvaluationRun
     [JsonPropertyName("mcicaps_endtime")]
     public DateTime? EndTime { get; set; }
 
+    [JsonPropertyName("mcicaps_lastprogressupdate")]
+    public DateTime? LastProgressUpdate { get; set; }
+
     [JsonPropertyName("mcicaps_totaltestcases")]
     public int TotalTestCases { get; set; }
 
@@ -45,6 +48,9 @@ public class EvaluationRun
 
     [JsonPropertyName("mcicaps_failedtestcases")]
     public int FailedTestCases { get; set; }
+
+    [JsonPropertyName("mcicaps_progresspercentage")]
+    public decimal? ProgressPercentage { get; set; }
 
     [JsonPropertyName("mcicaps_overallscore")]
     public decimal? OverallScore { get; set; }

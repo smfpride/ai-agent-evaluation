@@ -29,6 +29,9 @@ public class EvaluationResult
     [JsonPropertyName("mcicaps_score")]
     public decimal? Score { get; set; }
 
+    [JsonPropertyName("mcicaps_passed")]
+    public bool? Passed { get; set; }
+
     [JsonPropertyName("mcicaps_reasoning")]
     public string? Reasoning { get; set; }
 

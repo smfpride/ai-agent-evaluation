@@ -9,85 +9,36 @@ using System.Text.Json.Serialization;
 namespace AiAgentEvaluation.Services;
 
 /// <summary>
-/// Direct Line API conversation response
-/// </summary>
-public class DirectLineConversationResponse
-{
-    [JsonPropertyName("conversationId")]
-    public string? ConversationId { get; set; }
-
-    [JsonPropertyName("token")]
-    public string? Token { get; set; }
-
-    [JsonPropertyName("expires_in")]
-    public int ExpiresIn { get; set; }
-}
-
-/// <summary>
-/// Direct Line API activity message
-/// </summary>
-public class DirectLineActivity
-{
-    [JsonPropertyName("type")]
-    public string Type { get; set; } = "message";
-
-    [JsonPropertyName("from")]
-    public DirectLineFrom From { get; set; } = new();
-
-    [JsonPropertyName("text")]
-    public string? Text { get; set; }
-
-    [JsonPropertyName("id")]
-    public string? Id { get; set; }
-
-    [JsonPropertyName("timestamp")]
-    public DateTime Timestamp { get; set; }
-
-    [JsonPropertyName("channelId")]
-    public string ChannelId { get; set; } = "directline";
-}
-
-/// <summary>
-/// Direct Line API from/to identity
-/// </summary>
-public class DirectLineFrom
-{
-    [JsonPropertyName("id")]
-    public string Id { get; set; } = "user";
-
-    [JsonPropertyName("name")]
-    public string? Name { get; set; }
-}
-
-/// <summary>
-/// Direct Line API activities response
-/// </summary>
-public class DirectLineActivitiesResponse
-{
-    [JsonPropertyName("activities")]
-    public DirectLineActivity[] Activities { get; set; } = Array.Empty<DirectLineActivity>();
-
-    [JsonPropertyName("watermark")]
-    public string? Watermark { get; set; }
-}
-
-/// <summary>
-/// Implementation of Copilot Studio service using Direct Line API 3.0
+/// Implementation of Copilot Studio service using Direct Line API 3.0 with token endpoint
+/// This version gets Direct Line tokens from a Copilot Studio token endpoint
 /// </summary>
 public class CopilotStudioService : ICopilotStudioService, IDisposable
 {
     private readonly ILogger<CopilotStudioService> _logger;
     private readonly AppSettings _settings;
     private readonly HttpClient _httpClient;
+    private readonly HttpClient _tokenHttpClient;
     private readonly JsonSerializerOptions _jsonOptions;
     private readonly ResilientService _resilientService;
     private bool _disposed;
+    
+    // Cache token until it expires (with some buffer time)
+    private string? _cachedToken;
+    private DateTime _tokenExpiry = DateTime.MinValue;
+    private readonly object _tokenLock = new object();
 
-    public CopilotStudioService(ILogger<CopilotStudioService> logger, IOptions<AppSettings> settings, HttpClient httpClient)
+    public CopilotStudioService(
+        ILogger<CopilotStudioService> logger, 
+        IOptions<AppSettings> settings, 
+        HttpClient httpClient,
+        IHttpClientFactory httpClientFactory)
     {
         _logger = logger;
         _settings = settings.Value;
         _httpClient = httpClient;
+        
+        // Create a separate HttpClient for token requests (without auth headers)
+        _tokenHttpClient = httpClientFactory.CreateClient();
         
         // Initialize resilient service
         _resilientService = new ResilientService(_logger, settings);
@@ -98,10 +49,79 @@ public class CopilotStudioService : ICopilotStudioService, IDisposable
             DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
         };
 
-        // Configure HttpClient for Direct Line API
+        // Configure HttpClient for Direct Line API (without auth - we'll set it per request)
         _httpClient.BaseAddress = new Uri(_settings.CopilotStudio.DirectLineEndpoint);
-        _httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {_settings.CopilotStudio.DirectLineSecret}");
         _httpClient.Timeout = TimeSpan.FromSeconds(_settings.CopilotStudio.TimeoutSeconds);
+    }
+
+    /// <summary>
+    /// Get a valid Direct Line token, using cached token if still valid or fetching a new one
+    /// </summary>
+    private async Task<string> GetValidTokenAsync(CancellationToken cancellationToken = default)
+    {
+        lock (_tokenLock)
+        {
+            // Return cached token if still valid (with 5-minute buffer)
+            if (!string.IsNullOrEmpty(_cachedToken) && 
+                _tokenExpiry > DateTime.UtcNow.AddMinutes(5))
+            {
+                return _cachedToken;
+            }
+        }
+
+        // Need to fetch a new token
+        return await FetchNewTokenAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Fetch a new token from the Copilot Studio token endpoint
+    /// </summary>
+    private async Task<string> FetchNewTokenAsync(CancellationToken cancellationToken = default)
+    {
+        var tokenEndpoint = _settings.CopilotStudio.TokenEndpoint;
+        
+        if (string.IsNullOrEmpty(tokenEndpoint))
+        {
+            throw new InvalidOperationException("Copilot Studio token endpoint is not configured. Set CopilotStudio:TokenEndpoint to your token endpoint URL.");
+        }
+
+        _logger.LogDebug("Fetching new Direct Line token from endpoint");
+
+        var response = await _tokenHttpClient.GetAsync(tokenEndpoint, cancellationToken);
+        response.EnsureSuccessStatusCode();
+
+        var content = await response.Content.ReadAsStringAsync(cancellationToken);
+        var tokenResponse = JsonSerializer.Deserialize<CopilotStudioTokenResponse>(content, _jsonOptions);
+
+        if (string.IsNullOrEmpty(tokenResponse?.Token))
+        {
+            throw new InvalidOperationException("Failed to get Direct Line token - no token returned from endpoint");
+        }
+
+        lock (_tokenLock)
+        {
+            _cachedToken = tokenResponse.Token;
+            _tokenExpiry = DateTime.UtcNow.AddSeconds(tokenResponse.ExpiresIn);
+        }
+
+        _logger.LogDebug("Successfully obtained Direct Line token, expires in {ExpiresIn} seconds", tokenResponse.ExpiresIn);
+        return tokenResponse.Token;
+    }
+
+    /// <summary>
+    /// Create an authenticated HttpClient with current token
+    /// </summary>
+    private async Task<HttpClient> GetAuthenticatedHttpClientAsync(CancellationToken cancellationToken = default)
+    {
+        var token = await GetValidTokenAsync(cancellationToken);
+        
+        // Clear any existing auth headers
+        _httpClient.DefaultRequestHeaders.Authorization = null;
+        
+        // Set the Bearer token
+        _httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {token}");
+        
+        return _httpClient;
     }
 
     public async Task<CopilotDirectLineResponse> SendMessageAsync(string agentId, string userInput, string? conversationId = null, CancellationToken cancellationToken = default)
@@ -170,7 +190,8 @@ public class CopilotStudioService : ICopilotStudioService, IDisposable
         var json = JsonSerializer.Serialize(activity, _jsonOptions);
         var content = new StringContent(json, Encoding.UTF8, "application/json");
 
-        var response = await _httpClient.PostAsync($"/v3/directline/conversations/{conversationId}/activities", content, cancellationToken);
+        var httpClient = await GetAuthenticatedHttpClientAsync(cancellationToken);
+        var response = await httpClient.PostAsync($"/v3/directline/conversations/{conversationId}/activities", content, cancellationToken);
         response.EnsureSuccessStatusCode();
         
         _logger.LogDebug("Sent activity to conversation {ConversationId}", conversationId);
@@ -192,7 +213,8 @@ public class CopilotStudioService : ICopilotStudioService, IDisposable
                     url += $"?watermark={watermark}";
                 }
 
-                var response = await _httpClient.GetAsync(url, cancellationToken);
+                var httpClient = await GetAuthenticatedHttpClientAsync(cancellationToken);
+                var response = await httpClient.GetAsync(url, cancellationToken);
                 response.EnsureSuccessStatusCode();
 
                 var content = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -241,7 +263,8 @@ public class CopilotStudioService : ICopilotStudioService, IDisposable
         {
             _logger.LogInformation("Starting conversation with agent {AgentId}", agentId);
             
-            var response = await _httpClient.PostAsync("/v3/directline/conversations", null, ct);
+            var httpClient = await GetAuthenticatedHttpClientAsync(ct);
+            var response = await httpClient.PostAsync("/v3/directline/conversations", null, ct);
             response.EnsureSuccessStatusCode();
             
             var content = await response.Content.ReadAsStringAsync(ct);
@@ -281,6 +304,42 @@ public class CopilotStudioService : ICopilotStudioService, IDisposable
         }
     }
 
+    public async Task<bool> CheckHealthAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            if (_httpClient == null)
+            {
+                _logger.LogWarning("Copilot Studio HTTP client is not initialized");
+                return false;
+            }
+
+            // Try to get a token to verify the token endpoint works
+            var token = await GetValidTokenAsync(cancellationToken);
+            
+            if (string.IsNullOrEmpty(token))
+            {
+                _logger.LogWarning("Failed to obtain Direct Line token for health check");
+                return false;
+            }
+
+            // Verify that we can reach the Direct Line API endpoint with the token
+            var httpClient = await GetAuthenticatedHttpClientAsync(cancellationToken);
+            var response = await httpClient.GetAsync("/v3/directline", cancellationToken);
+            
+            // Accept any response (including 405 Method Not Allowed) as long as we can connect
+            var isHealthy = response.StatusCode != System.Net.HttpStatusCode.ServiceUnavailable;
+            
+            _logger.LogDebug("Copilot Studio health check {Status}", isHealthy ? "passed" : "failed");
+            return isHealthy;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Copilot Studio health check failed");
+            return false;
+        }
+    }
+
     public void Dispose()
     {
         Dispose(true);
@@ -291,6 +350,7 @@ public class CopilotStudioService : ICopilotStudioService, IDisposable
     {
         if (!_disposed && disposing)
         {
+            _tokenHttpClient?.Dispose();
             // HttpClient is typically managed by DI container, so we don't dispose it here
             _disposed = true;
         }
