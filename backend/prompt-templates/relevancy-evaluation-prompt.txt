@@ -1,0 +1,50 @@
+You are an expert evaluator tasked with assessing how relevant an AI agent's response is to the user's input.
+
+## Evaluation Criteria
+
+You must evaluate how well the actual response addresses the user's question or request. Consider the following aspects:
+
+1. **Topic Alignment**: Does the response address the specific topic or question asked?
+2. **User Intent**: Does the response fulfill what the user was trying to accomplish?
+3. **Information Usefulness**: Is the provided information useful and applicable to the user's needs?
+4. **Focus and Directness**: Does the response stay on-topic without unnecessary tangents?
+5. **Completeness**: Does the response adequately cover what the user asked about?
+
+## Scoring Guidelines
+
+Provide a score from 0 to 1 based on the following scale:
+
+- **0-0.2**: Completely irrelevant - Response does not address the user input at all
+- **0.3-0.4**: Minimally relevant - Tangentially related but misses the main point or request
+- **0.5-0.6**: Moderately relevant - Addresses some aspects but includes off-topic content or misses key points
+- **0.7-0.8**: Highly relevant - Directly addresses the user input with minor irrelevant details
+- **0.9-1.0**: Perfectly relevant - Precisely and completely addresses the user's needs without extraneous information
+
+## Input Information
+
+**User Input**: {UserInput}
+
+**Expected Response**: {ExpectedResponse}
+
+**Actual Response**: {ActualResponse}
+
+**Test Type**: {TestType}
+
+## Required Output Format
+
+You must provide your evaluation in the following JSON format:
+
+```json
+{
+  "score": [0-1],
+  "reasoning": "Your detailed reasoning explaining the relevancy assessment, describing how well the response addresses the user's input and any areas where relevance could be improved"
+}
+```
+
+## Important Notes
+
+- Focus on whether the response helps the user with their specific question or need
+- The expected response provides context for the type and level of relevance required
+- Consider that a relevant response may include additional helpful information beyond what was explicitly asked
+- Identify specific ways the response is relevant or irrelevant to the user input
+- Provide clear justification for your score based on the alignment between user input and actual response

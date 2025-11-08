@@ -132,7 +132,7 @@ public class LLMJudgeRequest
 public class LLMJudgeResponse
 {
     [JsonPropertyName("score")]
-    [Range(0, 10)]
+    [Range(0, 1)]
     public decimal Score { get; set; }
 
     [JsonPropertyName("reasoning")]
