@@ -5,7 +5,6 @@ using Microsoft.Extensions.Options;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Query;
-using Azure.Identity;
 using System.ServiceModel;
 
 namespace AiAgentEvaluation.Services;
@@ -31,40 +30,22 @@ public class DataverseService : IDataverseService, IDisposable
 
         try
         {
-            // Use managed identity for authentication when possible
-            if (!string.IsNullOrEmpty(_settings.Dataverse.BaseUrl))
+            if (string.IsNullOrEmpty(_settings.Dataverse.ConnectionString))
             {
-                // Use managed identity with Dataverse URL
-                var credential = new DefaultAzureCredential();
-                var connectionString = $"Url={_settings.Dataverse.BaseUrl};AuthType=Managed Identity";
-                
-                _serviceClient = new ServiceClient(connectionString);
-                
-                if (!_serviceClient.IsReady)
-                {
-                    _logger.LogError("Failed to connect to Dataverse with managed identity: {Error}", _serviceClient.LastError);
-                    throw new InvalidOperationException($"Failed to connect to Dataverse: {_serviceClient.LastError}");
-                }
-                
-                _logger.LogInformation("Successfully connected to Dataverse with managed identity");
+                throw new InvalidOperationException("Dataverse ConnectionString is required. Please configure DataverseConnectionString with OAuth authentication (AuthType=OAuth).");
             }
-            else if (!string.IsNullOrEmpty(_settings.Dataverse.ConnectionString))
+
+            // Dataverse only supports OAuth, Certificate, ClientSecret, or Office365 authentication
+            // Managed Identity is NOT supported and not on the roadmap
+            _serviceClient = new ServiceClient(_settings.Dataverse.ConnectionString);
+            
+            if (!_serviceClient.IsReady)
             {
-                // Fallback to connection string for local development
-                _serviceClient = new ServiceClient(_settings.Dataverse.ConnectionString);
-                
-                if (!_serviceClient.IsReady)
-                {
-                    _logger.LogError("Failed to connect to Dataverse: {Error}", _serviceClient.LastError);
-                    throw new InvalidOperationException($"Failed to connect to Dataverse: {_serviceClient.LastError}");
-                }
-                
-                _logger.LogWarning("Using connection string for Dataverse - this should only be used for local development");
+                _logger.LogError("Failed to connect to Dataverse: {Error}", _serviceClient.LastError);
+                throw new InvalidOperationException($"Failed to connect to Dataverse: {_serviceClient.LastError}");
             }
-            else
-            {
-                throw new InvalidOperationException("Dataverse BaseUrl is not configured. Please set Dataverse:BaseUrl for managed identity authentication.");
-            }
+            
+            _logger.LogInformation("Successfully connected to Dataverse using OAuth authentication");
         }
         catch (Exception ex)
         {
