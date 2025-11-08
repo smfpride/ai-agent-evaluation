@@ -1,0 +1,36 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environmentName": {
+      "value": "prod"
+    },
+    "appName": {
+      "value": "ai-agent-eval"
+    },
+    "location": {
+      "value": "East US"
+    },
+    "functionAppSku": {
+      "value": "EP1"
+    },
+    "functionAppTier": {
+      "value": "ElasticPremium"
+    },
+    "serviceBusSkuName": {
+      "value": "Premium"
+    },
+    "storageAccountType": {
+      "value": "Standard_ZRS"
+    },
+    "azureOpenAILocation": {
+      "value": "East US"
+    },
+    "azureOpenAISkuName": {
+      "value": "S0"
+    },
+    "applicationInsightsType": {
+      "value": "web"
+    }
+  }
+}

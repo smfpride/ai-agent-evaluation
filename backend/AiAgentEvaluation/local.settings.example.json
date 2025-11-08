@@ -1,0 +1,42 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
+    
+    "_README": "=== MANAGED IDENTITY CONFIGURATION (Azure Production) ===",
+    "_README2": "In Azure, the function will use these managed identity settings:",
+    "StorageAccountName": "your-storage-account-name",
+    "ServiceBusNamespace": "your-servicebus-namespace.servicebus.windows.net",
+    "AzureOpenAIEndpoint": "https://your-openai-resource.openai.azure.com/",
+    "DataverseBaseUrl": "https://yourorg.crm.dynamics.com/",
+    "KeyVaultUrl": "https://your-keyvault.vault.azure.net/",
+    
+    "_README3": "=== LOCAL DEVELOPMENT FALLBACK CONFIGURATION ===",
+    "_README4": "For local development, uncomment and configure these connection strings:",
+    "_StorageAccountConnectionString": "DefaultEndpointsProtocol=https;AccountName=your-storage;AccountKey=your-key;EndpointSuffix=core.windows.net",
+    "_ServiceBusConnectionString": "Endpoint=sb://your-namespace.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=your-key",
+    "_DataverseConnectionString": "AuthType=OAuth;Url=https://yourorg.crm.dynamics.com/;AppId=your-app-id;AppSecret=your-secret;LoginPrompt=Never",
+    "_AzureOpenAIApiKey": "your-azure-openai-api-key",
+    "_CopilotStudioDirectLineSecret": "your-copilot-studio-direct-line-secret",
+    
+    "_README5": "=== APPLICATION CONFIGURATION ===",
+    "DefaultEvaluationTimeoutMinutes": "5",
+    "MaxConcurrentTestCases": "100",
+    "PromptTemplateContainerName": "evaluation-prompts",
+    
+    "_README6": "=== AZURE FUNCTIONS CONFIGURATION ===",
+    "APPLICATIONINSIGHTS_CONNECTION_STRING": "InstrumentationKey=your-key;IngestionEndpoint=https://your-region.in.applicationinsights.azure.com/;LiveEndpoint=https://your-region.livediagnostics.monitor.azure.com/",
+    
+    "_README7": "=== HOW TO USE THIS FILE ===",
+    "_README8": "1. Copy this file to local.settings.json in the AiAgentEvaluation folder",
+    "_README9": "2. Remove the underscore prefix from the settings you want to use for local development", 
+    "_README10": "3. Replace placeholder values with your actual configuration",
+    "_README11": "4. The function will automatically fall back to connection strings when managed identity is not available"
+  },
+  "Host": {
+    "LocalHttpPort": 7071,
+    "CORS": "*",
+    "CORSCredentials": false
+  }
+}

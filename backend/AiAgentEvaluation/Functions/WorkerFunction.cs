@@ -1,0 +1,186 @@
+using Microsoft.Azure.Functions.Worker;
+using Microsoft.Extensions.Logging;
+using AiAgentEvaluation.Models;
+using AiAgentEvaluation.Services;
+using System.Text.Json;
+
+namespace AiAgentEvaluation.Functions;
+
+/// <summary>
+/// Service Bus Worker Function for processing individual test cases
+/// </summary>
+public class WorkerFunction
+{
+    private readonly ILogger<WorkerFunction> _logger;
+    private readonly IDataverseService _dataverseService;
+    private readonly ICopilotStudioService _copilotStudioService;
+    private readonly ILLMJudgeService _llmJudgeService;
+    private readonly IServiceBusService _serviceBusService;
+
+    public WorkerFunction(
+        ILogger<WorkerFunction> logger,
+        IDataverseService dataverseService,
+        ICopilotStudioService copilotStudioService,
+        ILLMJudgeService llmJudgeService,
+        IServiceBusService serviceBusService)
+    {
+        _logger = logger;
+        _dataverseService = dataverseService;
+        _copilotStudioService = copilotStudioService;
+        _llmJudgeService = llmJudgeService;
+        _serviceBusService = serviceBusService;
+    }
+
+    [Function("ProcessTestCase")]
+    public async Task ProcessTestCase(
+        [ServiceBusTrigger("test-case-processing", Connection = "ServiceBusConnectionString")] 
+        string messageBody,
+        CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("Processing test case message: {MessageBody}", messageBody);
+
+        ProcessTestCaseMessage? message = null;
+        try
+        {
+            // Parse the message
+            message = JsonSerializer.Deserialize<ProcessTestCaseMessage>(messageBody);
+            if (message == null)
+            {
+                _logger.LogError("Failed to deserialize message: {MessageBody}", messageBody);
+                return;
+            }
+
+            _logger.LogInformation("Processing test case {TestCaseId} for evaluation run {EvaluationRunId}", 
+                message.TestCaseId, message.EvaluationRunId);
+
+            // Start processing timer
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
+            // Step 1: Get the agent response from Copilot Studio
+            var copilotResponse = await _copilotStudioService.SendMessageAsync(
+                message.AgentId ?? string.Empty, 
+                message.UserInput, 
+                message.ConversationId,
+                cancellationToken);
+
+            if (!copilotResponse.Success)
+            {
+                _logger.LogWarning("Copilot Studio call failed for test case {TestCaseId}: {ErrorMessage}", 
+                    message.TestCaseId, copilotResponse.ErrorMessage);
+                
+                await HandleTestCaseError(message, copilotResponse.ErrorMessage ?? "Copilot Studio call failed", stopwatch, cancellationToken);
+                return;
+            }
+
+            _logger.LogInformation("Received response from Copilot Studio for test case {TestCaseId} in {ExecutionTime}ms", 
+                message.TestCaseId, copilotResponse.ExecutionTimeMs);
+
+            // Step 2: Evaluate the response using LLM Judge
+            var judgeRequest = new LLMJudgeRequest
+            {
+                TestType = message.TestType,
+                UserInput = message.UserInput,
+                ExpectedResponse = message.ExpectedResponse,
+                ActualResponse = copilotResponse.Response,
+                ConversationId = copilotResponse.ConversationId
+            };
+
+            var judgeResponse = await _llmJudgeService.EvaluateResponseAsync(judgeRequest, cancellationToken);
+
+            if (!judgeResponse.Success)
+            {
+                _logger.LogWarning("LLM Judge evaluation failed for test case {TestCaseId}: {ErrorMessage}", 
+                    message.TestCaseId, judgeResponse.ErrorMessage);
+                
+                await HandleTestCaseError(message, judgeResponse.ErrorMessage ?? "LLM Judge evaluation failed", stopwatch, cancellationToken);
+                return;
+            }
+
+            _logger.LogInformation("LLM Judge evaluation completed for test case {TestCaseId} with score {Score} in {ExecutionTime}ms", 
+                message.TestCaseId, judgeResponse.Score, judgeResponse.ExecutionTimeMs);
+
+            // Step 3: Save the evaluation result to Dataverse
+            stopwatch.Stop();
+
+            var createResultRequest = new CreateEvaluationResultRequest
+            {
+                EvaluationRunId = message.EvaluationRunId,
+                TestCaseId = message.TestCaseId,
+                ActualResponse = copilotResponse.Response,
+                Score = judgeResponse.Score,
+                Reasoning = judgeResponse.Reasoning,
+                ConversationId = copilotResponse.ConversationId,
+                ExecutionTimeMs = (int)stopwatch.ElapsedMilliseconds
+            };
+
+            var resultId = await _dataverseService.CreateEvaluationResultAsync(createResultRequest, cancellationToken);
+
+            _logger.LogInformation("Successfully processed test case {TestCaseId} - Result ID: {ResultId}, Score: {Score}, Total time: {TotalTime}ms", 
+                message.TestCaseId, resultId, judgeResponse.Score, stopwatch.ElapsedMilliseconds);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error processing test case {TestCaseId}", message?.TestCaseId ?? Guid.Empty);
+            
+            if (message != null)
+            {
+                var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+                await HandleTestCaseError(message, $"Unexpected error: {ex.Message}", stopwatch, cancellationToken);
+            }
+        }
+    }
+
+    private async Task HandleTestCaseError(ProcessTestCaseMessage message, string errorMessage, System.Diagnostics.Stopwatch stopwatch, CancellationToken cancellationToken)
+    {
+        try
+        {
+            // Check if we should retry
+            if (message.RetryCount < message.MaxRetries)
+            {
+                _logger.LogWarning("Retrying test case {TestCaseId} (attempt {RetryCount}/{MaxRetries})", 
+                    message.TestCaseId, message.RetryCount + 1, message.MaxRetries);
+
+                // Create retry message
+                var retryMessage = new ProcessTestCaseMessage
+                {
+                    EvaluationRunId = message.EvaluationRunId,
+                    TestCaseId = message.TestCaseId,
+                    AgentId = message.AgentId,
+                    UserInput = message.UserInput,
+                    ExpectedResponse = message.ExpectedResponse,
+                    TestType = message.TestType,
+                    ConversationId = message.ConversationId,
+                    RetryCount = message.RetryCount + 1,
+                    MaxRetries = message.MaxRetries
+                };
+                
+                // Send back to Service Bus for retry (with delay)
+                await Task.Delay(TimeSpan.FromSeconds(30 * (message.RetryCount + 1)), cancellationToken);
+                await _serviceBusService.SendTestCaseMessageAsync(retryMessage, cancellationToken);
+                
+                return;
+            }
+
+            // Max retries reached, save error result
+            stopwatch.Stop();
+
+            var createResultRequest = new CreateEvaluationResultRequest
+            {
+                EvaluationRunId = message.EvaluationRunId,
+                TestCaseId = message.TestCaseId,
+                Score = null,
+                ErrorMessage = errorMessage,
+                ExecutionTimeMs = (int)stopwatch.ElapsedMilliseconds
+            };
+
+            await _dataverseService.CreateEvaluationResultAsync(createResultRequest, cancellationToken);
+
+            _logger.LogError("Failed to process test case {TestCaseId} after {MaxRetries} retries. Error: {ErrorMessage}", 
+                message.TestCaseId, message.MaxRetries, errorMessage);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error handling test case failure for {TestCaseId}", message.TestCaseId);
+        }
+    }
+}
