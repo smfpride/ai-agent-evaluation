@@ -18,6 +18,7 @@ public class DataverseService : IDataverseService, IDisposable
     private readonly AppSettings _settings;
     private readonly ServiceClient? _serviceClient;
     private readonly ResilientService _resilientService;
+    private readonly string? _connectionError;
     private bool _disposed;
 
     public DataverseService(ILogger<DataverseService> logger, IOptions<AppSettings> settings)
@@ -32,8 +33,13 @@ public class DataverseService : IDataverseService, IDisposable
         {
             if (string.IsNullOrEmpty(_settings.Dataverse.ConnectionString))
             {
-                throw new InvalidOperationException("Dataverse ConnectionString is required. Please configure DataverseConnectionString with OAuth authentication (AuthType=OAuth).");
+                _connectionError = "Dataverse ConnectionString is required. Please configure DataverseConnectionString with OAuth authentication (AuthenticationType=OAuth).";
+                _logger.LogError(_connectionError);
+                return;
             }
+
+            _logger.LogInformation("Attempting to connect to Dataverse with connection string: {ConnectionString}", 
+                _settings.Dataverse.ConnectionString.Substring(0, Math.Min(50, _settings.Dataverse.ConnectionString.Length)) + "...");
 
             // Dataverse only supports OAuth, Certificate, ClientSecret, or Office365 authentication
             // Managed Identity is NOT supported and not on the roadmap
@@ -41,16 +47,31 @@ public class DataverseService : IDataverseService, IDisposable
             
             if (!_serviceClient.IsReady)
             {
-                _logger.LogError("Failed to connect to Dataverse: {Error}", _serviceClient.LastError);
-                throw new InvalidOperationException($"Failed to connect to Dataverse: {_serviceClient.LastError}");
+                var detailedError = _serviceClient.LastError ?? "Unknown error";
+                var connectionState = _serviceClient.IsReady ? "Ready" : "Not Ready";
+                _connectionError = $"Failed to connect to Dataverse: {detailedError}";
+                
+                _logger.LogError("Dataverse connection failed. State: {State}, Error: {Error}, LastException: {LastException}", 
+                    connectionState, detailedError, _serviceClient.LastException?.ToString() ?? "None");
+                
+                // Log additional diagnostics
+                _logger.LogError("ServiceClient details - IsReady: {IsReady}, ActiveAuthenticationType: {AuthType}, ConnectedOrgFriendlyName: {OrgName}",
+                    _serviceClient.IsReady,
+                    _serviceClient.ActiveAuthenticationType,
+                    _serviceClient.ConnectedOrgFriendlyName ?? "None");
+                
+                return;
             }
             
-            _logger.LogInformation("Successfully connected to Dataverse using OAuth authentication");
+            _logger.LogInformation("Successfully connected to Dataverse using OAuth authentication. Org: {OrgName}, AuthType: {AuthType}", 
+                _serviceClient.ConnectedOrgFriendlyName, _serviceClient.ActiveAuthenticationType);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error initializing Dataverse service");
-            throw;
+            _connectionError = $"Error initializing Dataverse service: {ex.Message}";
+            _logger.LogError(ex, "Error initializing Dataverse service. Connection string length: {Length}, InnerException: {InnerException}", 
+                _settings.Dataverse.ConnectionString?.Length ?? 0, ex.InnerException?.Message ?? "None");
+            // Don't throw - let the service degrade gracefully
         }
     }
 
@@ -60,7 +81,7 @@ public class DataverseService : IDataverseService, IDisposable
         
         if (_serviceClient == null || !_serviceClient.IsReady)
         {
-            throw new InvalidOperationException("Dataverse service client is not ready");
+            throw new InvalidOperationException($"Dataverse service client is not ready. Connection error: {_connectionError}");
         }
 
         return await _resilientService.ExecuteAsync(async ct =>
@@ -688,7 +709,7 @@ public class DataverseService : IDataverseService, IDisposable
         {
             if (_serviceClient == null || !_serviceClient.IsReady)
             {
-                _logger.LogWarning("Dataverse service client is not ready");
+                _logger.LogWarning("Dataverse service client is not ready: {Error}", _connectionError);
                 return false;
             }
 
