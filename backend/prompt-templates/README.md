@@ -47,19 +47,19 @@ All templates support the following placeholders that will be replaced with actu
 
 ## Scoring Scale
 
-All templates use a consistent 0-10 scoring scale:
-- **0-2**: Very poor quality
-- **3-4**: Poor quality with major issues
-- **5-6**: Fair quality with notable room for improvement
-- **7-8**: Good quality with minor issues
-- **9-10**: Excellent quality, meets or exceeds expectations
+All templates use a consistent 0-1 scoring scale:
+- **0-0.2**: Very poor quality
+- **0.3-0.4**: Poor quality with major issues
+- **0.5-0.6**: Fair quality with notable room for improvement
+- **0.7-0.8**: Good quality with minor issues
+- **0.9-1.0**: Excellent quality, meets or exceeds expectations
 
 ## Output Format
 
 All templates require the LLM to return a JSON response with:
 ```json
 {
-  "score": [0-10],
+  "score": [0-1],
   "reasoning": "Detailed explanation of the score"
 }
 ```

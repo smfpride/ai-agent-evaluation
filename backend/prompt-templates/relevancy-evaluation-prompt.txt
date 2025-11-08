@@ -12,13 +12,13 @@ You must evaluate how well the actual response addresses the user's question or 
 
 ## Scoring Guidelines
 
-Provide a score from 0 to 10 based on the following scale:
+Provide a score from 0 to 1 based on the following scale:
 
-- **0-2**: Completely irrelevant - Response does not address the user input at all
-- **3-4**: Minimally relevant - Tangentially related but misses the main point or request
-- **5-6**: Moderately relevant - Addresses some aspects but includes off-topic content or misses key points
-- **7-8**: Highly relevant - Directly addresses the user input with minor irrelevant details
-- **9-10**: Perfectly relevant - Precisely and completely addresses the user's needs without extraneous information
+- **0-0.2**: Completely irrelevant - Response does not address the user input at all
+- **0.3-0.4**: Minimally relevant - Tangentially related but misses the main point or request
+- **0.5-0.6**: Moderately relevant - Addresses some aspects but includes off-topic content or misses key points
+- **0.7-0.8**: Highly relevant - Directly addresses the user input with minor irrelevant details
+- **0.9-1.0**: Perfectly relevant - Precisely and completely addresses the user's needs without extraneous information
 
 ## Input Information
 
@@ -36,7 +36,7 @@ You must provide your evaluation in the following JSON format:
 
 ```json
 {
-  "score": [0-10],
+  "score": [0-1],
   "reasoning": "Your detailed reasoning explaining the relevancy assessment, describing how well the response addresses the user's input and any areas where relevance could be improved"
 }
 ```

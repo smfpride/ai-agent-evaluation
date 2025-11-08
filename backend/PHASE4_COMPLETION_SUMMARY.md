@@ -41,7 +41,7 @@ Created four comprehensive evaluation prompt templates in `backend/prompt-templa
 
 **Template Features:**
 - Consistent structure with evaluation criteria and scoring guidelines
-- JSON output format requirement: `{"score": [0-10], "reasoning": "..."}`
+- JSON output format requirement: `{"score": [0-1], "reasoning": "..."}`
 - Support for placeholders: `{TestType}`, `{UserInput}`, `{ExpectedResponse}`, `{ActualResponse}`, `{ConversationId}`
 - Comprehensive README.md documentation
 
@@ -127,7 +127,7 @@ The following functionality was already implemented in Phase 3:
 **Response Parsing:**
 - `ParseLLMResponse()` - JSON parsing with score and reasoning extraction
 - `ParseLLMResponseWithRegex()` - Fallback parsing using multiple regex patterns
-- Score normalization to 0-10 range
+- Score normalization to 0-1 range
 - Support for numeric and string score formats
 - Keyword-based inference (excellent, good, poor, etc.)
 
@@ -163,7 +163,7 @@ dotnet test --logger "console;verbosity=minimal"
 - ✅ Type-specific evaluation logic
 - ✅ JSON parsing with all edge cases
 - ✅ Regex fallback parsing
-- ✅ Score normalization (range 0-10)
+- ✅ Score normalization (range 0-1)
 - ✅ Placeholder replacement
 - ✅ Error handling
 - ✅ Configuration validation
@@ -233,7 +233,7 @@ The LLM Judge implementation is production-ready and fully tested. The system ca
 - Load custom or default evaluation templates
 - Perform type-specific evaluations (Similarity, Accuracy, Relevancy)
 - Parse LLM responses with robust fallback mechanisms
-- Normalize scores to a consistent 0-10 scale
+- Normalize scores to a consistent 0-1 scale
 - Handle errors gracefully with comprehensive logging
 
 **Ready for Phase 5: Testing & Quality Assurance**

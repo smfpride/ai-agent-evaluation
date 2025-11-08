@@ -107,7 +107,7 @@ public class LLMJudgeServiceTests
     {
         // Arrange
         var jsonResponse = @"{
-            ""score"": 8.5,
+            ""score"": 0.85,
             ""reasoning"": ""The response is highly similar to the expected output.""
         }";
         
@@ -119,7 +119,7 @@ public class LLMJudgeServiceTests
 
         // Assert
         Assert.NotNull(result);
-        Assert.Equal(8.5m, result.Score);
+        Assert.Equal(0.85m, result.Score);
         Assert.Equal("The response is highly similar to the expected output.", result.Reasoning);
     }
 
@@ -128,7 +128,7 @@ public class LLMJudgeServiceTests
     {
         // Arrange
         var jsonResponse = @"{
-            ""score"": ""7"",
+            ""score"": ""0.7"",
             ""reasoning"": ""Good match with minor differences.""
         }";
         
@@ -140,7 +140,7 @@ public class LLMJudgeServiceTests
 
         // Assert
         Assert.NotNull(result);
-        Assert.Equal(7m, result.Score);
+        Assert.Equal(0.7m, result.Score);
     }
 
     [Fact]
@@ -148,7 +148,7 @@ public class LLMJudgeServiceTests
     {
         // Arrange
         var jsonResponse = @"{
-            ""score"": 15,
+            ""score"": 1.5,
             ""reasoning"": ""Score too high""
         }";
         
@@ -158,9 +158,9 @@ public class LLMJudgeServiceTests
         // Act
         var result = (LLMJudgeResponse)parseMethod.Invoke(service, new object[] { jsonResponse })!;
 
-        // Assert - Score should be capped at 10
+        // Assert - Score should be capped at 1
         Assert.NotNull(result);
-        Assert.Equal(10m, result.Score);
+        Assert.Equal(1m, result.Score);
     }
 
     [Fact]
@@ -184,10 +184,10 @@ public class LLMJudgeServiceTests
     }
 
     [Theory]
-    [InlineData("The response scores 8 out of 10", 8)]
-    [InlineData("Rating: 7.5", 7.5)]
-    [InlineData("Score: 6", 6)]
-    [InlineData("This gets 9 points", 9)]
+    [InlineData("The response score: 0.8", 0.8)]
+    [InlineData("Rating: 0.75", 0.75)]
+    [InlineData("Score: 0.6", 0.6)]
+    [InlineData("This gets 0.9 points", 0.9)]
     public void ParseLLMResponseWithRegex_ExtractsScoreCorrectly(string responseText, decimal expectedScore)
     {
         // Arrange
@@ -203,11 +203,11 @@ public class LLMJudgeServiceTests
     }
 
     [Theory]
-    [InlineData("This is an excellent response", 9)]
-    [InlineData("The result is good overall", 7)]
-    [InlineData("This is an average response", 5)]
-    [InlineData("The quality is poor", 3)]
-    [InlineData("This is a terrible response", 1)]
+    [InlineData("This is an excellent response", 0.9)]
+    [InlineData("The result is good overall", 0.7)]
+    [InlineData("This is an average response", 0.5)]
+    [InlineData("The quality is poor", 0.3)]
+    [InlineData("This is a terrible response", 0.1)]
     public void ParseLLMResponseWithRegex_InfersScoreFromKeywords(string responseText, decimal expectedScore)
     {
         // Arrange
@@ -293,7 +293,7 @@ public class LLMJudgeServiceTests
     public void ParseLLMResponse_WithMalformedJson_FallsBackToRegex()
     {
         // Arrange
-        var malformedResponse = "Not valid JSON but score: 7";
+        var malformedResponse = "Not valid JSON but score: 0.7";
         
         using var service = new LLMJudgeService(_mockLogger.Object, _settings, _mockBlobStorageService.Object);
         var parseMethod = GetPrivateMethod(service, "ParseLLMResponse");
@@ -303,7 +303,7 @@ public class LLMJudgeServiceTests
 
         // Assert
         Assert.NotNull(result);
-        Assert.Equal(7m, result.Score);
+        Assert.Equal(0.7m, result.Score);
     }
 
     [Fact]
@@ -320,7 +320,7 @@ public class LLMJudgeServiceTests
 
         // Assert
         Assert.NotNull(result);
-        Assert.Equal(5m, result.Score); // Default neutral score
+        Assert.Equal(0.5m, result.Score); // Default neutral score
     }
 
     // Helper method to access private methods via reflection

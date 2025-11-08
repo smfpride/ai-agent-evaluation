@@ -100,8 +100,8 @@ This project implements a .NET Azure Function system for automated evaluation of
   - ParseLLMResponseWithRegex provides robust fallback parsing
   - Multiple regex patterns for score extraction
   - Keyword-based score inference when no numeric score found
-- [x] **Score Normalization**: 0-10 scale validation with reasoning extraction
-  - Automatic normalization of scores outside 0-10 range
+- [x] **Score Normalization**: 0-1 scale validation with reasoning extraction
+  - Automatic normalization of scores outside 0-1 range
   - Decimal precision support for accurate scoring
   - Reasoning field extracted and preserved from LLM response
 - [x] **Error Handling**: Robust fallback mechanisms and timeout handling
@@ -607,7 +607,7 @@ Get-Content docs/PRD-Agent-Evaluation-Function.md
 - ✅ **Phase 4 Complete: LLM Judge Implementation**
   - ✅ Comprehensive prompt templates for all evaluation types (Similarity, Accuracy, Relevancy)
   - ✅ Template upload functionality via UploadPromptTemplateAsync
-  - ✅ Type-specific evaluation logic with score normalization (0-10 scale)
+  - ✅ Type-specific evaluation logic with score normalization (0-1 scale)
   - ✅ JSON and regex fallback parsing with error handling
   - ✅ 38 unit tests covering all LLM Judge functionality (100% passing)
   - ✅ Full documentation for prompt template system

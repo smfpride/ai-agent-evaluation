@@ -12,13 +12,13 @@ You must evaluate the overall quality of the actual response in relation to the 
 
 ## Scoring Guidelines
 
-Provide a score from 0 to 10 based on the following scale:
+Provide a score from 0 to 1 based on the following scale:
 
-- **0-2**: Very poor - Response is inappropriate, unhelpful, or contains significant issues
-- **3-4**: Poor - Response has major problems but some redeeming qualities
-- **5-6**: Fair - Response is acceptable but has notable room for improvement
-- **7-8**: Good - Response is well-constructed with minor issues
-- **9-10**: Excellent - Response is exemplary and fully meets expectations
+- **0-0.2**: Very poor - Response is inappropriate, unhelpful, or contains significant issues
+- **0.3-0.4**: Poor - Response has major problems but some redeeming qualities
+- **0.5-0.6**: Fair - Response is acceptable but has notable room for improvement
+- **0.7-0.8**: Good - Response is well-constructed with minor issues
+- **0.9-1.0**: Excellent - Response is exemplary and fully meets expectations
 
 ## Input Information
 
@@ -36,7 +36,7 @@ You must provide your evaluation in the following JSON format:
 
 ```json
 {
-  "score": [0-10],
+  "score": [0-1],
   "reasoning": "Your detailed reasoning explaining your assessment, highlighting strengths and weaknesses of the actual response"
 }
 ```

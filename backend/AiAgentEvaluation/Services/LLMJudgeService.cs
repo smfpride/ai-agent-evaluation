@@ -81,7 +81,7 @@ public class LLMJudgeService : ILLMJudgeService, IDisposable
             // Create the chat messages
             var messages = new List<ChatMessage>
             {
-                new SystemChatMessage("You are an expert evaluator. Provide a JSON response with 'score' (0-10) and 'reasoning' fields."),
+                new SystemChatMessage("You are an expert evaluator. Provide a JSON response with 'score' (0-1) and 'reasoning' fields."),
                 new UserChatMessage(evaluationPrompt)
             };
 
@@ -160,8 +160,8 @@ public class LLMJudgeService : ILLMJudgeService, IDisposable
                 reasoning = reasoningElement.GetString() ?? string.Empty;
             }
             
-            // Ensure score is within valid range
-            score = Math.Max(0, Math.Min(10, score));
+            // Ensure score is within valid range (0-1 scale)
+            score = Math.Max(0, Math.Min(1, score));
             
             return new LLMJudgeResponse
             {
@@ -195,7 +195,7 @@ public class LLMJudgeService : ILLMJudgeService, IDisposable
             var match = Regex.Match(responseText, pattern, RegexOptions.IgnoreCase);
             if (match.Success && decimal.TryParse(match.Groups[1].Value, out var extractedScore))
             {
-                score = Math.Max(0, Math.Min(10, extractedScore));
+                score = Math.Max(0, Math.Min(1, extractedScore));
                 break;
             }
         }
@@ -205,17 +205,17 @@ public class LLMJudgeService : ILLMJudgeService, IDisposable
         {
             var lowerText = responseText.ToLowerInvariant();
             if (lowerText.Contains("excellent") || lowerText.Contains("perfect"))
-                score = 9;
+                score = 0.9m;
             else if (lowerText.Contains("good") || lowerText.Contains("satisfactory"))
-                score = 7;
+                score = 0.7m;
             else if (lowerText.Contains("average") || lowerText.Contains("moderate"))
-                score = 5;
+                score = 0.5m;
             else if (lowerText.Contains("poor") || lowerText.Contains("bad"))
-                score = 3;
+                score = 0.3m;
             else if (lowerText.Contains("terrible") || lowerText.Contains("awful"))
-                score = 1;
+                score = 0.1m;
             else
-                score = 5; // Default neutral score
+                score = 0.5m; // Default neutral score
         }
         
         return new LLMJudgeResponse
@@ -250,10 +250,10 @@ public class LLMJudgeService : ILLMJudgeService, IDisposable
 
     private static string GetDefaultPromptTemplate(int testType) => testType switch
     {
-        TestType.Similarity => "Evaluate the similarity between the expected and actual responses. Score from 0-10.",
-        TestType.Accuracy => "Evaluate the accuracy of the actual response compared to the expected response. Score from 0-10.",
-        TestType.Relevancy => "Evaluate how relevant the actual response is to the user input. Score from 0-10.",
-        _ => "Evaluate the response quality. Score from 0-10."
+        TestType.Similarity => "Evaluate the similarity between the expected and actual responses. Score from 0-1.",
+        TestType.Accuracy => "Evaluate the accuracy of the actual response compared to the expected response. Score from 0-1.",
+        TestType.Relevancy => "Evaluate how relevant the actual response is to the user input. Score from 0-1.",
+        _ => "Evaluate the response quality. Score from 0-1."
     };
 
     public void Dispose()

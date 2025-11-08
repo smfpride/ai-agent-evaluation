@@ -12,13 +12,13 @@ You must evaluate whether the actual response contains factually correct and acc
 
 ## Scoring Guidelines
 
-Provide a score from 0 to 10 based on the following scale:
+Provide a score from 0 to 1 based on the following scale:
 
-- **0-2**: Highly inaccurate - Contains significant factual errors or misleading information
-- **3-4**: Partially accurate - Some correct information but notable errors or omissions
-- **5-6**: Moderately accurate - Mostly correct with minor errors or incomplete information
-- **7-8**: Accurate - Factually correct information with very minor issues
-- **9-10**: Highly accurate - Completely accurate, comprehensive, and reliable information
+- **0-0.2**: Highly inaccurate - Contains significant factual errors or misleading information
+- **0.3-0.4**: Partially accurate - Some correct information but notable errors or omissions
+- **0.5-0.6**: Moderately accurate - Mostly correct with minor errors or incomplete information
+- **0.7-0.8**: Accurate - Factually correct information with very minor issues
+- **0.9-1.0**: Highly accurate - Completely accurate, comprehensive, and reliable information
 
 ## Input Information
 
@@ -36,7 +36,7 @@ You must provide your evaluation in the following JSON format:
 
 ```json
 {
-  "score": [0-10],
+  "score": [0-1],
   "reasoning": "Your detailed reasoning explaining the accuracy assessment, pointing out any errors, omissions, or strengths in the actual response"
 }
 ```
