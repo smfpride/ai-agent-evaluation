@@ -63,7 +63,6 @@ public static class ConfigurationExtensions
         var isValid = true;
         var requiredSettings = new Dictionary<string, string[]>
         {
-            ["Dataverse"] = new[] { "BaseUrl" },
             ["ServiceBus"] = new[] { "Namespace", "QueueName" },
             ["AzureOpenAI"] = new[] { "Endpoint", "DeploymentName" },
             ["Storage"] = new[] { "AccountName", "PromptTemplateContainerName" },

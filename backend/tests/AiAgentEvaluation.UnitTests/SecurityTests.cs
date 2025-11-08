@@ -62,8 +62,8 @@ public class SecurityTests
         {
             Dataverse = new DataverseSettings
             {
-                BaseUrl = "https://myorg.crm.dynamics.com/"
-                // No ConnectionString property should be used in production
+                ConnectionString = "AuthType=OAuth;Url=https://myorg.crm.dynamics.com/;..."
+                // Uses OAuth connection string (Managed Identity not supported by Dataverse SDK)
             },
             ServiceBus = new ServiceBusSettings
             {
@@ -91,7 +91,7 @@ public class SecurityTests
         };
 
         // Assert - All configuration uses endpoints/URLs instead of connection strings
-        Assert.NotNull(settings.Dataverse.BaseUrl);
+        Assert.NotNull(settings.Dataverse.ConnectionString);
         Assert.NotNull(settings.ServiceBus.Namespace);
         Assert.NotNull(settings.AzureOpenAI.Endpoint);
         Assert.NotNull(settings.Storage.AccountName);

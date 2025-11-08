@@ -1,5 +1,140 @@
 [
   {
+    "name": "BasicHealth",
+    "scriptFile": "AiAgentEvaluation.dll",
+    "entryPoint": "AiAgentEvaluation.Functions.BasicHealthFunction.BasicHealth",
+    "language": "dotnet-isolated",
+    "properties": {
+      "IsCodeless": false
+    },
+    "bindings": [
+      {
+        "name": "req",
+        "direction": "In",
+        "type": "httpTrigger",
+        "authLevel": "Anonymous",
+        "methods": [
+          "get"
+        ],
+        "route": "health/basic",
+        "properties": {}
+      },
+      {
+        "name": "$return",
+        "type": "http",
+        "direction": "Out"
+      }
+    ]
+  },
+  {
+    "name": "HealthCheck",
+    "scriptFile": "AiAgentEvaluation.dll",
+    "entryPoint": "AiAgentEvaluation.Functions.HealthCheckFunction.HealthCheck",
+    "language": "dotnet-isolated",
+    "properties": {
+      "IsCodeless": false
+    },
+    "bindings": [
+      {
+        "name": "req",
+        "direction": "In",
+        "type": "httpTrigger",
+        "authLevel": "Anonymous",
+        "methods": [
+          "get"
+        ],
+        "route": "health",
+        "properties": {}
+      },
+      {
+        "name": "$return",
+        "type": "http",
+        "direction": "Out"
+      }
+    ]
+  },
+  {
+    "name": "ReadinessCheck",
+    "scriptFile": "AiAgentEvaluation.dll",
+    "entryPoint": "AiAgentEvaluation.Functions.HealthCheckFunction.ReadinessCheck",
+    "language": "dotnet-isolated",
+    "properties": {
+      "IsCodeless": false
+    },
+    "bindings": [
+      {
+        "name": "req",
+        "direction": "In",
+        "type": "httpTrigger",
+        "authLevel": "Anonymous",
+        "methods": [
+          "get"
+        ],
+        "route": "health/ready",
+        "properties": {}
+      },
+      {
+        "name": "$return",
+        "type": "http",
+        "direction": "Out"
+      }
+    ]
+  },
+  {
+    "name": "LivenessCheck",
+    "scriptFile": "AiAgentEvaluation.dll",
+    "entryPoint": "AiAgentEvaluation.Functions.HealthCheckFunction.LivenessCheck",
+    "language": "dotnet-isolated",
+    "properties": {
+      "IsCodeless": false
+    },
+    "bindings": [
+      {
+        "name": "req",
+        "direction": "In",
+        "type": "httpTrigger",
+        "authLevel": "Anonymous",
+        "methods": [
+          "get"
+        ],
+        "route": "health/live",
+        "properties": {}
+      },
+      {
+        "name": "$return",
+        "type": "http",
+        "direction": "Out"
+      }
+    ]
+  },
+  {
+    "name": "HealthCheckDetailed",
+    "scriptFile": "AiAgentEvaluation.dll",
+    "entryPoint": "AiAgentEvaluation.Functions.HealthCheckFunction.HealthCheckDetailed",
+    "language": "dotnet-isolated",
+    "properties": {
+      "IsCodeless": false
+    },
+    "bindings": [
+      {
+        "name": "req",
+        "direction": "In",
+        "type": "httpTrigger",
+        "authLevel": "Function",
+        "methods": [
+          "get"
+        ],
+        "route": "health/detailed",
+        "properties": {}
+      },
+      {
+        "name": "$return",
+        "type": "http",
+        "direction": "Out"
+      }
+    ]
+  },
+  {
     "name": "MonitorEvaluationRuns",
     "scriptFile": "AiAgentEvaluation.dll",
     "entryPoint": "AiAgentEvaluation.Functions.MonitorFunction.MonitorEvaluationRuns",
@@ -12,7 +147,7 @@
         "name": "myTimer",
         "direction": "In",
         "type": "timerTrigger",
-        "schedule": "0 */2 * * * *",
+        "schedule": "0 */1 * * * *",
         "properties": {}
       }
     ]

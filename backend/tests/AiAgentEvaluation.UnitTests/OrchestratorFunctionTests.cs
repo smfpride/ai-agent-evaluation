@@ -73,7 +73,7 @@ public class OrchestratorFunctionTests
         var result = await _orchestratorFunction.StartEvaluationRun(httpRequestData, CancellationToken.None);
 
         // Assert
-        Assert.Equal(HttpStatusCode.OK, result.StatusCode);
+        Assert.Equal(HttpStatusCode.Accepted, result.StatusCode);
         
         // Verify status updated to Running
         _mockDataverseService.Verify(x => x.UpdateEvaluationRunStatusAsync(
@@ -132,7 +132,7 @@ public class OrchestratorFunctionTests
         var result = await _orchestratorFunction.StartEvaluationRun(httpRequestData, CancellationToken.None);
 
         // Assert
-        Assert.Equal(HttpStatusCode.OK, result.StatusCode);
+        Assert.Equal(HttpStatusCode.Accepted, result.StatusCode);
         
         // Verify all 50K messages sent
         _mockServiceBusService.Verify(x => x.SendBatchTestCaseMessagesAsync(
@@ -454,6 +454,9 @@ public class OrchestratorFunctionTests
         {
             mockHttpRequestData.Setup(r => r.Body).Returns(new MemoryStream());
         }
+
+        // Setup URL property
+        mockHttpRequestData.Setup(r => r.Url).Returns(new Uri("https://localhost:7071/api/evaluations/start"));
 
         // Setup CreateResponse method
         mockHttpRequestData.Setup(r => r.CreateResponse())

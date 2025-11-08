@@ -117,7 +117,7 @@ public class ServiceAuthenticationTests : IntegrationTestBase
         Assert.NotNull(settings.Evaluation);
         
         Logger.LogInformation("Configuration loaded successfully");
-        Logger.LogInformation("Dataverse BaseUrl: {DataverseUrl}", string.IsNullOrEmpty(settings.Dataverse.BaseUrl) ? "Not configured" : "Configured");
+        Logger.LogInformation("Dataverse ConnectionString: {DataverseUrl}", string.IsNullOrEmpty(settings.Dataverse.ConnectionString) ? "Not configured" : "Configured");
         Logger.LogInformation("Service Bus Namespace: {ServiceBusNamespace}", string.IsNullOrEmpty(settings.ServiceBus.Namespace) ? "Not configured" : "Configured");
         Logger.LogInformation("Azure OpenAI Endpoint: {OpenAIEndpoint}", string.IsNullOrEmpty(settings.AzureOpenAI.Endpoint) ? "Not configured" : "Configured");
         Logger.LogInformation("Storage Account: {StorageAccount}", string.IsNullOrEmpty(settings.Storage.AccountName) ? "Not configured" : "Configured");
