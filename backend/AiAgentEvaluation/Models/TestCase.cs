@@ -11,7 +11,7 @@ public class TestCase
     [JsonPropertyName("mcicaps_testcaseid")]
     public Guid Id { get; set; }
 
-    [JsonPropertyName("mcicaps_name")]
+    [JsonPropertyName("mcicaps_testcasename")]
     [Required]
     public string Name { get; set; } = string.Empty;
 
@@ -23,7 +23,7 @@ public class TestCase
     [Required]
     public int TestType { get; set; }
 
-    [JsonPropertyName("mcicaps_userinput")]
+    [JsonPropertyName("mcicaps_prompt")]
     [Required]
     public string UserInput { get; set; } = string.Empty;
 

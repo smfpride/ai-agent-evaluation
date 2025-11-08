@@ -90,7 +90,7 @@ public class DataverseService : IDataverseService, IDisposable
             {
                 ColumnSet = new ColumnSet(
                     "mcicaps_evaluationrunsid", 
-                    "mcicaps_name", 
+                    "mcicaps_runname", 
                     "mcicaps_testset", 
                     "mcicaps_agentid",
                     "mcicaps_agentname",
@@ -132,7 +132,7 @@ public class DataverseService : IDataverseService, IDisposable
             return new EvaluationRun
             {
                 Id = entity.Id,
-                Name = entity.GetAttributeValue<string>("mcicaps_name") ?? string.Empty,
+                Name = entity.GetAttributeValue<string>("mcicaps_runname") ?? string.Empty,
                 AgentId = entity.GetAttributeValue<string>("mcicaps_agentid") ?? string.Empty,
                 AgentName = entity.GetAttributeValue<string>("mcicaps_agentname"),
                 Description = entity.GetAttributeValue<string>("mcicaps_description"),
@@ -172,8 +172,8 @@ public class DataverseService : IDataverseService, IDisposable
             {
                 ColumnSet = new ColumnSet(
                     "mcicaps_testcasesid",
-                    "mcicaps_name",
-                    "mcicaps_userinput",
+                    "mcicaps_testcasename",
+                    "mcicaps_prompt",
                     "mcicaps_expectedresponse",
                     "mcicaps_testtype",
                     "mcicaps_conversationid",
@@ -203,9 +203,9 @@ public class DataverseService : IDataverseService, IDisposable
                 testCases.Add(new TestCase
                 {
                     Id = entity.Id,
-                    Name = entity.GetAttributeValue<string>("mcicaps_name") ?? string.Empty,
+                    Name = entity.GetAttributeValue<string>("mcicaps_testcasename") ?? string.Empty,
                     EvaluationRunId = evaluationRunId,
-                    UserInput = entity.GetAttributeValue<string>("mcicaps_userinput") ?? string.Empty,
+                    UserInput = entity.GetAttributeValue<string>("mcicaps_prompt") ?? string.Empty,
                     ExpectedResponse = entity.GetAttributeValue<string>("mcicaps_expectedresponse") ?? string.Empty,
                     TestType = testTypeValue,
                     ConversationId = entity.GetAttributeValue<string>("mcicaps_conversationid"),
@@ -363,8 +363,8 @@ public class DataverseService : IDataverseService, IDisposable
             {
                 ColumnSet = new ColumnSet(
                     "mcicaps_testcasesid",
-                    "mcicaps_name",
-                    "mcicaps_userinput",
+                    "mcicaps_testcasename",
+                    "mcicaps_prompt",
                     "mcicaps_expectedresponse",
                     "mcicaps_testtype",
                     "mcicaps_conversationid",
@@ -396,9 +396,9 @@ public class DataverseService : IDataverseService, IDisposable
             return new TestCase
             {
                 Id = entity.Id,
-                Name = entity.GetAttributeValue<string>("mcicaps_name") ?? string.Empty,
+                Name = entity.GetAttributeValue<string>("mcicaps_testcasename") ?? string.Empty,
                 EvaluationRunId = entity.GetAttributeValue<EntityReference>("mcicaps_evaluationrun")?.Id ?? Guid.Empty,
-                UserInput = entity.GetAttributeValue<string>("mcicaps_userinput") ?? string.Empty,
+                UserInput = entity.GetAttributeValue<string>("mcicaps_prompt") ?? string.Empty,
                 ExpectedResponse = entity.GetAttributeValue<string>("mcicaps_expectedresponse") ?? string.Empty,
                 TestType = testTypeValue,
                 ConversationId = entity.GetAttributeValue<string>("mcicaps_conversationid"),
@@ -470,7 +470,7 @@ public class DataverseService : IDataverseService, IDisposable
             {
                 ColumnSet = new ColumnSet(
                     "mcicaps_evaluationrunsid", 
-                    "mcicaps_name", 
+                    "mcicaps_runname", 
                     "mcicaps_agentid",
                     "mcicaps_passingthreshold",
                     "mcicaps_overallpass",
@@ -506,7 +506,7 @@ public class DataverseService : IDataverseService, IDisposable
                 evaluationRuns.Add(new EvaluationRun
                 {
                     Id = entity.Id,
-                    Name = entity.GetAttributeValue<string>("mcicaps_name") ?? string.Empty,
+                    Name = entity.GetAttributeValue<string>("mcicaps_runname") ?? string.Empty,
                     AgentId = entity.GetAttributeValue<string>("mcicaps_agentid") ?? string.Empty,
                     PassingThreshold = entity.GetAttributeValue<decimal?>("mcicaps_passingthreshold"),
                     OverallScore = entity.GetAttributeValue<decimal?>("mcicaps_overallscore"),
@@ -549,7 +549,7 @@ public class DataverseService : IDataverseService, IDisposable
             {
                 ColumnSet = new ColumnSet(
                     "mcicaps_evaluationresultid",
-                    "mcicaps_name",
+                    "mcicaps_evaluationresultname",
                     "mcicaps_evaluationrun",
                     "mcicaps_testcase",
                     "mcicaps_actualresponse",
@@ -581,7 +581,7 @@ public class DataverseService : IDataverseService, IDisposable
                 evaluationResults.Add(new EvaluationResult
                 {
                     Id = entity.Id,
-                    Name = entity.GetAttributeValue<string>("mcicaps_name") ?? string.Empty,
+                    Name = entity.GetAttributeValue<string>("mcicaps_evaluationresultname") ?? string.Empty,
                     EvaluationRunId = entity.GetAttributeValue<EntityReference>("mcicaps_evaluationrun")?.Id ?? Guid.Empty,
                     TestCaseId = entity.GetAttributeValue<EntityReference>("mcicaps_testcase")?.Id ?? Guid.Empty,
                     ActualResponse = entity.GetAttributeValue<string>("mcicaps_actualresponse"),

@@ -11,7 +11,7 @@ public class EvaluationRun
     [JsonPropertyName("mcicaps_evaluationrunid")]
     public Guid Id { get; set; }
 
-    [JsonPropertyName("mcicaps_name")]
+    [JsonPropertyName("mcicaps_runname")]
     [Required]
     public string Name { get; set; } = string.Empty;
 
