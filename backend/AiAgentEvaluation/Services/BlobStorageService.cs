@@ -242,6 +242,35 @@ Please provide your evaluation in the following JSON format:
         _ => "Default evaluation prompt template"
     };
 
+    public async Task<bool> CheckHealthAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            if (_blobServiceClient == null || _containerClient == null)
+            {
+                _logger.LogWarning("Blob Storage client is not initialized");
+                return false;
+            }
+
+            // Check if the container exists to verify connectivity
+            var exists = await _containerClient.ExistsAsync(cancellationToken);
+            
+            if (!exists.Value)
+            {
+                _logger.LogWarning("Blob Storage container {ContainerName} does not exist", _containerClient.Name);
+                return false;
+            }
+            
+            _logger.LogDebug("Blob Storage health check passed");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Blob Storage health check failed");
+            return false;
+        }
+    }
+
     public void Dispose()
     {
         Dispose(true);

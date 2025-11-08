@@ -49,6 +49,12 @@ public class EvaluationRun
     [JsonPropertyName("mcicaps_overallscore")]
     public decimal? OverallScore { get; set; }
 
+    [JsonPropertyName("mcicaps_overallpass")]
+    public bool? OverallPass { get; set; }
+
+    [JsonPropertyName("mcicaps_passingthreshold")]
+    public decimal? PassingThreshold { get; set; }
+
     [JsonPropertyName("mcicaps_similarityscore")]
     public decimal? SimilarityScore { get; set; }
 

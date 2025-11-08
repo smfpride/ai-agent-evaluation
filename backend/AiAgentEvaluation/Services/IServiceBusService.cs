@@ -9,4 +9,5 @@ public interface IServiceBusService
 {
     Task SendTestCaseMessageAsync(ProcessTestCaseMessage message, CancellationToken cancellationToken = default);
     Task SendBatchTestCaseMessagesAsync(IEnumerable<ProcessTestCaseMessage> messages, CancellationToken cancellationToken = default);
+    Task<bool> CheckHealthAsync(CancellationToken cancellationToken = default);
 }

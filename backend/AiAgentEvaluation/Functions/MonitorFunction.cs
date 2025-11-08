@@ -12,47 +12,229 @@ public class MonitorFunction
 {
     private readonly ILogger<MonitorFunction> _logger;
     private readonly IDataverseService _dataverseService;
+    private readonly IServiceBusService _serviceBusService;
+    private readonly ILLMJudgeService _llmJudgeService;
+    private readonly IBlobStorageService _blobStorageService;
+    private const int MaxRunningTimeMinutes = 120; // 2 hours max runtime
+    private const decimal DefaultPassingThreshold = 0.7m; // 70% default threshold
 
     public MonitorFunction(
         ILogger<MonitorFunction> logger,
-        IDataverseService dataverseService)
+        IDataverseService dataverseService,
+        IServiceBusService serviceBusService,
+        ILLMJudgeService llmJudgeService,
+        IBlobStorageService blobStorageService)
     {
         _logger = logger;
         _dataverseService = dataverseService;
+        _serviceBusService = serviceBusService;
+        _llmJudgeService = llmJudgeService;
+        _blobStorageService = blobStorageService;
     }
 
     [Function("MonitorEvaluationRuns")]
     public async Task MonitorEvaluationRuns(
-        [TimerTrigger("0 */2 * * * *")] TimerInfo myTimer, // Every 2 minutes
+        [TimerTrigger("0 */1 * * * *")] TimerInfo myTimer, // Every 1 minute
         CancellationToken cancellationToken)
     {
-        _logger.LogInformation("Monitor function executed at: {timestamp}", DateTime.UtcNow);
+        var startTime = DateTime.UtcNow;
+        _logger.LogInformation("Monitor function executed at: {Timestamp}", startTime);
 
         try
         {
-            // TODO: Implement monitoring logic
-            // For now, this is a placeholder that logs the execution
+            // Get all running evaluation runs
+            var runningEvaluations = await _dataverseService.GetRunningEvaluationRunsAsync(cancellationToken);
             
-            _logger.LogInformation("Monitoring evaluation runs - checking for completion and calculating scores");
+            if (runningEvaluations.Count == 0)
+            {
+                _logger.LogInformation("No running evaluation runs found");
+                return;
+            }
 
-            // In a real implementation, this function would:
-            // 1. Query Dataverse for running evaluation runs
-            // 2. For each running evaluation run:
-            //    a. Count completed test cases vs total test cases
-            //    b. If all test cases are complete, calculate final scores
-            //    c. Update the evaluation run status to Completed
-            //    d. Set the end time
-            // 3. Handle any timeout scenarios
-            // 4. Generate completion notifications
+            _logger.LogInformation("Found {Count} running evaluation runs to monitor", runningEvaluations.Count);
 
-            await Task.Delay(100, cancellationToken); // Placeholder
-            
-            _logger.LogInformation("Monitor function completed successfully");
+            // Process each running evaluation
+            foreach (var evaluationRun in runningEvaluations)
+            {
+                try
+                {
+                    await ProcessEvaluationRunAsync(evaluationRun, cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, 
+                        "Error processing evaluation run {EvaluationRunId} ({EvaluationRunName})", 
+                        evaluationRun.Id, evaluationRun.Name);
+                    // Continue processing other evaluation runs
+                }
+            }
+
+            var duration = DateTime.UtcNow - startTime;
+            _logger.LogInformation("Monitor function completed successfully in {Duration}ms", duration.TotalMilliseconds);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error in monitor function");
         }
+    }
+
+    /// <summary>
+    /// Process a single evaluation run to check completion and calculate metrics
+    /// </summary>
+    private async Task ProcessEvaluationRunAsync(EvaluationRun evaluationRun, CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("Processing evaluation run {EvaluationRunId} ({EvaluationRunName}): {CompletedTestCases}/{TotalTestCases} completed",
+            evaluationRun.Id, evaluationRun.Name, evaluationRun.CompletedTestCases, evaluationRun.TotalTestCases);
+
+        // Check if evaluation has stalled (running longer than max time)
+        if (evaluationRun.StartTime.HasValue)
+        {
+            var runningTime = DateTime.UtcNow - evaluationRun.StartTime.Value;
+            if (runningTime.TotalMinutes > MaxRunningTimeMinutes)
+            {
+                _logger.LogWarning("Evaluation run {EvaluationRunId} has been running for {Minutes} minutes, marking as errored",
+                    evaluationRun.Id, runningTime.TotalMinutes);
+                
+                await _dataverseService.UpdateEvaluationRunCompletionAsync(
+                    evaluationRun.Id,
+                    EvaluationRunStatus.Errored,
+                    null,
+                    false,
+                    DateTime.UtcNow,
+                    cancellationToken);
+                return;
+            }
+        }
+
+        // Check if all test cases are completed
+        if (evaluationRun.CompletedTestCases < evaluationRun.TotalTestCases)
+        {
+            _logger.LogInformation("Evaluation run {EvaluationRunId} still in progress: {CompletedTestCases}/{TotalTestCases}",
+                evaluationRun.Id, evaluationRun.CompletedTestCases, evaluationRun.TotalTestCases);
+            return;
+        }
+
+        _logger.LogInformation("Evaluation run {EvaluationRunId} completed all test cases, calculating final metrics",
+            evaluationRun.Id);
+
+        // Get all evaluation results
+        var results = await _dataverseService.GetEvaluationResultsAsync(evaluationRun.Id, cancellationToken);
+        
+        if (results.Count == 0)
+        {
+            _logger.LogWarning("No evaluation results found for completed evaluation run {EvaluationRunId}",
+                evaluationRun.Id);
+            
+            await _dataverseService.UpdateEvaluationRunCompletionAsync(
+                evaluationRun.Id,
+                EvaluationRunStatus.Errored,
+                null,
+                false,
+                DateTime.UtcNow,
+                cancellationToken);
+            return;
+        }
+
+        // Calculate overall metrics
+        var metrics = CalculateMetrics(results, evaluationRun);
+        
+        // Determine pass/fail status based on threshold
+        var passingThreshold = evaluationRun.PassingThreshold ?? DefaultPassingThreshold;
+        var overallPass = metrics.OverallScore >= passingThreshold;
+
+        // Update evaluation run with completion status and metrics
+        await _dataverseService.UpdateEvaluationRunScoresAsync(
+            evaluationRun.Id,
+            metrics.OverallScore,
+            metrics.SimilarityScore,
+            metrics.AccuracyScore,
+            metrics.RelevancyScore,
+            cancellationToken);
+
+        await _dataverseService.UpdateEvaluationRunCompletionAsync(
+            evaluationRun.Id,
+            EvaluationRunStatus.Completed,
+            metrics.OverallScore,
+            overallPass,
+            DateTime.UtcNow,
+            cancellationToken);
+
+        _logger.LogInformation(
+            "Evaluation run {EvaluationRunId} completed successfully: OverallScore={OverallScore:F3}, Pass={Pass}, " +
+            "SimilarityScore={SimilarityScore:F3}, AccuracyScore={AccuracyScore:F3}, RelevancyScore={RelevancyScore:F3}",
+            evaluationRun.Id, metrics.OverallScore, overallPass,
+            metrics.SimilarityScore, metrics.AccuracyScore, metrics.RelevancyScore);
+    }
+
+    /// <summary>
+    /// Calculate overall metrics from evaluation results
+    /// </summary>
+    private EvaluationMetrics CalculateMetrics(List<EvaluationResult> results, EvaluationRun evaluationRun)
+    {
+        // Filter out results with errors or null scores
+        var validResults = results.Where(r => r.Score.HasValue && string.IsNullOrEmpty(r.ErrorMessage)).ToList();
+        
+        if (validResults.Count == 0)
+        {
+            _logger.LogWarning("No valid results found for evaluation run {EvaluationRunId}", evaluationRun.Id);
+            return new EvaluationMetrics();
+        }
+
+        // Get test cases to determine test types
+        var testCases = _dataverseService.GetTestCasesAsync(evaluationRun.Id).GetAwaiter().GetResult();
+        var testCaseDict = testCases.ToDictionary(tc => tc.Id, tc => tc.TestType);
+
+        // Calculate overall average score
+        var overallScore = validResults.Average(r => r.Score!.Value);
+
+        // Calculate type-specific scores
+        var similarityResults = validResults.Where(r => 
+            testCaseDict.TryGetValue(r.TestCaseId, out var type) && type == TestType.Similarity).ToList();
+        var accuracyResults = validResults.Where(r => 
+            testCaseDict.TryGetValue(r.TestCaseId, out var type) && type == TestType.Accuracy).ToList();
+        var relevancyResults = validResults.Where(r => 
+            testCaseDict.TryGetValue(r.TestCaseId, out var type) && type == TestType.Relevancy).ToList();
+
+        var metrics = new EvaluationMetrics
+        {
+            OverallScore = overallScore,
+            SimilarityScore = similarityResults.Any() ? similarityResults.Average(r => r.Score!.Value) : (decimal?)null,
+            AccuracyScore = accuracyResults.Any() ? accuracyResults.Average(r => r.Score!.Value) : (decimal?)null,
+            RelevancyScore = relevancyResults.Any() ? relevancyResults.Average(r => r.Score!.Value) : (decimal?)null,
+            TotalResults = results.Count,
+            ValidResults = validResults.Count,
+            ErrorCount = results.Count - validResults.Count,
+            SimilarityCount = similarityResults.Count,
+            AccuracyCount = accuracyResults.Count,
+            RelevancyCount = relevancyResults.Count
+        };
+
+        _logger.LogInformation(
+            "Calculated metrics for evaluation run {EvaluationRunId}: " +
+            "Total={Total}, Valid={Valid}, Errors={Errors}, " +
+            "Similarity={SimilarityCount}, Accuracy={AccuracyCount}, Relevancy={RelevancyCount}",
+            evaluationRun.Id,
+            metrics.TotalResults, metrics.ValidResults, metrics.ErrorCount,
+            metrics.SimilarityCount, metrics.AccuracyCount, metrics.RelevancyCount);
+
+        return metrics;
+    }
+
+    /// <summary>
+    /// Internal class for storing calculated metrics
+    /// </summary>
+    private class EvaluationMetrics
+    {
+        public decimal OverallScore { get; set; }
+        public decimal? SimilarityScore { get; set; }
+        public decimal? AccuracyScore { get; set; }
+        public decimal? RelevancyScore { get; set; }
+        public int TotalResults { get; set; }
+        public int ValidResults { get; set; }
+        public int ErrorCount { get; set; }
+        public int SimilarityCount { get; set; }
+        public int AccuracyCount { get; set; }
+        public int RelevancyCount { get; set; }
     }
 
     [Function("HealthCheck")]
@@ -65,28 +247,39 @@ public class MonitorFunction
         
         try
         {
-            // TODO: Add actual health checks for dependencies
-            // - Dataverse connectivity
-            // - Service Bus connectivity  
-            // - Azure OpenAI connectivity
-            // - Blob Storage connectivity
-            
-            await Task.Delay(10, cancellationToken); // Placeholder
+            // Perform health checks for all dependencies
+            var dataverseHealthTask = _dataverseService.CheckHealthAsync(cancellationToken);
+            var serviceBusHealthTask = _serviceBusService.CheckHealthAsync(cancellationToken);
+            var azureOpenAIHealthTask = _llmJudgeService.CheckHealthAsync(cancellationToken);
+            var blobStorageHealthTask = _blobStorageService.CheckHealthAsync(cancellationToken);
+
+            await Task.WhenAll(dataverseHealthTask, serviceBusHealthTask, azureOpenAIHealthTask, blobStorageHealthTask);
+
+            var dataverseHealthy = await dataverseHealthTask;
+            var serviceBusHealthy = await serviceBusHealthTask;
+            var azureOpenAIHealthy = await azureOpenAIHealthTask;
+            var blobStorageHealthy = await blobStorageHealthTask;
+
+            var allHealthy = dataverseHealthy && serviceBusHealthy && azureOpenAIHealthy && blobStorageHealthy;
             
             var healthStatus = new
             {
-                status = "Healthy",
+                status = allHealthy ? "Healthy" : "Degraded",
                 timestamp = DateTime.UtcNow,
                 version = "1.0.0",
                 environment = Environment.GetEnvironmentVariable("AZURE_FUNCTIONS_ENVIRONMENT") ?? "Development",
                 services = new
                 {
-                    dataverse = "Unknown", // TODO: Implement actual checks
-                    serviceBus = "Unknown",
-                    azureOpenAI = "Unknown",
-                    blobStorage = "Unknown"
+                    dataverse = dataverseHealthy ? "Healthy" : "Unhealthy",
+                    serviceBus = serviceBusHealthy ? "Healthy" : "Unhealthy",
+                    azureOpenAI = azureOpenAIHealthy ? "Healthy" : "Unhealthy",
+                    blobStorage = blobStorageHealthy ? "Healthy" : "Unhealthy"
                 }
             };
+
+            _logger.LogInformation("Health check completed: Overall={Status}, Dataverse={Dataverse}, ServiceBus={ServiceBus}, AzureOpenAI={AzureOpenAI}, BlobStorage={BlobStorage}",
+                healthStatus.status, healthStatus.services.dataverse, healthStatus.services.serviceBus, 
+                healthStatus.services.azureOpenAI, healthStatus.services.blobStorage);
 
             return System.Text.Json.JsonSerializer.Serialize(healthStatus, new System.Text.Json.JsonSerializerOptions 
             { 

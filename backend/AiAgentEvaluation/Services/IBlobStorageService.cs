@@ -9,4 +9,5 @@ public interface IBlobStorageService
     Task<bool> PromptTemplateExistsAsync(string templateName, CancellationToken cancellationToken = default);
     Task<List<string>> ListPromptTemplatesAsync(CancellationToken cancellationToken = default);
     Task UploadPromptTemplateAsync(string templateName, string content, CancellationToken cancellationToken = default);
+    Task<bool> CheckHealthAsync(CancellationToken cancellationToken = default);
 }

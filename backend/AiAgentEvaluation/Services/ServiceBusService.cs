@@ -190,6 +190,36 @@ public class ServiceBusService : IServiceBusService, IDisposable
         cancellationToken);
     }
 
+    public async Task<bool> CheckHealthAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            if (_serviceBusClient == null || _sender == null)
+            {
+                _logger.LogWarning("Service Bus client is not initialized");
+                return false;
+            }
+
+            // Create a temporary receiver to peek a message (verifies connectivity without consuming)
+            await using var receiver = _serviceBusClient.CreateReceiver(_settings.ServiceBus.QueueName);
+            await receiver.PeekMessageAsync(cancellationToken: cancellationToken);
+            
+            _logger.LogDebug("Service Bus health check passed");
+            return true;
+        }
+        catch (ServiceBusException ex) when (ex.Reason == ServiceBusFailureReason.MessagingEntityNotFound)
+        {
+            // Queue exists but is empty - this is still healthy
+            _logger.LogDebug("Service Bus health check passed (queue is empty)");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Service Bus health check failed");
+            return false;
+        }
+    }
+
     public void Dispose()
     {
         Dispose(true);

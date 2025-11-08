@@ -91,6 +91,8 @@ public class DataverseService : IDataverseService, IDisposable
                     "mcicaps_name", 
                     "mcicaps_testset", 
                     "mcicaps_agentid",
+                    "mcicaps_agentname",
+                    "mcicaps_description",
                     "mcicaps_passingthreshold",
                     "mcicaps_overallpass",
                     "mcicaps_overallscore",
@@ -132,7 +134,9 @@ public class DataverseService : IDataverseService, IDisposable
                 AgentId = entity.GetAttributeValue<string>("mcicaps_agentid") ?? string.Empty,
                 AgentName = entity.GetAttributeValue<string>("mcicaps_agentname"),
                 Description = entity.GetAttributeValue<string>("mcicaps_description"),
+                PassingThreshold = entity.GetAttributeValue<decimal?>("mcicaps_passingthreshold"),
                 OverallScore = entity.GetAttributeValue<decimal?>("mcicaps_overallscore"),
+                OverallPass = entity.GetAttributeValue<bool?>("mcicaps_overallpass"),
                 SimilarityScore = entity.GetAttributeValue<decimal?>("mcicaps_similarityscore"),
                 AccuracyScore = entity.GetAttributeValue<decimal?>("mcicaps_accuracyscore"),
                 RelevancyScore = entity.GetAttributeValue<decimal?>("mcicaps_relevancyscore"),
@@ -447,6 +451,208 @@ public class DataverseService : IDataverseService, IDisposable
         }, "SetEvaluationRunEndTime",
         exception => exception is FaultException<OrganizationServiceFault>,
         cancellationToken);
+    }
+
+    public async Task<List<EvaluationRun>> GetRunningEvaluationRunsAsync(CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Getting running evaluation runs");
+        
+        if (_serviceClient == null || !_serviceClient.IsReady)
+        {
+            throw new InvalidOperationException("Dataverse service client is not ready");
+        }
+
+        return await _resilientService.ExecuteAsync(async ct =>
+        {
+            var query = new QueryExpression("mcicaps_evaluationruns")
+            {
+                ColumnSet = new ColumnSet(
+                    "mcicaps_evaluationrunsid", 
+                    "mcicaps_name", 
+                    "mcicaps_agentid",
+                    "mcicaps_passingthreshold",
+                    "mcicaps_overallpass",
+                    "mcicaps_overallscore",
+                    "mcicaps_similarityscore",
+                    "mcicaps_accuracyscore", 
+                    "mcicaps_relevancyscore",
+                    "mcicaps_totaltestcases",
+                    "mcicaps_completedtestcases",
+                    "mcicaps_failedtestcases",
+                    "mcicaps_starttime",
+                    "mcicaps_endtime",
+                    "statuscode",
+                    "statecode",
+                    "createdon"
+                ),
+                Criteria = new FilterExpression
+                {
+                    Conditions =
+                    {
+                        new ConditionExpression("statuscode", ConditionOperator.Equal, EvaluationRunStatus.Running)
+                    }
+                }
+            };
+
+            var result = await Task.Run(() => _serviceClient.RetrieveMultiple(query), ct);
+            
+            var evaluationRuns = new List<EvaluationRun>();
+            
+            foreach (var entity in result.Entities)
+            {
+                evaluationRuns.Add(new EvaluationRun
+                {
+                    Id = entity.Id,
+                    Name = entity.GetAttributeValue<string>("mcicaps_name") ?? string.Empty,
+                    AgentId = entity.GetAttributeValue<string>("mcicaps_agentid") ?? string.Empty,
+                    PassingThreshold = entity.GetAttributeValue<decimal?>("mcicaps_passingthreshold"),
+                    OverallScore = entity.GetAttributeValue<decimal?>("mcicaps_overallscore"),
+                    OverallPass = entity.GetAttributeValue<bool?>("mcicaps_overallpass"),
+                    SimilarityScore = entity.GetAttributeValue<decimal?>("mcicaps_similarityscore"),
+                    AccuracyScore = entity.GetAttributeValue<decimal?>("mcicaps_accuracyscore"),
+                    RelevancyScore = entity.GetAttributeValue<decimal?>("mcicaps_relevancyscore"),
+                    TotalTestCases = entity.GetAttributeValue<int>("mcicaps_totaltestcases"),
+                    CompletedTestCases = entity.GetAttributeValue<int>("mcicaps_completedtestcases"),
+                    FailedTestCases = entity.GetAttributeValue<int>("mcicaps_failedtestcases"),
+                    StartTime = entity.GetAttributeValue<DateTime?>("mcicaps_starttime"),
+                    EndTime = entity.GetAttributeValue<DateTime?>("mcicaps_endtime"),
+                    StateCode = entity.GetAttributeValue<int>("statecode"),
+                    StatusCode = entity.GetAttributeValue<OptionSetValue>("statuscode")?.Value ?? 1,
+                    CreatedOn = entity.GetAttributeValue<DateTime>("createdon")
+                });
+            }
+            
+            _logger.LogInformation("Retrieved {Count} running evaluation runs", evaluationRuns.Count);
+            
+            return evaluationRuns;
+        }, "GetRunningEvaluationRuns",
+        exception => exception is FaultException<OrganizationServiceFault>,
+        cancellationToken);
+    }
+
+    public async Task<List<EvaluationResult>> GetEvaluationResultsAsync(Guid evaluationRunId, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Getting evaluation results for evaluation run {EvaluationRunId}", evaluationRunId);
+        
+        if (_serviceClient == null || !_serviceClient.IsReady)
+        {
+            throw new InvalidOperationException("Dataverse service client is not ready");
+        }
+
+        return await _resilientService.ExecuteAsync(async ct =>
+        {
+            var query = new QueryExpression("mcicaps_evaluationresults")
+            {
+                ColumnSet = new ColumnSet(
+                    "mcicaps_evaluationresultid",
+                    "mcicaps_name",
+                    "mcicaps_evaluationrun",
+                    "mcicaps_testcase",
+                    "mcicaps_actualresponse",
+                    "mcicaps_score",
+                    "mcicaps_reasoning",
+                    "mcicaps_conversationid",
+                    "mcicaps_executiontime",
+                    "mcicaps_errormessage",
+                    "mcicaps_metadata",
+                    "statecode",
+                    "statuscode",
+                    "createdon"
+                ),
+                Criteria = new FilterExpression
+                {
+                    Conditions =
+                    {
+                        new ConditionExpression("mcicaps_evaluationrun", ConditionOperator.Equal, evaluationRunId)
+                    }
+                }
+            };
+
+            var result = await Task.Run(() => _serviceClient.RetrieveMultiple(query), ct);
+            
+            var evaluationResults = new List<EvaluationResult>();
+            
+            foreach (var entity in result.Entities)
+            {
+                evaluationResults.Add(new EvaluationResult
+                {
+                    Id = entity.Id,
+                    Name = entity.GetAttributeValue<string>("mcicaps_name") ?? string.Empty,
+                    EvaluationRunId = entity.GetAttributeValue<EntityReference>("mcicaps_evaluationrun")?.Id ?? Guid.Empty,
+                    TestCaseId = entity.GetAttributeValue<EntityReference>("mcicaps_testcase")?.Id ?? Guid.Empty,
+                    ActualResponse = entity.GetAttributeValue<string>("mcicaps_actualresponse"),
+                    Score = entity.GetAttributeValue<decimal?>("mcicaps_score"),
+                    Reasoning = entity.GetAttributeValue<string>("mcicaps_reasoning"),
+                    ConversationId = entity.GetAttributeValue<string>("mcicaps_conversationid"),
+                    ExecutionTimeMs = entity.GetAttributeValue<int?>("mcicaps_executiontime"),
+                    ErrorMessage = entity.GetAttributeValue<string>("mcicaps_errormessage"),
+                    Metadata = entity.GetAttributeValue<string>("mcicaps_metadata"),
+                    StateCode = entity.GetAttributeValue<int>("statecode"),
+                    StatusCode = entity.GetAttributeValue<OptionSetValue>("statuscode")?.Value ?? 1,
+                    CreatedOn = entity.GetAttributeValue<DateTime>("createdon")
+                });
+            }
+            
+            _logger.LogInformation("Retrieved {Count} evaluation results for evaluation run {EvaluationRunId}", 
+                evaluationResults.Count, evaluationRunId);
+            
+            return evaluationResults;
+        }, "GetEvaluationResults",
+        exception => exception is FaultException<OrganizationServiceFault>,
+        cancellationToken);
+    }
+
+    public async Task UpdateEvaluationRunCompletionAsync(Guid evaluationRunId, int statusCode, decimal? overallScore, bool? overallPass, DateTime endTime, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Updating evaluation run {EvaluationRunId} completion: status={StatusCode}, score={OverallScore}, pass={OverallPass}", 
+            evaluationRunId, statusCode, overallScore, overallPass);
+        
+        if (_serviceClient == null || !_serviceClient.IsReady)
+        {
+            throw new InvalidOperationException("Dataverse service client is not ready");
+        }
+
+        await _resilientService.ExecuteAsync(async ct =>
+        {
+            var updateEntity = new Entity("mcicaps_evaluationruns", evaluationRunId);
+            updateEntity["statuscode"] = new OptionSetValue(statusCode);
+            updateEntity["mcicaps_endtime"] = endTime;
+            
+            if (overallScore.HasValue)
+                updateEntity["mcicaps_overallscore"] = overallScore.Value;
+                
+            if (overallPass.HasValue)
+                updateEntity["mcicaps_overallpass"] = overallPass.Value;
+
+            await Task.Run(() => _serviceClient.Update(updateEntity), ct);
+            
+            _logger.LogInformation("Successfully updated evaluation run {EvaluationRunId} completion", evaluationRunId);
+        }, "UpdateEvaluationRunCompletion",
+        exception => exception is FaultException<OrganizationServiceFault>,
+        cancellationToken);
+    }
+
+    public async Task<bool> CheckHealthAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            if (_serviceClient == null || !_serviceClient.IsReady)
+            {
+                _logger.LogWarning("Dataverse service client is not ready");
+                return false;
+            }
+
+            // Perform a simple WhoAmI request to verify connectivity
+            await Task.Run(() => _serviceClient.Execute(new Microsoft.Crm.Sdk.Messages.WhoAmIRequest()), cancellationToken);
+            
+            _logger.LogDebug("Dataverse health check passed");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Dataverse health check failed");
+            return false;
+        }
     }
 
     public void Dispose()

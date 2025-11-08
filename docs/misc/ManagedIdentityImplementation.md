@@ -64,21 +64,33 @@ _openAIClient = new AzureOpenAIClient(new Uri(_settings.AzureOpenAI.Endpoint), c
 - Removed API key dependency for production
 - Need to verify correct SDK class names
 
-### 3. ServiceBusService - 📋 TODO
+### 3. ServiceBusService - ✅ COMPLETED
 
-**Target Implementation:**
+**Implementation:**
 ```csharp
 var credential = new DefaultAzureCredential();
 _serviceBusClient = new ServiceBusClient(_settings.ServiceBus.Namespace, credential);
+_sender = _serviceBusClient.CreateSender(_settings.ServiceBus.QueueName);
 ```
 
-### 4. DataverseService - 📋 TODO
+**Current Status:** 
+- Fully implemented with managed identity
+- Includes health check capability
+- Fallback to connection string for local development
 
-**Target Implementation:**
+### 4. DataverseService - ✅ COMPLETED
+
+**Implementation:**
 ```csharp
 var credential = new DefaultAzureCredential();
-// Configure PowerPlatform.Dataverse.Client with managed identity
+var connectionString = $"Url={_settings.Dataverse.BaseUrl};AuthType=Managed Identity";
+_serviceClient = new ServiceClient(connectionString);
 ```
+
+**Current Status:** 
+- Fully implemented with managed identity using PowerPlatform.Dataverse.Client
+- Includes health check capability using WhoAmI request
+- Fallback to connection string for local development
 
 ## 🎯 Required RBAC Role Assignments
 

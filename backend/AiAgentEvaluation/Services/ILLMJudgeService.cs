@@ -9,4 +9,5 @@ public interface ILLMJudgeService
 {
     Task<LLMJudgeResponse> EvaluateResponseAsync(LLMJudgeRequest request, CancellationToken cancellationToken = default);
     Task<string> GetPromptTemplateAsync(int testType, CancellationToken cancellationToken = default);
+    Task<bool> CheckHealthAsync(CancellationToken cancellationToken = default);
 }

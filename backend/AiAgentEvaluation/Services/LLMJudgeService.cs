@@ -256,6 +256,41 @@ public class LLMJudgeService : ILLMJudgeService, IDisposable
         _ => "Evaluate the response quality. Score from 0-1."
     };
 
+    public async Task<bool> CheckHealthAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            if (_chatClient == null)
+            {
+                _logger.LogWarning("Azure OpenAI chat client is not initialized");
+                return false;
+            }
+
+            // Send a minimal test request to verify connectivity
+            var testMessages = new List<ChatMessage>
+            {
+                new SystemChatMessage("You are a helpful assistant."),
+                new UserChatMessage("Hello")
+            };
+
+            var options = new ChatCompletionOptions
+            {
+                MaxOutputTokenCount = 10,
+                Temperature = 0
+            };
+
+            await _chatClient.CompleteChatAsync(testMessages, options, cancellationToken);
+            
+            _logger.LogDebug("Azure OpenAI health check passed");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Azure OpenAI health check failed");
+            return false;
+        }
+    }
+
     public void Dispose()
     {
         Dispose(true);
