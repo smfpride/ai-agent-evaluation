@@ -33,6 +33,17 @@ public class TestCase
     [JsonPropertyName("mcicaps_conversationid")]
     public string? ConversationId { get; set; }
 
+    /// <summary>
+    /// Indicates if this test case has multiple turns
+    /// </summary>
+    [JsonPropertyName("mcicaps_ismultiturn")]
+    public bool IsMultiTurn { get; set; }
+
+    /// <summary>
+    /// Collection of turns for multi-turn test cases
+    /// </summary>
+    public List<TestCaseTurn>? Turns { get; set; }
+
     [JsonPropertyName("statecode")]
     public int StateCode { get; set; } = 0; // Default: Active
 

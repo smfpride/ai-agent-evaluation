@@ -260,6 +260,7 @@ public class DataverseService : IDataverseService, IDisposable
                     "mcicaps_prompt",
                     "mcicaps_expectedresponse",
                     "mcicaps_evaluatortype",
+                    "mcicaps_ismultiturn",
                     "createdon"
                 ),
                 Criteria = new FilterExpression
@@ -289,6 +290,7 @@ public class DataverseService : IDataverseService, IDisposable
                     ExpectedResponse = entity.GetAttributeValue<string>("mcicaps_expectedresponse") ?? string.Empty,
                     EvaluatorTypeId = evaluatorTypeRef?.Id,
                     ConversationId = null, // ConversationId is on EvaluationResult, not TestCase
+                    IsMultiTurn = entity.GetAttributeValue<bool>("mcicaps_ismultiturn"),
                     CreatedOn = entity.GetAttributeValue<DateTime>("createdon")
                 });
             }
@@ -467,6 +469,12 @@ public class DataverseService : IDataverseService, IDisposable
             resultEntity["mcicaps_testcase"] = new EntityReference("mcicaps_testcases", request.TestCaseId);
             resultEntity["mcicaps_evaluation"] = new EntityReference("mcicaps_evaluationruns", request.EvaluationRunId);
             resultEntity["mcicaps_actualresponse"] = request.ActualResponse;
+            
+            // Handle multi-turn fields
+            if (request.TestCaseTurnId.HasValue)
+                resultEntity["mcicaps_testcaseturnid"] = new EntityReference("mcicaps_testcaseturns", request.TestCaseTurnId.Value);
+            
+            resultEntity["mcicaps_isaggregate"] = request.IsAggregate;
             
             // Convert decimal to double for Float field in Dataverse
             var scoreAsDouble = Convert.ToDouble(request.Score);
@@ -975,6 +983,121 @@ public class DataverseService : IDataverseService, IDisposable
             _logger.LogWarning(ex, "Dataverse health check failed");
             return false;
         }
+    }
+
+    public async Task<List<TestCaseTurn>> GetTestCaseTurnsAsync(Guid testCaseId, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Getting turns for test case {TestCaseId}", testCaseId);
+        
+        if (_serviceClient == null || !_serviceClient.IsReady)
+        {
+            throw new InvalidOperationException("Dataverse service client is not ready");
+        }
+
+        return await _resilientService.ExecuteAsync(async ct =>
+        {
+            var query = new QueryExpression("mcicaps_testcaseturns")
+            {
+                ColumnSet = new ColumnSet(
+                    "mcicaps_testcaseturnid",
+                    "mcicaps_name",
+                    "mcicaps_testcaseid",
+                    "mcicaps_sequence",
+                    "mcicaps_prompttext",
+                    "mcicaps_expectedresponse",
+                    "createdon",
+                    "modifiedon"
+                ),
+                Criteria = new FilterExpression
+                {
+                    Conditions =
+                    {
+                        new ConditionExpression("mcicaps_testcaseid", ConditionOperator.Equal, testCaseId),
+                        new ConditionExpression("statecode", ConditionOperator.Equal, 0) // Active only
+                    }
+                },
+                Orders =
+                {
+                    new OrderExpression("mcicaps_sequence", OrderType.Ascending)
+                }
+            };
+
+            var result = await Task.Run(() => _serviceClient.RetrieveMultiple(query), ct);
+            
+            var turns = new List<TestCaseTurn>();
+            
+            foreach (var entity in result.Entities)
+            {
+                var testCaseRef = entity.GetAttributeValue<EntityReference>("mcicaps_testcaseid");
+                
+                turns.Add(new TestCaseTurn
+                {
+                    Id = entity.Id,
+                    Name = entity.GetAttributeValue<string>("mcicaps_name") ?? string.Empty,
+                    TestCaseId = testCaseRef?.Id ?? testCaseId,
+                    Sequence = entity.GetAttributeValue<int>("mcicaps_sequence"),
+                    PromptText = entity.GetAttributeValue<string>("mcicaps_prompttext") ?? string.Empty,
+                    ExpectedResponse = entity.GetAttributeValue<string>("mcicaps_expectedresponse"),
+                    CreatedOn = entity.GetAttributeValue<DateTime>("createdon"),
+                    ModifiedOn = entity.GetAttributeValue<DateTime>("modifiedon")
+                });
+            }
+            
+            _logger.LogInformation("Retrieved {Count} turns for test case {TestCaseId}", 
+                turns.Count, testCaseId);
+            
+            return turns;
+        }, "GetTestCaseTurns",
+        exception => exception is FaultException<OrganizationServiceFault>,
+        cancellationToken);
+    }
+
+    public async Task<Guid> CreateAggregateEvaluationResultAsync(MultiTurnExecutionContext context, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Creating aggregate evaluation result for test case {TestCaseId}", context.TestCase.Id);
+        
+        if (_serviceClient == null || !_serviceClient.IsReady)
+        {
+            throw new InvalidOperationException("Dataverse service client is not ready");
+        }
+
+        return await _resilientService.ExecuteAsync(async ct =>
+        {
+            var resultEntity = new Entity("mcicaps_evaluationresults");
+            resultEntity["mcicaps_testcase"] = new EntityReference("mcicaps_testcases", context.TestCase.Id);
+            resultEntity["mcicaps_evaluation"] = new EntityReference("mcicaps_evaluationruns", context.TestRunId);
+            resultEntity["mcicaps_isaggregate"] = true;
+            
+            if (!string.IsNullOrEmpty(context.ConversationId))
+                resultEntity["mcicaps_conversationid"] = context.ConversationId;
+
+            // Calculate aggregate metrics
+            var passRate = context.PassRate;
+            var scoreAsDouble = Convert.ToDouble(passRate);
+            resultEntity["mcicaps_score"] = scoreAsDouble;
+            resultEntity["mcicaps_passed"] = context.PassedTurns == context.TotalTurns;
+
+            // Create summary reasoning
+            var summary = $"Multi-turn test case completed: {context.PassedTurns}/{context.TotalTurns} turns passed ({passRate:P0} pass rate)";
+            resultEntity["mcicaps_reasoning"] = summary;
+
+            // Calculate average execution time
+            var avgExecutionTime = context.TurnResults.Values
+                .Where(r => r.ExecutionTimeMs.HasValue)
+                .Select(r => r.ExecutionTimeMs!.Value)
+                .DefaultIfEmpty(0)
+                .Average();
+            resultEntity["mcicaps_executiontime"] = (int)avgExecutionTime;
+
+            var resultId = await Task.Run(() => _serviceClient.Create(resultEntity), ct);
+            
+            _logger.LogInformation("Successfully created aggregate evaluation result {ResultId} for test case {TestCaseId}", 
+                resultId, context.TestCase.Id);
+            
+            return resultId;
+        }, "CreateAggregateEvaluationResult",
+        exception => exception is FaultException<OrganizationServiceFault>,
+        cancellationToken);
     }
 
     public void Dispose()
