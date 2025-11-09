@@ -127,6 +127,15 @@ catch (Exception ex)
     Console.WriteLine($"Warning: Failed to register ServiceBusService: {ex.Message}");
 }
 
+try
+{
+    builder.Services.AddScoped<IMultiTurnExecutionService, MultiTurnExecutionService>();
+}
+catch (Exception ex)
+{
+    Console.WriteLine($"Warning: Failed to register MultiTurnExecutionService: {ex.Message}");
+}
+
 // Add logging
 builder.Services.AddLogging();
 
