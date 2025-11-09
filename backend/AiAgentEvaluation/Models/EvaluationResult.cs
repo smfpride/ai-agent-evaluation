@@ -23,6 +23,18 @@ public class EvaluationResult
     [Required]
     public Guid TestCaseId { get; set; }
 
+    /// <summary>
+    /// Lookup to specific turn (for multi-turn tests)
+    /// </summary>
+    [JsonPropertyName("_mcicaps_testcaseturnid_value")]
+    public Guid? TestCaseTurnId { get; set; }
+
+    /// <summary>
+    /// Indicates if this is an aggregate result for the overall multi-turn test
+    /// </summary>
+    [JsonPropertyName("mcicaps_isaggregate")]
+    public bool IsAggregate { get; set; }
+
     [JsonPropertyName("mcicaps_actualresponse")]
     public string? ActualResponse { get; set; }
 
@@ -76,6 +88,10 @@ public class CreateEvaluationResultRequest
 
     [Required]
     public Guid TestCaseId { get; set; }
+
+    public Guid? TestCaseTurnId { get; set; }
+
+    public bool IsAggregate { get; set; }
 
     public string? ActualResponse { get; set; }
 
