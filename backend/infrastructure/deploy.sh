@@ -1,117 +1,80 @@
 #!/bin/bash
 
-# Azure Infrastructure Deployment Script for AI Agent Evaluation Function
-# Usage: ./deploy.sh [environment] [resource-group] [subscription-id]
+# Azure Infrastructure Deployment Script
+# Usage: ./deploy.sh [subscription-id] [resource-group] [location] [environment]
 
 set -e
 
-# Default values
-ENVIRONMENT=${1:-dev}
-RESOURCE_GROUP=${2:-ai-agent-eval-$ENVIRONMENT-rg}
-SUBSCRIPTION_ID=${3}
-LOCATION="East US"
+SUBSCRIPTION_ID=${1}
+RESOURCE_GROUP=${2:-rg-agent-eval-staging}
+LOCATION=${3:-eastus}
+ENVIRONMENT=${4:-staging}
 
-# Colors for output
-RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
-echo -e "${BLUE}🚀 AI Agent Evaluation Function - Infrastructure Deployment${NC}"
-echo -e "${BLUE}=================================================${NC}"
-echo ""
-echo -e "Environment: ${GREEN}$ENVIRONMENT${NC}"
-echo -e "Resource Group: ${GREEN}$RESOURCE_GROUP${NC}"
-echo -e "Location: ${GREEN}$LOCATION${NC}"
-echo ""
+echo -e "${GREEN}🚀 Starting deployment...${NC}"
 
-# Set subscription if provided
+# Set subscription
 if [ ! -z "$SUBSCRIPTION_ID" ]; then
-    echo -e "${YELLOW}📋 Setting Azure subscription...${NC}"
+    echo -e "${YELLOW}Authenticating...${NC}"
     az account set --subscription "$SUBSCRIPTION_ID"
-    echo -e "${GREEN}✅ Subscription set to: $SUBSCRIPTION_ID${NC}"
-    echo ""
+    echo -e "${GREEN}✅ Authenticated${NC}"
 fi
 
-# Show current context
-echo -e "${YELLOW}📋 Current Azure context:${NC}"
-az account show --query "{subscriptionId: id, subscriptionName: name, tenantId: tenantId}" -o table
-echo ""
-
-# Check if resource group exists
-echo -e "${YELLOW}🔍 Checking if resource group exists...${NC}"
+# Create resource group
+echo -e "${YELLOW}� Resource group...${NC}"
 if az group show --name "$RESOURCE_GROUP" &> /dev/null; then
-    echo -e "${GREEN}✅ Resource group '$RESOURCE_GROUP' already exists${NC}"
+    echo -e "${GREEN}✅ Exists${NC}"
 else
-    echo -e "${YELLOW}📦 Creating resource group '$RESOURCE_GROUP'...${NC}"
-    az group create --name "$RESOURCE_GROUP" --location "$LOCATION"
-    echo -e "${GREEN}✅ Resource group created successfully${NC}"
+    az group create --name "$RESOURCE_GROUP" --location "$LOCATION" > /dev/null
+    echo -e "${GREEN}✅ Created${NC}"
 fi
-echo ""
-
-# Validate Bicep template
-echo -e "${YELLOW}🔍 Validating Bicep template...${NC}"
-if az deployment group validate \
-    --resource-group "$RESOURCE_GROUP" \
-    --template-file "main.bicep" \
-    --parameters "@main.parameters.$ENVIRONMENT.json" \
-    --query "error" \
-    --output tsv | grep -q "null"; then
-    echo -e "${GREEN}✅ Bicep template validation passed${NC}"
-else
-    echo -e "${RED}❌ Bicep template validation failed${NC}"
-    az deployment group validate \
-        --resource-group "$RESOURCE_GROUP" \
-        --template-file "main.bicep" \
-        --parameters "@main.parameters.$ENVIRONMENT.json"
-    exit 1
-fi
-echo ""
 
 # Deploy infrastructure
-echo -e "${YELLOW}🚀 Deploying infrastructure...${NC}"
-echo -e "${YELLOW}This may take 10-15 minutes...${NC}"
-echo ""
+echo -e "${YELLOW}🏗️ Deploying...${NC}"
+DEPLOYMENT_NAME="deploy-$(date +%Y%m%d%H%M%S)"
 
-DEPLOYMENT_NAME="ai-agent-eval-$ENVIRONMENT-$(date +%Y%m%d-%H%M%S)"
-
-az deployment group create \
+OUTPUTS=$(az deployment group create \
     --resource-group "$RESOURCE_GROUP" \
     --template-file "main.bicep" \
-    --parameters "@main.parameters.$ENVIRONMENT.json" \
+    --parameters location="$LOCATION" environmentName="$ENVIRONMENT" \
     --name "$DEPLOYMENT_NAME" \
-    --verbose
+    --query "properties.outputs" \
+    --output json)
 
 if [ $? -eq 0 ]; then
-    echo ""
-    echo -e "${GREEN}✅ Infrastructure deployment completed successfully!${NC}"
-    echo ""
+    echo -e "${GREEN}✅ Deployed${NC}"
     
-    # Get deployment outputs
-    echo -e "${YELLOW}📋 Deployment outputs:${NC}"
-    az deployment group show \
-        --resource-group "$RESOURCE_GROUP" \
-        --name "$DEPLOYMENT_NAME" \
-        --query "properties.outputs" \
-        --output table
+    FUNCTION_APP=$(echo $OUTPUTS | jq -r '.functionAppName.value')
+    KEY_VAULT=$(echo $OUTPUTS | jq -r '.keyVaultName.value')
+    STORAGE=$(echo $OUTPUTS | jq -r '.storageAccountName.value')
+    SERVICE_BUS=$(echo $OUTPUTS | jq -r '.serviceBusNamespaceName.value')
+    OPENAI=$(echo $OUTPUTS | jq -r '.azureOpenAIAccountName.value')
     
     echo ""
-    echo -e "${YELLOW}🔐 Next steps:${NC}"
-    echo -e "${BLUE}1.${NC} Update Key Vault secrets with actual values:"
-    echo -e "   - DataverseConnectionString"
-    echo -e "   - CopilotStudioDirectLineSecret"
-    echo ""
-    echo -e "${BLUE}2.${NC} Deploy the Function App code using:"
-    echo -e "   ${GREEN}func azure functionapp publish [function-app-name]${NC}"
-    echo ""
-    echo -e "${BLUE}3.${NC} Test the deployment using the health check endpoint:"
-    echo -e "   ${GREEN}curl https://[function-app-name].azurewebsites.net/api/health${NC}"
-    echo ""
+    echo -e "${YELLOW}� Resources:${NC}"
+    echo "  Function:  $FUNCTION_APP"
+    echo "  Key Vault: $KEY_VAULT"
+    echo "  Storage:   $STORAGE"
+    echo "  Bus:       $SERVICE_BUS"
+    echo "  OpenAI:    $OPENAI"
     
+    echo ""
+    echo -e "${GREEN}✅ Deployment completed successfully!${NC}"
+    echo ""
+    echo "Deployed resources:"
+    echo "  Function App: $FUNCTION_APP"
+    echo "  Key Vault: $KEY_VAULT"
+    echo "  Storage Account: $STORAGE"
+    echo "  Service Bus: $SERVICE_BUS"
+    echo "  Azure OpenAI: $OPENAI"
+    echo ""
+    echo "Next steps:"
+    echo "  1. Deploy function code: func azure functionapp publish $FUNCTION_APP"
+    echo "  2. Update DataverseConnectionString in Key Vault if needed"
 else
-    echo ""
-    echo -e "${RED}❌ Infrastructure deployment failed!${NC}"
-    echo -e "${YELLOW}Check the deployment logs above for details.${NC}"
+    echo -e "${RED}❌ Deployment failed${NC}"
     exit 1
 fi
