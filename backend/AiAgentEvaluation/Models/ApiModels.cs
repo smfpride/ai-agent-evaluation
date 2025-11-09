@@ -155,3 +155,29 @@ public class LLMJudgeResponse
     [JsonPropertyName("executionTimeMs")]
     public int ExecutionTimeMs { get; set; }
 }
+
+/// <summary>
+/// Service Bus message for processing multi-turn test cases
+/// </summary>
+public class ProcessMultiTurnTestCaseMessage
+{
+    [Required]
+    [JsonPropertyName("evaluationRunId")]
+    public Guid EvaluationRunId { get; set; }
+
+    [Required]
+    [JsonPropertyName("testCaseId")]
+    public Guid TestCaseId { get; set; }
+
+    [JsonPropertyName("directLineUrl")]
+    public string DirectLineUrl { get; set; } = string.Empty;
+
+    [JsonPropertyName("passingThreshold")]
+    public decimal PassingThreshold { get; set; } = 0.7m;
+
+    [JsonPropertyName("retryCount")]
+    public int RetryCount { get; set; } = 0;
+
+    [JsonPropertyName("maxRetries")]
+    public int MaxRetries { get; set; } = 3;
+}

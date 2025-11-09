@@ -112,9 +112,16 @@ public class OrchestratorFunction
                     "Evaluation run does not have an AgentToEval lookup configured");
             }
 
-            // Create Service Bus messages for all test cases
+            // Separate single-turn and multi-turn test cases
             var passingThreshold = evaluationRun.PassingThreshold ?? 0.7m;
-            var messages = testCases.Select(testCase => new ProcessTestCaseMessage
+            var singleTurnTestCases = testCases.Where(tc => !tc.IsMultiTurn).ToList();
+            var multiTurnTestCases = testCases.Where(tc => tc.IsMultiTurn).ToList();
+
+            _logger.LogInformation("Test case breakdown: {SingleTurn} single-turn, {MultiTurn} multi-turn",
+                singleTurnTestCases.Count, multiTurnTestCases.Count);
+
+            // Create Service Bus messages for single-turn test cases
+            var singleTurnMessages = singleTurnTestCases.Select(testCase => new ProcessTestCaseMessage
             {
                 EvaluationRunId = request.EvaluationRunId,
                 TestCaseId = testCase.Id,
@@ -128,8 +135,32 @@ public class OrchestratorFunction
                 MaxRetries = 3
             }).ToList();
 
+            // Create Service Bus messages for multi-turn test cases
+            var multiTurnMessages = multiTurnTestCases.Select(testCase => new ProcessMultiTurnTestCaseMessage
+            {
+                EvaluationRunId = request.EvaluationRunId,
+                TestCaseId = testCase.Id,
+                DirectLineUrl = directLineUrl,
+                PassingThreshold = passingThreshold,
+                RetryCount = 0,
+                MaxRetries = 3
+            }).ToList();
+
             // Send messages to Service Bus in batches
-            await _serviceBusService.SendBatchTestCaseMessagesAsync(messages, cancellationToken);
+            if (singleTurnMessages.Any())
+            {
+                await _serviceBusService.SendBatchTestCaseMessagesAsync(singleTurnMessages, cancellationToken);
+                _logger.LogInformation("Sent {Count} single-turn test case messages", singleTurnMessages.Count);
+            }
+
+            // Note: Multi-turn messages would need a separate queue and send method
+            // For now, we'll log them - this will be implemented when Service Bus queue is created
+            if (multiTurnMessages.Any())
+            {
+                _logger.LogInformation("Multi-turn test cases detected: {Count} (queue implementation pending)", multiTurnMessages.Count);
+                // TODO: Implement SendBatchMultiTurnTestCaseMessagesAsync in ServiceBusService
+                // await _serviceBusService.SendBatchMultiTurnTestCaseMessagesAsync(multiTurnMessages, cancellationToken);
+            }
 
             // Calculate estimated completion time
             // Estimate: ~30 seconds per test case on average (copilot + LLM judge)
