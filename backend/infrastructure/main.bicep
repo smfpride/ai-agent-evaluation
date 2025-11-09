@@ -232,47 +232,33 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
           name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
           value: applicationInsights.properties.ConnectionString
         }
-        // Managed Identity Configuration (Primary)
+        // Azure Service Configuration (Managed Identity)
+        // Service Bus Trigger uses ServiceBusNamespace__fullyQualifiedNamespace
         {
-          name: 'StorageAccountName'
-          value: storageAccount.name
+          name: 'ServiceBusNamespace__fullyQualifiedNamespace'
+          value: '${serviceBusNamespace.name}.servicebus.windows.net'
+        }
+        // Service Bus SDK uses ServiceBus:Namespace (converted from ServiceBus__Namespace)
+        {
+          name: 'ServiceBus__Namespace'
+          value: '${serviceBusNamespace.name}.servicebus.windows.net'
         }
         {
-          name: 'ServiceBusNamespace'
-          value: serviceBusNamespace.name
+          name: 'ServiceBus__QueueName'
+          value: 'test-case-processing'
         }
         {
           name: 'AzureOpenAIEndpoint'
           value: azureOpenAI.properties.endpoint
         }
         {
-          name: 'DataverseBaseUrl'
-          value: '@Microsoft.KeyVault(VaultName=${keyVault.name};SecretName=DataverseBaseUrl)'
-        }
-        {
-          name: 'CopilotStudioTokenEndpoint'
-          value: '@Microsoft.KeyVault(VaultName=${keyVault.name};SecretName=CopilotStudioTokenEndpoint)'
-        }
-        {
           name: 'KeyVaultUrl'
           value: keyVault.properties.vaultUri
         }
-        // Fallback Connection Strings for Local Development
-        {
-          name: 'ServiceBusConnectionString'
-          value: '@Microsoft.KeyVault(VaultName=${keyVault.name};SecretName=ServiceBusConnectionString)'
-        }
+        // External Service Configuration (Dataverse - requires connection string)
         {
           name: 'DataverseConnectionString'
           value: '@Microsoft.KeyVault(VaultName=${keyVault.name};SecretName=DataverseConnectionString)'
-        }
-        {
-          name: 'AzureOpenAIApiKey'
-          value: '@Microsoft.KeyVault(VaultName=${keyVault.name};SecretName=AzureOpenAIApiKey)'
-        }
-        {
-          name: 'StorageAccountConnectionString'
-          value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};AccountKey=${storageAccount.listKeys().keys[0].value};EndpointSuffix=${environment().suffixes.storage}'
         }
         // Application configuration
         {
@@ -319,45 +305,35 @@ resource cognitiveServicesOpenAIUserRole 'Microsoft.Authorization/roleAssignment
   }
 }
 
-// Store secrets in Key Vault (placeholders - will need to be updated with actual values)
-resource serviceBusConnectionStringSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
-  parent: keyVault
-  name: 'ServiceBusConnectionString'
+resource storageBlobDataContributorRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  scope: storageAccount
+  name: guid(storageAccount.id, functionApp.id, 'StorageBlobDataContributor')
   properties: {
-    value: serviceBusNamespace.listKeys().primaryConnectionString
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe') // Storage Blob Data Contributor
+    principalId: functionApp.identity.principalId
+    principalType: 'ServicePrincipal'
   }
 }
 
-resource azureOpenAIApiKeySecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
-  parent: keyVault
-  name: 'AzureOpenAIApiKey'
+resource storageFileDataPrivilegedContributorRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  scope: storageAccount
+  name: guid(storageAccount.id, functionApp.id, 'StorageFileDataPrivilegedContributor')
   properties: {
-    value: azureOpenAI.listKeys().key1
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '69566ab7-960f-475b-8e7c-b3118f30c6bd') // Storage File Data Privileged Contributor
+    principalId: functionApp.identity.principalId
+    principalType: 'ServicePrincipal'
   }
 }
 
-// Placeholder secrets (need to be updated with actual values during deployment)
-resource dataverseBaseUrlSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
-  parent: keyVault
-  name: 'DataverseBaseUrl'
-  properties: {
-    value: 'PLACEHOLDER - Update with actual Dataverse base URL (e.g., https://orgname.crm.dynamics.com/)'
-  }
-}
+// Store secrets in Key Vault (placeholders - will need to be updated with actual values during deployment)
+// Note: Azure OpenAI and Service Bus use Managed Identity (no secrets needed)
+// Only external services like Dataverse require connection strings
 
 resource dataverseConnectionStringSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   parent: keyVault
   name: 'DataverseConnectionString'
   properties: {
-    value: 'PLACEHOLDER - Update with actual Dataverse connection string'
-  }
-}
-
-resource copilotStudioTokenEndpointSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
-  parent: keyVault
-  name: 'CopilotStudioTokenEndpoint'
-  properties: {
-    value: 'PLACEHOLDER - Update with actual Copilot Studio token endpoint URL'
+    value: 'PLACEHOLDER - Update with actual Dataverse connection string (e.g., AuthenticationType=ClientSecret;Url=https://...)'
   }
 }
 

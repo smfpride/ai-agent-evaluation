@@ -33,7 +33,7 @@ public class WorkerFunction
 
     [Function("ProcessTestCase")]
     public async Task ProcessTestCase(
-        [ServiceBusTrigger("test-case-processing", Connection = "ServiceBusConnectionString")] 
+        [ServiceBusTrigger("test-case-processing", Connection = "ServiceBusNamespace")] 
         string messageBody,
         CancellationToken cancellationToken)
     {

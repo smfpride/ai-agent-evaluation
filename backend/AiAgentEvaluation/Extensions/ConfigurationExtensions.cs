@@ -82,26 +82,23 @@ public static class ConfigurationExtensions
             }
         }
 
-        // Check for fallback authentication values
+        // Check for authentication configuration
         var hasDataverseFallback = !string.IsNullOrEmpty(configuration["Dataverse:ConnectionString"]) ||
                                   !string.IsNullOrEmpty(configuration["DataverseConnectionString"]);
-        
-        var hasServiceBusFallback = !string.IsNullOrEmpty(configuration["ServiceBus:ConnectionString"]) ||
-                                   !string.IsNullOrEmpty(configuration["ServiceBusConnectionString"]);
-
-        var hasOpenAIFallback = !string.IsNullOrEmpty(configuration["AzureOpenAI:ApiKey"]) ||
-                               !string.IsNullOrEmpty(configuration["AzureOpenAIApiKey"]);
 
         var hasStorageFallback = !string.IsNullOrEmpty(configuration["Storage:ConnectionString"]) ||
                                 !string.IsNullOrEmpty(configuration["AzureWebJobsStorage"]);
 
-        if (!hasDataverseFallback && !hasServiceBusFallback && !hasOpenAIFallback && !hasStorageFallback)
+        if (!hasDataverseFallback)
         {
-            logger?.LogInformation("All services configured for managed identity authentication - no fallback credentials found");
+            logger?.LogWarning("Dataverse connection string not found - Dataverse operations may fail");
         }
-        else
+
+        logger?.LogInformation("Azure services (OpenAI, Service Bus, Storage) configured for managed identity authentication");
+        
+        if (hasStorageFallback)
         {
-            logger?.LogWarning("Some services using fallback authentication - ensure this is only for local development");
+            logger?.LogInformation("Storage connection string found (required for Consumption plan)");
         }
 
         return isValid;

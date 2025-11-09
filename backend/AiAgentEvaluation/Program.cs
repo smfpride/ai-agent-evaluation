@@ -57,10 +57,10 @@ builder.Services.Configure<AppSettings>(options =>
     options.AzureOpenAI.Endpoint = builder.Configuration["AzureOpenAIEndpoint"] ?? options.AzureOpenAI.Endpoint;
     options.AzureOpenAI.ApiKey = builder.Configuration["AzureOpenAIApiKey"] ?? options.AzureOpenAI.ApiKey;
     
-    // Service Bus settings
-    options.ServiceBus.Namespace = builder.Configuration["ServiceBusNamespace"] ?? options.ServiceBus.Namespace;
-    options.ServiceBus.ConnectionString = builder.Configuration["ServiceBusConnectionString"] ?? options.ServiceBus.ConnectionString;
-    options.ServiceBus.QueueName = builder.Configuration["QueueName"] ?? options.ServiceBus.QueueName;
+    // Service Bus settings (Managed Identity only)
+    // Note: Settings use ServiceBus__ prefix which gets mapped to ServiceBus: in configuration
+    options.ServiceBus.Namespace = builder.Configuration["ServiceBus:Namespace"] ?? options.ServiceBus.Namespace;
+    options.ServiceBus.QueueName = builder.Configuration["ServiceBus:QueueName"] ?? options.ServiceBus.QueueName;
     
     // Key Vault settings
     options.KeyVault.Url = builder.Configuration["KeyVaultUrl"] ?? options.KeyVault.Url;
