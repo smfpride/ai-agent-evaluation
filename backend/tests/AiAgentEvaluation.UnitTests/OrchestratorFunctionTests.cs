@@ -49,11 +49,20 @@ public class OrchestratorFunctionTests
             EvaluationRunId = evaluationRunId
         };
 
+        var agentToEvalId = Guid.NewGuid();
         var evaluationRun = new EvaluationRun
         {
             Id = evaluationRunId,
             StatusCode = EvaluationRunStatus.Execute,
-            AgentId = Guid.NewGuid().ToString()
+
+            AgentToEvalId = agentToEvalId
+        };
+
+        var agentToEval = new AgentToEval
+        {
+            Id = agentToEvalId,
+            Name = "Test Agent",
+            DirectLineSpeechUrl = "https://test.powerplatform.com/powervirtualagents/botsbyschema/test/directline/token"
         };
 
         var testCases = new List<TestCase>
@@ -64,6 +73,8 @@ public class OrchestratorFunctionTests
 
         _mockDataverseService.Setup(x => x.GetEvaluationRunAsync(evaluationRunId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(evaluationRun);
+        _mockDataverseService.Setup(x => x.GetAgentToEvalAsync(agentToEvalId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(agentToEval);
         _mockDataverseService.Setup(x => x.GetTestCasesAsync(evaluationRunId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(testCases);
 
@@ -82,6 +93,10 @@ public class OrchestratorFunctionTests
         // Verify start time set
         _mockDataverseService.Verify(x => x.SetEvaluationRunStartTimeAsync(
             evaluationRunId, It.IsAny<DateTime>(), It.IsAny<CancellationToken>()), Times.Once);
+        
+        // Verify total test cases initialized (NEW)
+        _mockDataverseService.Verify(x => x.SetEvaluationRunTotalTestCasesAsync(
+            evaluationRunId, 2, It.IsAny<CancellationToken>()), Times.Once);
         
         // Verify messages sent to Service Bus
         _mockServiceBusService.Verify(x => x.SendBatchTestCaseMessagesAsync(
@@ -106,8 +121,9 @@ public class OrchestratorFunctionTests
         {
             Id = evaluationRunId,
             StatusCode = EvaluationRunStatus.Execute,
-            AgentId = Guid.NewGuid().ToString()
-        };
+
+
+            AgentToEvalId = Guid.NewGuid()};
 
         // Create 50,000 test cases
         var testTypes = new[] { TestType.Similarity, TestType.Accuracy, TestType.Relevancy };
@@ -123,6 +139,8 @@ public class OrchestratorFunctionTests
 
         _mockDataverseService.Setup(x => x.GetEvaluationRunAsync(evaluationRunId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(evaluationRun);
+        _mockDataverseService.Setup(x => x.GetAgentToEvalAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AgentToEval { Id = Guid.NewGuid(), Name = "Test Agent", DirectLineSpeechUrl = "https://test.powerplatform.com/powervirtualagents/botsbyschema/test/directline/token" });
         _mockDataverseService.Setup(x => x.GetTestCasesAsync(evaluationRunId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(testCases);
 
@@ -133,6 +151,10 @@ public class OrchestratorFunctionTests
 
         // Assert
         Assert.Equal(HttpStatusCode.Accepted, result.StatusCode);
+        
+        // Verify total test cases set to 50000 (NEW)
+        _mockDataverseService.Verify(x => x.SetEvaluationRunTotalTestCasesAsync(
+            evaluationRunId, 50000, It.IsAny<CancellationToken>()), Times.Once);
         
         // Verify all 50K messages sent
         _mockServiceBusService.Verify(x => x.SendBatchTestCaseMessagesAsync(
@@ -189,7 +211,7 @@ public class OrchestratorFunctionTests
         {
             Id = evaluationRunId,
             StatusCode = EvaluationRunStatus.Running, // Already running
-            AgentId = Guid.NewGuid().ToString()
+
         };
 
         _mockDataverseService.Setup(x => x.GetEvaluationRunAsync(evaluationRunId, It.IsAny<CancellationToken>()))
@@ -226,8 +248,9 @@ public class OrchestratorFunctionTests
         {
             Id = evaluationRunId,
             StatusCode = EvaluationRunStatus.Execute,
-            AgentId = Guid.NewGuid().ToString()
-        };
+
+
+            AgentToEvalId = Guid.NewGuid()};
 
         _mockDataverseService.Setup(x => x.GetEvaluationRunAsync(evaluationRunId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(evaluationRun);
@@ -269,8 +292,9 @@ public class OrchestratorFunctionTests
         {
             Id = evaluationRunId,
             StatusCode = EvaluationRunStatus.Execute,
-            AgentId = Guid.NewGuid().ToString()
-        };
+
+
+            AgentToEvalId = Guid.NewGuid()};
 
         var testCases = new List<TestCase>
         {
@@ -279,6 +303,8 @@ public class OrchestratorFunctionTests
 
         _mockDataverseService.Setup(x => x.GetEvaluationRunAsync(evaluationRunId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(evaluationRun);
+        _mockDataverseService.Setup(x => x.GetAgentToEvalAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AgentToEval { Id = Guid.NewGuid(), Name = "Test Agent", DirectLineSpeechUrl = "https://test.powerplatform.com/powervirtualagents/botsbyschema/test/directline/token" });
         _mockDataverseService.Setup(x => x.GetTestCasesAsync(evaluationRunId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(testCases);
         _mockServiceBusService.Setup(x => x.SendBatchTestCaseMessagesAsync(
@@ -385,7 +411,7 @@ public class OrchestratorFunctionTests
         {
             Id = evaluationRunId,
             StatusCode = EvaluationRunStatus.Running,
-            AgentId = Guid.NewGuid().ToString()
+
         };
 
         _mockDataverseService.Setup(x => x.GetEvaluationRunAsync(evaluationRunId, It.IsAny<CancellationToken>()))
@@ -474,3 +500,6 @@ public class OrchestratorFunctionTests
 
     #endregion
 }
+
+
+

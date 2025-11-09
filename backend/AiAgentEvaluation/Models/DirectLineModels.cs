@@ -39,6 +39,9 @@ public class DirectLineActivity
 
     [JsonPropertyName("channelId")]
     public string ChannelId { get; set; } = "directline";
+
+    [JsonPropertyName("locale")]
+    public string? Locale { get; set; }
 }
 
 /// <summary>
@@ -47,7 +50,7 @@ public class DirectLineActivity
 public class DirectLineFrom
 {
     [JsonPropertyName("id")]
-    public string Id { get; set; } = "user";
+    public string? Id { get; set; }
 
     [JsonPropertyName("name")]
     public string? Name { get; set; }

@@ -56,9 +56,17 @@ public class WorkerFunction
             // Start processing timer
             var stopwatch = System.Diagnostics.Stopwatch.StartNew();
 
+            // Validate that DirectLineUrl is provided
+            if (string.IsNullOrEmpty(message.DirectLineUrl))
+            {
+                _logger.LogError("DirectLineUrl is missing from test case message {TestCaseId}", message.TestCaseId);
+                await HandleTestCaseError(message, "DirectLineUrl is not configured for this evaluation", stopwatch, cancellationToken);
+                return;
+            }
+
             // Step 1: Get the agent response from Copilot Studio
             var copilotResponse = await _copilotStudioService.SendMessageAsync(
-                message.AgentId ?? string.Empty, 
+                message.DirectLineUrl,
                 message.UserInput, 
                 message.ConversationId,
                 cancellationToken);
@@ -74,6 +82,10 @@ public class WorkerFunction
 
             _logger.LogInformation("Received response from Copilot Studio for test case {TestCaseId} in {ExecutionTime}ms", 
                 message.TestCaseId, copilotResponse.ExecutionTimeMs);
+            
+            // Log the actual response for debugging
+            _logger.LogInformation("Copilot Response Details - TestCaseId: {TestCaseId}, UserInput: '{UserInput}', ActualResponse: '{ActualResponse}', ConversationId: {ConversationId}", 
+                message.TestCaseId, message.UserInput, copilotResponse.Response, copilotResponse.ConversationId);
 
             // Step 2: Evaluate the response using LLM Judge
             var judgeRequest = new LLMJudgeRequest
@@ -114,8 +126,15 @@ public class WorkerFunction
                 Passed = passed,
                 Reasoning = judgeResponse.Reasoning,
                 ConversationId = copilotResponse.ConversationId,
-                ExecutionTimeMs = (int)stopwatch.ElapsedMilliseconds
+                ExecutionTimeMs = (int)stopwatch.ElapsedMilliseconds,
+                Metadata = copilotResponse.RawActivityJson  // Store raw Direct Line activity for debugging
             };
+            
+            _logger.LogInformation("WorkerFunction - Score before passing to Dataverse: {Score} (type: {ScoreType})", 
+                createResultRequest.Score, createResultRequest.Score?.GetType().Name ?? "null");
+
+            _logger.LogInformation("Saving evaluation result - TestCaseId: {TestCaseId}, ActualResponse: '{Response}', Metadata length: {MetadataLength}", 
+                message.TestCaseId, copilotResponse.Response, copilotResponse.RawActivityJson?.Length ?? 0);
 
             var resultId = await _dataverseService.CreateEvaluationResultAsync(createResultRequest, cancellationToken);
 
@@ -155,7 +174,7 @@ public class WorkerFunction
                 {
                     EvaluationRunId = message.EvaluationRunId,
                     TestCaseId = message.TestCaseId,
-                    AgentId = message.AgentId,
+                    DirectLineUrl = message.DirectLineUrl,
                     UserInput = message.UserInput,
                     ExpectedResponse = message.ExpectedResponse,
                     TestType = message.TestType,

@@ -88,13 +88,37 @@ public class OrchestratorFunction
             _logger.LogInformation("Found {TestCaseCount} test cases for evaluation run {EvaluationRunId}", 
                 testCases.Count, request.EvaluationRunId);
 
+            // Set the total test cases count in Dataverse to initialize counters
+            await _dataverseService.SetEvaluationRunTotalTestCasesAsync(request.EvaluationRunId, testCases.Count, cancellationToken);
+
+            // Get the Direct Line URL from the AgentToEval lookup
+            string directLineUrl;
+            if (evaluationRun.AgentToEvalId.HasValue)
+            {
+                var agentToEval = await _dataverseService.GetAgentToEvalAsync(evaluationRun.AgentToEvalId.Value, cancellationToken);
+                if (agentToEval == null || string.IsNullOrEmpty(agentToEval.DirectLineSpeechUrl))
+                {
+                    await _dataverseService.UpdateEvaluationRunStatusAsync(request.EvaluationRunId, EvaluationRunStatus.Errored, cancellationToken);
+                    return await CreateErrorResponse(req, HttpStatusCode.BadRequest, 
+                        "Agent to evaluate not found or Direct Line URL is not configured");
+                }
+                directLineUrl = agentToEval.DirectLineSpeechUrl;
+                _logger.LogInformation("Using Direct Line URL from AgentToEval: {DirectLineUrl}", directLineUrl);
+            }
+            else
+            {
+                await _dataverseService.UpdateEvaluationRunStatusAsync(request.EvaluationRunId, EvaluationRunStatus.Errored, cancellationToken);
+                return await CreateErrorResponse(req, HttpStatusCode.BadRequest, 
+                    "Evaluation run does not have an AgentToEval lookup configured");
+            }
+
             // Create Service Bus messages for all test cases
             var passingThreshold = evaluationRun.PassingThreshold ?? 0.7m;
             var messages = testCases.Select(testCase => new ProcessTestCaseMessage
             {
                 EvaluationRunId = request.EvaluationRunId,
                 TestCaseId = testCase.Id,
-                AgentId = request.AgentId ?? evaluationRun.AgentId,
+                DirectLineUrl = directLineUrl,
                 UserInput = testCase.UserInput,
                 ExpectedResponse = testCase.ExpectedResponse,
                 TestType = testCase.TestType,

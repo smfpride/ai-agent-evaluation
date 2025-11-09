@@ -77,12 +77,6 @@ public class SecurityTests
                 DeploymentName = "gpt-4"
                 // No ApiKey property should be used in production
             },
-            Storage = new StorageSettings
-            {
-                AccountName = "mystorageaccount",
-                PromptTemplateContainerName = "prompt-templates"
-                // No ConnectionString property should be used in production
-            },
             KeyVault = new KeyVaultSettings
             {
                 Url = "https://mykeyvault.vault.azure.net/"
@@ -94,7 +88,6 @@ public class SecurityTests
         Assert.NotNull(settings.Dataverse.ConnectionString);
         Assert.NotNull(settings.ServiceBus.Namespace);
         Assert.NotNull(settings.AzureOpenAI.Endpoint);
-        Assert.NotNull(settings.Storage.AccountName);
         Assert.NotNull(settings.KeyVault.Url);
     }
 
@@ -110,13 +103,12 @@ public class SecurityTests
 
         var requiredRoles = new Dictionary<string, string>
         {
-            ["Storage Blob Data Contributor"] = "For accessing prompt templates in Blob Storage",
             ["Service Bus Data Owner"] = "For sending/receiving messages in Service Bus queues",
             ["Cognitive Services OpenAI User"] = "For calling Azure OpenAI API for LLM Judge",
             ["Key Vault Secrets User"] = "For reading fallback secrets from Key Vault (development)"
         };
 
-        Assert.True(requiredRoles.Count == 4, "All required RBAC roles are documented");
+        Assert.True(requiredRoles.Count == 3, "All required RBAC roles are documented");
         
         // Additional roles that may be needed depending on deployment:
         // - "Contributor" or "Reader" at subscription/resource group level for resource discovery
@@ -259,12 +251,11 @@ public class SecurityTests
             Id = Guid.NewGuid(),
             // Missing required fields
             Name = "", // Required
-            AgentId = "" // Required
+
         };
 
         // Assert - Required fields are validated
         Assert.Equal(string.Empty, invalidRun.Name);
-        Assert.Equal(string.Empty, invalidRun.AgentId);
         
         // In actual implementation, validation occurs via:
         // - [Required] attributes on model properties

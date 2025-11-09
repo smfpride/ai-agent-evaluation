@@ -14,7 +14,6 @@ public class MonitorFunction
     private readonly IDataverseService _dataverseService;
     private readonly IServiceBusService _serviceBusService;
     private readonly ILLMJudgeService _llmJudgeService;
-    private readonly IBlobStorageService _blobStorageService;
     private const int MaxRunningTimeMinutes = 120; // 2 hours max runtime
     private const int MaxNoProgressMinutes = 30; // 30 minutes with no progress = stalled
     private const decimal DefaultPassingThreshold = 0.7m; // 70% default threshold
@@ -23,14 +22,12 @@ public class MonitorFunction
         ILogger<MonitorFunction> logger,
         IDataverseService dataverseService,
         IServiceBusService serviceBusService,
-        ILLMJudgeService llmJudgeService,
-        IBlobStorageService blobStorageService)
+        ILLMJudgeService llmJudgeService)
     {
         _logger = logger;
         _dataverseService = dataverseService;
         _serviceBusService = serviceBusService;
         _llmJudgeService = llmJudgeService;
-        _blobStorageService = blobStorageService;
     }
 
     [Function("MonitorEvaluationRuns")]
@@ -146,19 +143,29 @@ public class MonitorFunction
             }
         }
 
+        // Get all evaluation results to calculate actual counts
+        var results = await _dataverseService.GetEvaluationResultsAsync(evaluationRun.Id, cancellationToken);
+        
+        // Calculate completed and failed counts from actual results
+        var completedCount = results.Count;
+        var failedCount = results.Count(r => !string.IsNullOrEmpty(r.ErrorMessage) || !r.Score.HasValue);
+
+        _logger.LogInformation("Evaluation run {EvaluationRunId} progress: {CompletedCount}/{TotalTestCases} completed, {FailedCount} failed",
+            evaluationRun.Id, completedCount, evaluationRun.TotalTestCases, failedCount);
+
+        // Update the counts in the evaluation run
+        await _dataverseService.UpdateEvaluationRunProgressAsync(evaluationRun.Id, completedCount, failedCount, cancellationToken);
+
         // Check if all test cases are completed
-        if (evaluationRun.CompletedTestCases < evaluationRun.TotalTestCases)
+        if (completedCount < evaluationRun.TotalTestCases)
         {
             _logger.LogInformation("Evaluation run {EvaluationRunId} still in progress: {CompletedTestCases}/{TotalTestCases}",
-                evaluationRun.Id, evaluationRun.CompletedTestCases, evaluationRun.TotalTestCases);
+                evaluationRun.Id, completedCount, evaluationRun.TotalTestCases);
             return;
         }
 
         _logger.LogInformation("Evaluation run {EvaluationRunId} completed all test cases, calculating final metrics",
             evaluationRun.Id);
-
-        // Get all evaluation results
-        var results = await _dataverseService.GetEvaluationResultsAsync(evaluationRun.Id, cancellationToken);
         
         if (results.Count == 0)
         {
@@ -291,16 +298,14 @@ public class MonitorFunction
             var dataverseHealthTask = _dataverseService.CheckHealthAsync(cancellationToken);
             var serviceBusHealthTask = _serviceBusService.CheckHealthAsync(cancellationToken);
             var azureOpenAIHealthTask = _llmJudgeService.CheckHealthAsync(cancellationToken);
-            var blobStorageHealthTask = _blobStorageService.CheckHealthAsync(cancellationToken);
 
-            await Task.WhenAll(dataverseHealthTask, serviceBusHealthTask, azureOpenAIHealthTask, blobStorageHealthTask);
+            await Task.WhenAll(dataverseHealthTask, serviceBusHealthTask, azureOpenAIHealthTask);
 
             var dataverseHealthy = await dataverseHealthTask;
             var serviceBusHealthy = await serviceBusHealthTask;
             var azureOpenAIHealthy = await azureOpenAIHealthTask;
-            var blobStorageHealthy = await blobStorageHealthTask;
 
-            var allHealthy = dataverseHealthy && serviceBusHealthy && azureOpenAIHealthy && blobStorageHealthy;
+            var allHealthy = dataverseHealthy && serviceBusHealthy && azureOpenAIHealthy;
             
             var healthStatus = new
             {
@@ -312,14 +317,13 @@ public class MonitorFunction
                 {
                     dataverse = dataverseHealthy ? "Healthy" : "Unhealthy",
                     serviceBus = serviceBusHealthy ? "Healthy" : "Unhealthy",
-                    azureOpenAI = azureOpenAIHealthy ? "Healthy" : "Unhealthy",
-                    blobStorage = blobStorageHealthy ? "Healthy" : "Unhealthy"
+                    azureOpenAI = azureOpenAIHealthy ? "Healthy" : "Unhealthy"
                 }
             };
 
-            _logger.LogInformation("Health check completed: Overall={Status}, Dataverse={Dataverse}, ServiceBus={ServiceBus}, AzureOpenAI={AzureOpenAI}, BlobStorage={BlobStorage}",
+            _logger.LogInformation("Health check completed: Overall={Status}, Dataverse={Dataverse}, ServiceBus={ServiceBus}, AzureOpenAI={AzureOpenAI}",
                 healthStatus.status, healthStatus.services.dataverse, healthStatus.services.serviceBus, 
-                healthStatus.services.azureOpenAI, healthStatus.services.blobStorage);
+                healthStatus.services.azureOpenAI);
 
             return System.Text.Json.JsonSerializer.Serialize(healthStatus, new System.Text.Json.JsonSerializerOptions 
             { 

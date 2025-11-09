@@ -12,9 +12,6 @@ public class StartEvaluationRunRequest
     [JsonPropertyName("evaluationRunId")]
     public Guid EvaluationRunId { get; set; }
 
-    [JsonPropertyName("agentId")]
-    public string? AgentId { get; set; }
-
     [JsonPropertyName("maxConcurrency")]
     [Range(1, 1000)]
     public int MaxConcurrency { get; set; } = 100;
@@ -64,8 +61,8 @@ public class ProcessTestCaseMessage
     [JsonPropertyName("testCaseId")]
     public Guid TestCaseId { get; set; }
 
-    [JsonPropertyName("agentId")]
-    public string? AgentId { get; set; }
+    [JsonPropertyName("directLineUrl")]
+    public string DirectLineUrl { get; set; } = string.Empty;
 
     [JsonPropertyName("userInput")]
     public string UserInput { get; set; } = string.Empty;
@@ -108,6 +105,9 @@ public class CopilotDirectLineResponse
 
     [JsonPropertyName("errorMessage")]
     public string? ErrorMessage { get; set; }
+
+    [JsonPropertyName("rawActivityJson")]
+    public string? RawActivityJson { get; set; }
 }
 
 /// <summary>

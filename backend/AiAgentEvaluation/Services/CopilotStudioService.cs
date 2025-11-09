@@ -9,8 +9,8 @@ using System.Text.Json.Serialization;
 namespace AiAgentEvaluation.Services;
 
 /// <summary>
-/// Implementation of Copilot Studio service using Direct Line API 3.0 with token endpoint
-/// This version gets Direct Line tokens from a Copilot Studio token endpoint
+/// Implementation of Copilot Studio service using Direct Line API 3.0 with dynamic token endpoint URLs
+/// This version gets Direct Line tokens from Copilot Studio token endpoints specified per-request
 /// </summary>
 public class CopilotStudioService : ICopilotStudioService, IDisposable
 {
@@ -22,9 +22,8 @@ public class CopilotStudioService : ICopilotStudioService, IDisposable
     private readonly ResilientService _resilientService;
     private bool _disposed;
     
-    // Cache token until it expires (with some buffer time)
-    private string? _cachedToken;
-    private DateTime _tokenExpiry = DateTime.MinValue;
+    // Cache tokens per URL until they expire (with some buffer time)
+    private readonly Dictionary<string, (string Token, DateTime Expiry)> _tokenCache = new();
     private readonly object _tokenLock = new object();
 
     public CopilotStudioService(
@@ -49,45 +48,42 @@ public class CopilotStudioService : ICopilotStudioService, IDisposable
             DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
         };
 
-        // Configure HttpClient for Direct Line API (without auth - we'll set it per request)
-        _httpClient.BaseAddress = new Uri(_settings.CopilotStudio.DirectLineEndpoint);
+        // Configure HttpClient timeout for Direct Line API
         _httpClient.Timeout = TimeSpan.FromSeconds(_settings.CopilotStudio.TimeoutSeconds);
     }
 
     /// <summary>
-    /// Get a valid Direct Line token, using cached token if still valid or fetching a new one
+    /// Get a valid Direct Line token for a specific endpoint, using cached token if still valid or fetching a new one
     /// </summary>
-    private async Task<string> GetValidTokenAsync(CancellationToken cancellationToken = default)
+    private async Task<string> GetValidTokenAsync(string directLineSpeechUrl, CancellationToken cancellationToken = default)
     {
         lock (_tokenLock)
         {
             // Return cached token if still valid (with 5-minute buffer)
-            if (!string.IsNullOrEmpty(_cachedToken) && 
-                _tokenExpiry > DateTime.UtcNow.AddMinutes(5))
+            if (_tokenCache.TryGetValue(directLineSpeechUrl, out var cached) && 
+                cached.Expiry > DateTime.UtcNow.AddMinutes(5))
             {
-                return _cachedToken;
+                return cached.Token;
             }
         }
 
         // Need to fetch a new token
-        return await FetchNewTokenAsync(cancellationToken);
+        return await FetchNewTokenAsync(directLineSpeechUrl, cancellationToken);
     }
 
     /// <summary>
-    /// Fetch a new token from the Copilot Studio token endpoint
+    /// Fetch a new token from the Copilot Studio token endpoint URL
     /// </summary>
-    private async Task<string> FetchNewTokenAsync(CancellationToken cancellationToken = default)
+    private async Task<string> FetchNewTokenAsync(string directLineSpeechUrl, CancellationToken cancellationToken = default)
     {
-        var tokenEndpoint = _settings.CopilotStudio.TokenEndpoint;
-        
-        if (string.IsNullOrEmpty(tokenEndpoint))
+        if (string.IsNullOrEmpty(directLineSpeechUrl))
         {
-            throw new InvalidOperationException("Copilot Studio token endpoint is not configured. Set CopilotStudio:TokenEndpoint to your token endpoint URL.");
+            throw new InvalidOperationException("Direct Line Speech URL is required but was not provided.");
         }
 
-        _logger.LogDebug("Fetching new Direct Line token from endpoint");
+        _logger.LogDebug("Fetching new Direct Line token from endpoint: {Endpoint}", directLineSpeechUrl);
 
-        var response = await _tokenHttpClient.GetAsync(tokenEndpoint, cancellationToken);
+        var response = await _tokenHttpClient.GetAsync(directLineSpeechUrl, cancellationToken);
         response.EnsureSuccessStatusCode();
 
         var content = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -100,33 +96,46 @@ public class CopilotStudioService : ICopilotStudioService, IDisposable
 
         lock (_tokenLock)
         {
-            _cachedToken = tokenResponse.Token;
-            _tokenExpiry = DateTime.UtcNow.AddSeconds(tokenResponse.ExpiresIn);
+            _tokenCache[directLineSpeechUrl] = (tokenResponse.Token, DateTime.UtcNow.AddSeconds(tokenResponse.ExpiresIn));
         }
 
-        _logger.LogDebug("Successfully obtained Direct Line token, expires in {ExpiresIn} seconds", tokenResponse.ExpiresIn);
+        _logger.LogDebug("Successfully obtained Direct Line token for {Endpoint}, expires in {ExpiresIn} seconds", 
+            directLineSpeechUrl, tokenResponse.ExpiresIn);
         return tokenResponse.Token;
     }
 
     /// <summary>
-    /// Create an authenticated HttpClient with current token
+    /// Get authentication token for the specified Direct Line endpoint
     /// </summary>
-    private async Task<HttpClient> GetAuthenticatedHttpClientAsync(CancellationToken cancellationToken = default)
+    private async Task<string> GetAuthenticationTokenAsync(string directLineSpeechUrl, CancellationToken cancellationToken = default)
     {
-        var token = await GetValidTokenAsync(cancellationToken);
-        
-        // Clear any existing auth headers
-        _httpClient.DefaultRequestHeaders.Authorization = null;
-        
-        // Set the Bearer token
-        _httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {token}");
-        
-        return _httpClient;
+        return await GetValidTokenAsync(directLineSpeechUrl, cancellationToken);
     }
 
-    public async Task<CopilotDirectLineResponse> SendMessageAsync(string agentId, string userInput, string? conversationId = null, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Create an HTTP request message with authentication header
+    /// </summary>
+    private async Task<HttpRequestMessage> CreateAuthenticatedRequestAsync(HttpMethod method, string directLineSpeechUrl, string fullUrl, HttpContent? content = null, CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Sending message to agent {AgentId} in conversation {ConversationId}", agentId, conversationId);
+        var token = await GetValidTokenAsync(directLineSpeechUrl, cancellationToken);
+        var request = new HttpRequestMessage(method, fullUrl);
+        request.Headers.Add("Authorization", $"Bearer {token}");
+        
+        if (content != null)
+        {
+            request.Content = content;
+        }
+        
+        return request;
+    }
+
+    public async Task<CopilotDirectLineResponse> SendMessageAsync(string directLineSpeechUrl, string userInput, string? conversationId = null, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Sending message in conversation {ConversationId} using endpoint {Endpoint}", 
+            conversationId, directLineSpeechUrl);
+        
+        // Extract Direct Line base URL from the token endpoint
+        var directLineBaseUrl = ExtractDirectLineBaseUrl(directLineSpeechUrl);
         
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
         var actualConversationId = conversationId;
@@ -138,29 +147,30 @@ public class CopilotStudioService : ICopilotStudioService, IDisposable
                 // Start conversation if not provided
                 if (string.IsNullOrEmpty(actualConversationId))
                 {
-                    actualConversationId = await StartConversationAsync(agentId, ct);
+                    actualConversationId = await StartConversationAsync(directLineSpeechUrl, ct);
                 }
 
-                // Send message to bot
-                await SendActivityAsync(actualConversationId, userInput, ct);
+                // Send message to bot and capture timestamp
+                var sentTimestamp = await SendActivityAsync(directLineSpeechUrl, directLineBaseUrl, actualConversationId, userInput, ct);
                 
-                // Wait for response from bot
-                var response = await WaitForBotResponseAsync(actualConversationId, ct);
+                // Wait for response from bot, passing the sent timestamp and user input for filtering
+                var (responseText, rawActivityJson) = await WaitForBotResponseAsync(directLineSpeechUrl, directLineBaseUrl, actualConversationId, sentTimestamp, userInput, ct);
                 
                 stopwatch.Stop();
                 
                 return new CopilotDirectLineResponse
                 {
                     ConversationId = actualConversationId,
-                    Response = response ?? string.Empty,
+                    Response = responseText ?? string.Empty,
                     ExecutionTimeMs = (int)stopwatch.ElapsedMilliseconds,
-                    Success = !string.IsNullOrEmpty(response)
+                    Success = !string.IsNullOrEmpty(responseText),
+                    RawActivityJson = rawActivityJson
                 };
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error sending message to agent {AgentId} in conversation {ConversationId}", 
-                    agentId, actualConversationId);
+                _logger.LogError(ex, "Error sending message in conversation {ConversationId}", 
+                    actualConversationId);
                 stopwatch.Stop();
                 
                 return new CopilotDirectLineResponse
@@ -177,27 +187,42 @@ public class CopilotStudioService : ICopilotStudioService, IDisposable
         cancellationToken);
     }
 
-    private async Task SendActivityAsync(string conversationId, string text, CancellationToken cancellationToken)
+    /// <summary>
+    /// Extract the Direct Line base URL from the token endpoint URL
+    /// Typically the token endpoint is like: https://xxx.powerplatform.com/powervirtualagents/.../directline/token
+    /// And the Direct Line base URL is: https://directline.botframework.com
+    /// </summary>
+    private string ExtractDirectLineBaseUrl(string directLineSpeechUrl)
     {
+        // Default to the standard Direct Line endpoint
+        return "https://directline.botframework.com";
+    }
+
+    private async Task<DateTime> SendActivityAsync(string directLineSpeechUrl, string directLineBaseUrl, string conversationId, string text, CancellationToken cancellationToken)
+    {
+        var timestamp = DateTime.UtcNow;
         var activity = new DirectLineActivity
         {
             Type = "message",
-            From = new DirectLineFrom { Id = "user" },
+            From = new DirectLineFrom { Id = "user" },  // Explicitly set user ID
             Text = text,
-            Timestamp = DateTime.UtcNow
+            Timestamp = timestamp,
+            Locale = "en-US"  // Add locale to avoid authentication issues
         };
 
         var json = JsonSerializer.Serialize(activity, _jsonOptions);
         var content = new StringContent(json, Encoding.UTF8, "application/json");
 
-        var httpClient = await GetAuthenticatedHttpClientAsync(cancellationToken);
-        var response = await httpClient.PostAsync($"/v3/directline/conversations/{conversationId}/activities", content, cancellationToken);
+        var fullUrl = $"{directLineBaseUrl}/v3/directline/conversations/{conversationId}/activities";
+        var request = await CreateAuthenticatedRequestAsync(HttpMethod.Post, directLineSpeechUrl, fullUrl, content, cancellationToken);
+        var response = await _httpClient.SendAsync(request, cancellationToken);
         response.EnsureSuccessStatusCode();
         
-        _logger.LogDebug("Sent activity to conversation {ConversationId}", conversationId);
+        _logger.LogDebug("Sent activity to conversation {ConversationId} at {Timestamp}", conversationId, timestamp);
+        return timestamp;
     }
 
-    private async Task<string?> WaitForBotResponseAsync(string conversationId, CancellationToken cancellationToken)
+    private async Task<(string? ResponseText, string? RawActivityJson)> WaitForBotResponseAsync(string directLineSpeechUrl, string directLineBaseUrl, string conversationId, DateTime userMessageTimestamp, string userInputText, CancellationToken cancellationToken)
     {
         var maxAttempts = 30; // 30 attempts with 1-second intervals = 30 seconds max wait
         var attempt = 0;
@@ -207,14 +232,14 @@ public class CopilotStudioService : ICopilotStudioService, IDisposable
         {
             try
             {
-                var url = $"/v3/directline/conversations/{conversationId}/activities";
+                var url = $"{directLineBaseUrl}/v3/directline/conversations/{conversationId}/activities";
                 if (!string.IsNullOrEmpty(watermark))
                 {
                     url += $"?watermark={watermark}";
                 }
 
-                var httpClient = await GetAuthenticatedHttpClientAsync(cancellationToken);
-                var response = await httpClient.GetAsync(url, cancellationToken);
+                var request = await CreateAuthenticatedRequestAsync(HttpMethod.Get, directLineSpeechUrl, url, null, cancellationToken);
+                var response = await _httpClient.SendAsync(request, cancellationToken);
                 response.EnsureSuccessStatusCode();
 
                 var content = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -224,18 +249,44 @@ public class CopilotStudioService : ICopilotStudioService, IDisposable
                 {
                     watermark = activitiesResponse.Watermark;
                     
-                    // Look for bot responses (not from user)
+                    // Log all activities for debugging - use Information level to ensure it's captured
+                    _logger.LogInformation("WaitForBot: Received {Count} activities in conversation {ConversationId}", 
+                        activitiesResponse.Activities.Length, conversationId);
+                    
+                    foreach (var activity in activitiesResponse.Activities)
+                    {
+                        var textPreview = activity.Text?.Length > 50 
+                            ? activity.Text.Substring(0, 50) + "..." 
+                            : activity.Text ?? "(no text)";
+                        _logger.LogInformation("WaitForBot Activity: Type={Type}, From.Id={FromId}, From.Name={FromName}, Text={Text}, Timestamp={Timestamp}",
+                            activity.Type, activity.From?.Id ?? "null", activity.From?.Name ?? "null", 
+                            textPreview, activity.Timestamp);
+                    }
+                    
+                    // Look for bot responses with improved filtering
                     var botMessages = activitiesResponse.Activities
-                        .Where(a => a.Type == "message" && a.From.Id != "user" && !string.IsNullOrEmpty(a.Text))
+                        .Where(a => a.Type == "message" 
+                            && !string.IsNullOrEmpty(a.Text)
+                            && a.Text != userInputText  // NOT the exact same text we sent (critical filter!)
+                            && a.From?.Id != null 
+                            && a.From.Id != "user"  // Not from user
+                            && a.Timestamp > userMessageTimestamp.AddSeconds(-5))  // After user message (with buffer)
                         .ToList();
+
+                    _logger.LogInformation("WaitForBot: Found {Count} bot messages after filtering (attempt {Attempt})", 
+                        botMessages.Count, attempt);
 
                     if (botMessages.Any())
                     {
-                        // Return the latest bot message
+                        // Return the latest bot message with raw JSON
                         var latestMessage = botMessages.Last();
-                        _logger.LogDebug("Received bot response in conversation {ConversationId}: {Response}", 
-                            conversationId, latestMessage.Text);
-                        return latestMessage.Text;
+                        var rawJson = JsonSerializer.Serialize(latestMessage, _jsonOptions);
+                        
+                        _logger.LogInformation("WaitForBot: Returning bot response in conversation {ConversationId} from {BotId}: {Response}", 
+                            conversationId, latestMessage.From?.Id, latestMessage.Text);
+                        _logger.LogInformation("WaitForBot: Raw activity JSON length: {Length}", rawJson?.Length ?? 0);
+                        
+                        return (latestMessage.Text, rawJson);
                     }
                 }
 
@@ -254,17 +305,21 @@ public class CopilotStudioService : ICopilotStudioService, IDisposable
 
         _logger.LogWarning("Timeout waiting for bot response in conversation {ConversationId} after {Attempts} attempts", 
             conversationId, attempt);
-        return null;
+        return (null, null);
     }
 
-    public async Task<string> StartConversationAsync(string agentId, CancellationToken cancellationToken = default)
+    public async Task<string> StartConversationAsync(string directLineSpeechUrl, CancellationToken cancellationToken = default)
     {
+        // Extract Direct Line base URL from the token endpoint
+        var directLineBaseUrl = ExtractDirectLineBaseUrl(directLineSpeechUrl);
+        
         return await _resilientService.ExecuteAsync(async (ct) =>
         {
-            _logger.LogInformation("Starting conversation with agent {AgentId}", agentId);
+            _logger.LogInformation("Starting conversation using endpoint {Endpoint}", directLineSpeechUrl);
             
-            var httpClient = await GetAuthenticatedHttpClientAsync(ct);
-            var response = await httpClient.PostAsync("/v3/directline/conversations", null, ct);
+            var fullUrl = $"{directLineBaseUrl}/v3/directline/conversations";
+            var request = await CreateAuthenticatedRequestAsync(HttpMethod.Post, directLineSpeechUrl, fullUrl, null, ct);
+            var response = await _httpClient.SendAsync(request, ct);
             response.EnsureSuccessStatusCode();
             
             var content = await response.Content.ReadAsStringAsync(ct);
@@ -275,8 +330,8 @@ public class CopilotStudioService : ICopilotStudioService, IDisposable
                 throw new InvalidOperationException("Failed to create conversation - no conversation ID returned");
             }
             
-            _logger.LogInformation("Started conversation {ConversationId} with agent {AgentId}", 
-                conversationResponse.ConversationId, agentId);
+            _logger.LogInformation("Started conversation {ConversationId}", 
+                conversationResponse.ConversationId);
             
             return conversationResponse.ConversationId;
         }, "StartConversation",
@@ -314,24 +369,10 @@ public class CopilotStudioService : ICopilotStudioService, IDisposable
                 return false;
             }
 
-            // Try to get a token to verify the token endpoint works
-            var token = await GetValidTokenAsync(cancellationToken);
-            
-            if (string.IsNullOrEmpty(token))
-            {
-                _logger.LogWarning("Failed to obtain Direct Line token for health check");
-                return false;
-            }
-
-            // Verify that we can reach the Direct Line API endpoint with the token
-            var httpClient = await GetAuthenticatedHttpClientAsync(cancellationToken);
-            var response = await httpClient.GetAsync("/v3/directline", cancellationToken);
-            
-            // Accept any response (including 405 Method Not Allowed) as long as we can connect
-            var isHealthy = response.StatusCode != System.Net.HttpStatusCode.ServiceUnavailable;
-            
-            _logger.LogDebug("Copilot Studio health check {Status}", isHealthy ? "passed" : "failed");
-            return isHealthy;
+            // Health check is basic since we don't have a specific endpoint to check
+            // The actual health will be verified when a specific Direct Line URL is used
+            _logger.LogDebug("Copilot Studio service is initialized and ready");
+            return true;
         }
         catch (Exception ex)
         {

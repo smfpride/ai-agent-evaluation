@@ -10,28 +10,6 @@ namespace AiAgentEvaluation.IntegrationTests;
 public class ServiceAuthenticationTests : IntegrationTestBase
 {
     [Fact]
-    public async Task BlobStorageService_ShouldInitializeWithManagedIdentity()
-    {
-        // Arrange
-        var service = GetService<IBlobStorageService>();
-        
-        // Act & Assert
-        Assert.NotNull(service);
-        Logger.LogInformation("BlobStorageService initialized successfully");
-        
-        // Test basic connectivity (this will fail gracefully if not properly configured)
-        try
-        {
-            await service.GetPromptTemplateAsync("test", CancellationToken.None);
-            Logger.LogInformation("BlobStorageService connectivity test completed");
-        }
-        catch (Exception ex)
-        {
-            Logger.LogWarning("BlobStorageService connectivity test failed (expected if not configured): {Message}", ex.Message);
-        }
-    }
-    
-    [Fact]
     public async Task ServiceBusService_ShouldInitializeWithManagedIdentity()
     {
         // Arrange
@@ -112,7 +90,6 @@ public class ServiceAuthenticationTests : IntegrationTestBase
         Assert.NotNull(settings.Dataverse);
         Assert.NotNull(settings.ServiceBus);
         Assert.NotNull(settings.AzureOpenAI);
-        Assert.NotNull(settings.Storage);
         Assert.NotNull(settings.KeyVault);
         Assert.NotNull(settings.Evaluation);
         
@@ -120,7 +97,6 @@ public class ServiceAuthenticationTests : IntegrationTestBase
         Logger.LogInformation("Dataverse ConnectionString: {DataverseUrl}", string.IsNullOrEmpty(settings.Dataverse.ConnectionString) ? "Not configured" : "Configured");
         Logger.LogInformation("Service Bus Namespace: {ServiceBusNamespace}", string.IsNullOrEmpty(settings.ServiceBus.Namespace) ? "Not configured" : "Configured");
         Logger.LogInformation("Azure OpenAI Endpoint: {OpenAIEndpoint}", string.IsNullOrEmpty(settings.AzureOpenAI.Endpoint) ? "Not configured" : "Configured");
-        Logger.LogInformation("Storage Account: {StorageAccount}", string.IsNullOrEmpty(settings.Storage.AccountName) ? "Not configured" : "Configured");
         Logger.LogInformation("Key Vault URL: {KeyVaultUrl}", string.IsNullOrEmpty(settings.KeyVault.Url) ? "Not configured" : "Configured");
     }
 }

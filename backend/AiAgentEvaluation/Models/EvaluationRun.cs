@@ -15,18 +15,14 @@ public class EvaluationRun
     [Required]
     public string Name { get; set; } = string.Empty;
 
-    [JsonPropertyName("mcicaps_agentid")]
-    [Required]
-    public string AgentId { get; set; } = string.Empty;
-
-    [JsonPropertyName("mcicaps_agentname")]
-    public string? AgentName { get; set; }
-
     [JsonPropertyName("mcicaps_description")]
     public string? Description { get; set; }
 
     [JsonPropertyName("mcicaps_testset")]
     public Guid? TestSetId { get; set; }
+
+    [JsonPropertyName("mcicaps_agenttoeval")]
+    public Guid? AgentToEvalId { get; set; }
 
     [JsonPropertyName("statecode")]
     public int StateCode { get; set; } = 1; // Default: Created

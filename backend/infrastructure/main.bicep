@@ -85,29 +85,6 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   }
 }
 
-// Create blob containers
-resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' = {
-  parent: storageAccount
-  name: 'default'
-  properties: {
-    cors: {
-      corsRules: []
-    }
-    deleteRetentionPolicy: {
-      enabled: true
-      days: 7
-    }
-  }
-}
-
-resource promptTemplatesContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
-  parent: blobService
-  name: 'evaluation-prompts'
-  properties: {
-    publicAccess: 'None'
-  }
-}
-
 // Deploy Service Bus Namespace
 resource serviceBusNamespace 'Microsoft.ServiceBus/namespaces@2022-10-01-preview' = {
   name: serviceBusNamespaceName
@@ -307,10 +284,6 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
           name: 'MaxConcurrentTestCases'
           value: '100'
         }
-        {
-          name: 'PromptTemplateContainerName'
-          value: 'evaluation-prompts'
-        }
       ]
     }
   }
@@ -322,16 +295,6 @@ resource keyVaultSecretsUserRole 'Microsoft.Authorization/roleAssignments@2022-0
   name: guid(keyVault.id, functionApp.id, 'KeyVaultSecretsUser')
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6') // Key Vault Secrets User
-    principalId: functionApp.identity.principalId
-    principalType: 'ServicePrincipal'
-  }
-}
-
-resource storageBlobDataContributorRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  scope: storageAccount
-  name: guid(storageAccount.id, functionApp.id, 'StorageBlobDataContributor')
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe') // Storage Blob Data Contributor
     principalId: functionApp.identity.principalId
     principalType: 'ServicePrincipal'
   }

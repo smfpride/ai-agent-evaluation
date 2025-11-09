@@ -45,11 +45,20 @@ public class PerformanceTests
             _mockServiceBusService.Object);
 
         var evaluationRunId = Guid.NewGuid();
+        var agentToEvalId = Guid.NewGuid();
         var evaluationRun = new EvaluationRun
         {
             Id = evaluationRunId,
             StatusCode = EvaluationRunStatus.Execute,
-            AgentId = Guid.NewGuid().ToString()
+
+            AgentToEvalId = agentToEvalId
+        };
+
+        var agentToEval = new AgentToEval
+        {
+            Id = agentToEvalId,
+            Name = "Test Agent",
+            DirectLineSpeechUrl = "https://test.powerplatform.com/powervirtualagents/botsbyschema/test/directline/token"
         };
 
         // Create 50,000 test cases
@@ -65,6 +74,8 @@ public class PerformanceTests
 
         _mockDataverseService.Setup(x => x.GetEvaluationRunAsync(evaluationRunId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(evaluationRun);
+        _mockDataverseService.Setup(x => x.GetAgentToEvalAsync(agentToEvalId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(agentToEval);
         _mockDataverseService.Setup(x => x.GetTestCasesAsync(evaluationRunId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(testCases);
 
@@ -115,6 +126,17 @@ public class PerformanceTests
             })
             .ToList();
 
+        var agentToEvalId = Guid.NewGuid();
+        var agentToEval = new AgentToEval
+        {
+            Id = agentToEvalId,
+            Name = "Test Agent",
+            DirectLineSpeechUrl = "https://test.powerplatform.com/powervirtualagents/botsbyschema/test/directline/token"
+        };
+
+        _mockDataverseService.Setup(x => x.GetAgentToEvalAsync(agentToEvalId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(agentToEval);
+
         foreach (var run in evaluationRuns)
         {
             _mockDataverseService.Setup(x => x.GetEvaluationRunAsync(run.Id, It.IsAny<CancellationToken>()))
@@ -122,7 +144,8 @@ public class PerformanceTests
                 {
                     Id = run.Id,
                     StatusCode = EvaluationRunStatus.Execute,
-                    AgentId = Guid.NewGuid().ToString()
+
+                    AgentToEvalId = agentToEvalId
                 });
             _mockDataverseService.Setup(x => x.GetTestCasesAsync(run.Id, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(run.TestCases);
@@ -164,6 +187,7 @@ public class PerformanceTests
             {
                 TestCaseId = Guid.NewGuid(),
                 EvaluationRunId = Guid.NewGuid(),
+                DirectLineUrl = "https://test.powerplatform.com/powervirtualagents/botsbyschema/test/directline/token",
                 UserInput = $"Test {i}",
                 ExpectedResponse = $"Expected {i}",
                 TestType = TestType.Similarity,
@@ -215,7 +239,8 @@ public class PerformanceTests
         {
             EvaluationRunId = Guid.NewGuid(),
             TestCaseId = Guid.NewGuid(),
-            AgentId = Guid.NewGuid().ToString(),
+
+            DirectLineUrl = "https://test.powerplatform.com/powervirtualagents/botsbyschema/test/directline/token",
             UserInput = "Test input",
             ExpectedResponse = "Expected output",
             TestType = TestType.Similarity,
@@ -238,8 +263,7 @@ public class PerformanceTests
             ExecutionTimeMs = 800
         };
 
-        _mockCopilotStudioService.Setup(x => x.SendMessageAsync(
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        _mockCopilotStudioService.Setup(x => x.SendMessageAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(copilotResponse);
 
         _mockLLMJudgeService.Setup(x => x.EvaluateResponseAsync(
@@ -373,8 +397,7 @@ public class PerformanceTests
             ExecutionTimeMs = 800
         };
 
-        _mockCopilotStudioService.Setup(x => x.SendMessageAsync(
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        _mockCopilotStudioService.Setup(x => x.SendMessageAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(copilotResponse);
 
         _mockLLMJudgeService.Setup(x => x.EvaluateResponseAsync(
@@ -390,7 +413,8 @@ public class PerformanceTests
         {
             EvaluationRunId = Guid.NewGuid(),
             TestCaseId = Guid.NewGuid(),
-            AgentId = Guid.NewGuid().ToString(),
+
+            DirectLineUrl = "https://test.powerplatform.com/powervirtualagents/botsbyschema/test/directline/token",
             UserInput = $"Test {i}",
             ExpectedResponse = $"Expected {i}",
             TestType = TestType.Similarity,
@@ -430,7 +454,7 @@ public class PerformanceTests
         {
             EvaluationRunId = Guid.NewGuid(),
             TestCaseId = Guid.NewGuid(),
-            AgentId = Guid.NewGuid().ToString(),
+
             UserInput = "Test input with some content",
             ExpectedResponse = "Expected output with detailed response",
             TestType = TestType.Similarity,
@@ -557,3 +581,7 @@ public class PerformanceTests
 /// 3. Performance regression test suite
 /// 4. Capacity planning exercises
 /// </summary>
+
+
+
+

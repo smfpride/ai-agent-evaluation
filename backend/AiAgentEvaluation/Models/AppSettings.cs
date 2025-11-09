@@ -9,7 +9,6 @@ public class AppSettings
     public CopilotStudioSettings CopilotStudio { get; set; } = new();
     public AzureOpenAISettings AzureOpenAI { get; set; } = new();
     public ServiceBusSettings ServiceBus { get; set; } = new();
-    public StorageSettings Storage { get; set; } = new();
     public KeyVaultSettings KeyVault { get; set; } = new();
     public EvaluationSettings Evaluation { get; set; } = new();
 }
@@ -28,17 +27,6 @@ public class DataverseSettings
 
 public class CopilotStudioSettings
 {
-    /// <summary>
-    /// Copilot Studio token endpoint URL
-    /// Example: "https://5b015d5390b8ef2b879fc33717257d.0d.environment.api.powerplatform.com/powervirtualagents/botsbyschema/msdyn_indPersonalShoppingAgent/directline/token?api-version=2022-03-01-preview"
-    /// </summary>
-    public string TokenEndpoint { get; set; } = string.Empty;
-    
-    /// <summary>
-    /// Direct Line API base URL (typically https://directline.botframework.com)
-    /// </summary>
-    public string DirectLineEndpoint { get; set; } = "https://directline.botframework.com";
-    
     /// <summary>
     /// Default bot/agent ID for conversations
     /// </summary>
@@ -76,14 +64,6 @@ public class ServiceBusSettings
     public int AutoCompleteTimeoutMinutes { get; set; } = 5;
     public int MaxRetryAttempts { get; set; } = 3;
     public int RetryDelaySeconds { get; set; } = 30;
-}
-
-public class StorageSettings
-{
-    public string ConnectionString { get; set; } = string.Empty; // Legacy - will be removed
-    public string AccountName { get; set; } = string.Empty; // For managed identity
-    public string PromptTemplateContainerName { get; set; } = "evaluation-prompts";
-    public int TimeoutSeconds { get; set; } = 30;
 }
 
 public class KeyVaultSettings

@@ -19,17 +19,17 @@ public class LLMJudgeService : ILLMJudgeService, IDisposable
 {
     private readonly ILogger<LLMJudgeService> _logger;
     private readonly AppSettings _settings;
-    private readonly IBlobStorageService _blobStorageService;
+    private readonly IDataverseService _dataverseService;
     private readonly ChatClient _chatClient;
     private readonly JsonSerializerOptions _jsonOptions;
     private readonly ResilientService _resilientService;
     private bool _disposed;
 
-    public LLMJudgeService(ILogger<LLMJudgeService> logger, IOptions<AppSettings> settings, IBlobStorageService blobStorageService)
+    public LLMJudgeService(ILogger<LLMJudgeService> logger, IOptions<AppSettings> settings, IDataverseService dataverseService)
     {
         _logger = logger;
         _settings = settings.Value;
-        _blobStorageService = blobStorageService;
+        _dataverseService = dataverseService;
         
         // Initialize resilient service
         _resilientService = new ResilientService(_logger, settings);
@@ -101,13 +101,15 @@ public class LLMJudgeService : ILLMJudgeService, IDisposable
             // Get the response content
             var messageContent = response.Value.Content[0].Text;
             
+            _logger.LogInformation("Raw LLM response: {RawResponse}", messageContent);
+            
             // Parse the LLM evaluation response
             var result = ParseLLMResponse(messageContent);
             result.ExecutionTimeMs = (int)stopwatch.ElapsedMilliseconds;
             result.Success = true;
             
-            _logger.LogInformation("LLM evaluation completed with score {Score} in {ElapsedMs}ms", 
-                result.Score, result.ExecutionTimeMs);
+            _logger.LogInformation("LLM evaluation completed with score {Score} (type: {ScoreType}) in {ElapsedMs}ms", 
+                result.Score, result.Score.GetType().Name, result.ExecutionTimeMs);
             
             return result;
         }, "EvaluateResponse",
@@ -131,28 +133,60 @@ public class LLMJudgeService : ILLMJudgeService, IDisposable
     {
         try
         {
+            // Clean the response text - remove markdown code fences if present
+            var cleanedText = responseText.Trim();
+            if (cleanedText.StartsWith("```json"))
+            {
+                cleanedText = cleanedText.Substring(7); // Remove ```json
+                if (cleanedText.EndsWith("```"))
+                {
+                    cleanedText = cleanedText.Substring(0, cleanedText.Length - 3); // Remove trailing ```
+                }
+                cleanedText = cleanedText.Trim();
+                _logger.LogInformation("Removed markdown code fences from response");
+            }
+            else if (cleanedText.StartsWith("```"))
+            {
+                cleanedText = cleanedText.Substring(3); // Remove ```
+                if (cleanedText.EndsWith("```"))
+                {
+                    cleanedText = cleanedText.Substring(0, cleanedText.Length - 3); // Remove trailing ```
+                }
+                cleanedText = cleanedText.Trim();
+                _logger.LogInformation("Removed markdown code fences from response");
+            }
+            
             // Try to parse as JSON first
             var jsonOptions = new JsonSerializerOptions
             {
                 PropertyNameCaseInsensitive = true
             };
             
-            var jsonResponse = JsonSerializer.Deserialize<JsonElement>(responseText, jsonOptions);
+            var jsonResponse = JsonSerializer.Deserialize<JsonElement>(cleanedText, jsonOptions);
             
             var score = 0m;
             var reasoning = string.Empty;
             
             if (jsonResponse.TryGetProperty("score", out var scoreElement))
             {
+                _logger.LogInformation("Score element found - ValueKind: {ValueKind}, Raw: {RawValue}", 
+                    scoreElement.ValueKind, scoreElement.GetRawText());
+                
                 if (scoreElement.ValueKind == JsonValueKind.Number)
                 {
                     score = scoreElement.GetDecimal();
+                    _logger.LogInformation("Parsed score as decimal from number: {Score}", score);
                 }
                 else if (scoreElement.ValueKind == JsonValueKind.String && 
                          decimal.TryParse(scoreElement.GetString(), out var parsedScore))
                 {
                     score = parsedScore;
+                    _logger.LogInformation("Parsed score as decimal from string: {Score}", score);
                 }
+            }
+            else
+            {
+                _logger.LogWarning("No 'score' property found in JSON response");
             }
             
             if (jsonResponse.TryGetProperty("reasoning", out var reasoningElement))
@@ -161,7 +195,15 @@ public class LLMJudgeService : ILLMJudgeService, IDisposable
             }
             
             // Ensure score is within valid range (0-1 scale)
+            var originalScore = score;
             score = Math.Max(0, Math.Min(1, score));
+            
+            if (originalScore != score)
+            {
+                _logger.LogWarning("Score was clamped from {OriginalScore} to {ClampedScore}", originalScore, score);
+            }
+            
+            _logger.LogInformation("Final parsed score: {Score}", score);
             
             return new LLMJudgeResponse
             {
@@ -169,8 +211,9 @@ public class LLMJudgeService : ILLMJudgeService, IDisposable
                 Reasoning = reasoning
             };
         }
-        catch (JsonException)
+        catch (JsonException ex)
         {
+            _logger.LogWarning(ex, "Failed to parse JSON response, falling back to regex parsing");
             // Fallback to regex parsing if JSON parsing fails
             return ParseLLMResponseWithRegex(responseText);
         }
@@ -178,31 +221,50 @@ public class LLMJudgeService : ILLMJudgeService, IDisposable
 
     private LLMJudgeResponse ParseLLMResponseWithRegex(string responseText)
     {
+        _logger.LogWarning("Using regex fallback parser - JSON parsing failed");
+        
         var score = 0m;
         var reasoning = responseText;
+        var scoreFound = false;
         
-        // Try to extract score using various patterns
-        var scorePatterns = new[]
+        // First, try to find a JSON-like score pattern (more specific)
+        var jsonScorePattern = @"""score""\s*:\s*(\d+(?:\.\d+)?)";
+        var jsonMatch = Regex.Match(responseText, jsonScorePattern, RegexOptions.IgnoreCase);
+        if (jsonMatch.Success && decimal.TryParse(jsonMatch.Groups[1].Value, out var jsonScore))
         {
-            @"score[:\s]*(\d+(?:\.\d+)?)",
-            @"(\d+(?:\.\d+)?)\s*(?:/\s*10|out of 10)",
-            @"rating[:\s]*(\d+(?:\.\d+)?)",
-            @"(\d+(?:\.\d+)?)\s*(?:points|pts)"
-        };
+            score = Math.Max(0, Math.Min(1, jsonScore));
+            scoreFound = true;
+            _logger.LogInformation("Regex parser found JSON-style score: {Score}", score);
+        }
         
-        foreach (var pattern in scorePatterns)
+        // If no JSON-style score, try other patterns
+        if (!scoreFound)
         {
-            var match = Regex.Match(responseText, pattern, RegexOptions.IgnoreCase);
-            if (match.Success && decimal.TryParse(match.Groups[1].Value, out var extractedScore))
+            var scorePatterns = new[]
             {
-                score = Math.Max(0, Math.Min(1, extractedScore));
-                break;
+                @"score[:\s]*(\d+(?:\.\d+)?)",
+                @"(\d+(?:\.\d+)?)\s*(?:/\s*10|out of 10)",
+                @"rating[:\s]*(\d+(?:\.\d+)?)",
+                @"(\d+(?:\.\d+)?)\s*(?:points|pts)"
+            };
+            
+            foreach (var pattern in scorePatterns)
+            {
+                var match = Regex.Match(responseText, pattern, RegexOptions.IgnoreCase);
+                if (match.Success && decimal.TryParse(match.Groups[1].Value, out var extractedScore))
+                {
+                    score = Math.Max(0, Math.Min(1, extractedScore));
+                    scoreFound = true;
+                    _logger.LogInformation("Regex parser found score via pattern '{Pattern}': {Score}", pattern, score);
+                    break;
+                }
             }
         }
         
-        // If no score found, try to infer from keywords
-        if (score == 0)
+        // ONLY infer from keywords if we found absolutely no numeric score
+        if (!scoreFound)
         {
+            _logger.LogWarning("No numeric score found in response, attempting keyword inference");
             var lowerText = responseText.ToLowerInvariant();
             if (lowerText.Contains("excellent") || lowerText.Contains("perfect"))
                 score = 0.9m;
@@ -216,6 +278,8 @@ public class LLMJudgeService : ILLMJudgeService, IDisposable
                 score = 0.1m;
             else
                 score = 0.5m; // Default neutral score
+            
+            _logger.LogWarning("Inferred score from keywords: {Score}", score);
         }
         
         return new LLMJudgeResponse
@@ -227,26 +291,26 @@ public class LLMJudgeService : ILLMJudgeService, IDisposable
 
     public async Task<string> GetPromptTemplateAsync(int testType, CancellationToken cancellationToken = default)
     {
-        var templateName = GetTemplateNameForTestType(testType);
-        
         try
         {
-            return await _blobStorageService.GetPromptTemplateAsync(templateName, cancellationToken);
+            var judgePrompt = await _dataverseService.GetJudgePromptByTestTypeAsync(testType, cancellationToken);
+            
+            if (judgePrompt != null && !string.IsNullOrWhiteSpace(judgePrompt.PromptTemplate))
+            {
+                _logger.LogInformation("Retrieved judge prompt '{PromptName}' for test type {TestType}", 
+                    judgePrompt.Name, testType);
+                return judgePrompt.PromptTemplate;
+            }
+            
+            _logger.LogWarning("No judge prompt found for test type {TestType}, using default", testType);
+            return GetDefaultPromptTemplate(testType);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to get prompt template {TemplateName}, using default", templateName);
+            _logger.LogWarning(ex, "Failed to get judge prompt for test type {TestType}, using default", testType);
             return GetDefaultPromptTemplate(testType);
         }
     }
-
-    private static string GetTemplateNameForTestType(int testType) => testType switch
-    {
-        TestType.Similarity => "similarity-evaluation-prompt.txt",
-        TestType.Accuracy => "accuracy-evaluation-prompt.txt", 
-        TestType.Relevancy => "relevancy-evaluation-prompt.txt",
-        _ => "default-evaluation-prompt.txt"
-    };
 
     private static string GetDefaultPromptTemplate(int testType) => testType switch
     {

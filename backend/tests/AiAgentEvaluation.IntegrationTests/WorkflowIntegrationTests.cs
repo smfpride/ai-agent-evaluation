@@ -49,39 +49,6 @@ public class WorkflowIntegrationTests : IntegrationTestBase
     }
     
     [Fact]
-    public async Task BlobStorage_PromptTemplateWorkflow_ShouldWork()
-    {
-        // Arrange
-        var blobService = GetService<IBlobStorageService>();
-        
-        // Act & Assert
-        try
-        {
-            // Try to check if a template exists
-            var exists = await blobService.PromptTemplateExistsAsync("similarity", CancellationToken.None);
-            Logger.LogInformation("Template existence check completed: {Exists}", exists);
-            
-            // Try to list templates
-            var templates = await blobService.ListPromptTemplatesAsync(CancellationToken.None);
-            Logger.LogInformation("Listed {Count} prompt templates", templates.Count);
-            
-            // Try to retrieve a template (may fail if none exist)
-            if (templates.Count > 0)
-            {
-                var retrieved = await blobService.GetPromptTemplateAsync(templates[0], CancellationToken.None);
-                Assert.NotNull(retrieved);
-                Logger.LogInformation("Successfully retrieved prompt template: {TemplateName}", templates[0]);
-            }
-        }
-        catch (Exception ex)
-        {
-            Logger.LogWarning("Blob Storage integration test failed (expected if not configured): {Message}", ex.Message);
-            // Don't fail the test if Blob Storage isn't configured
-            Assert.True(true, "Test passed - Blob Storage not configured for integration testing");
-        }
-    }
-    
-    [Fact]
     public async Task ServiceBus_MessageWorkflow_ShouldWork()
     {
         // Arrange
@@ -90,6 +57,7 @@ public class WorkflowIntegrationTests : IntegrationTestBase
         {
             TestCaseId = Guid.NewGuid(),
             EvaluationRunId = Guid.NewGuid(),
+            DirectLineUrl = "https://test.powerplatform.com/powervirtualagents/botsbyschema/test/directline/token",
             UserInput = "What is the capital of France?",
             ExpectedResponse = "Paris",
             TestType = TestType.Accuracy,

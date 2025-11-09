@@ -53,9 +53,6 @@ builder.Services.Configure<AppSettings>(options =>
     // Dataverse settings (OAuth connection string only - Managed Identity not supported)
     options.Dataverse.ConnectionString = builder.Configuration["DataverseConnectionString"] ?? options.Dataverse.ConnectionString;
     
-    // CopilotStudio settings  
-    options.CopilotStudio.TokenEndpoint = builder.Configuration["CopilotStudioTokenEndpoint"] ?? options.CopilotStudio.TokenEndpoint;
-    
     // Azure OpenAI settings
     options.AzureOpenAI.Endpoint = builder.Configuration["AzureOpenAIEndpoint"] ?? options.AzureOpenAI.Endpoint;
     options.AzureOpenAI.ApiKey = builder.Configuration["AzureOpenAIApiKey"] ?? options.AzureOpenAI.ApiKey;
@@ -64,11 +61,6 @@ builder.Services.Configure<AppSettings>(options =>
     options.ServiceBus.Namespace = builder.Configuration["ServiceBusNamespace"] ?? options.ServiceBus.Namespace;
     options.ServiceBus.ConnectionString = builder.Configuration["ServiceBusConnectionString"] ?? options.ServiceBus.ConnectionString;
     options.ServiceBus.QueueName = builder.Configuration["QueueName"] ?? options.ServiceBus.QueueName;
-    
-    // Storage settings
-    options.Storage.AccountName = builder.Configuration["StorageAccountName"] ?? options.Storage.AccountName;
-    options.Storage.ConnectionString = builder.Configuration["StorageAccountConnectionString"] ?? options.Storage.ConnectionString;
-    options.Storage.PromptTemplateContainerName = builder.Configuration["PromptTemplateContainerName"] ?? options.Storage.PromptTemplateContainerName;
     
     // Key Vault settings
     options.KeyVault.Url = builder.Configuration["KeyVaultUrl"] ?? options.KeyVault.Url;
@@ -133,15 +125,6 @@ try
 catch (Exception ex)
 {
     Console.WriteLine($"Warning: Failed to register ServiceBusService: {ex.Message}");
-}
-
-try
-{
-    builder.Services.AddScoped<IBlobStorageService, BlobStorageService>();
-}
-catch (Exception ex)
-{
-    Console.WriteLine($"Warning: Failed to register BlobStorageService: {ex.Message}");
 }
 
 // Add logging

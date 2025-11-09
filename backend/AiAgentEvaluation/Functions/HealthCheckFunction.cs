@@ -15,20 +15,17 @@ public class HealthCheckFunction
     private readonly ILogger<HealthCheckFunction> _logger;
     private readonly IDataverseService _dataverseService;
     private readonly IServiceBusService _serviceBusService;
-    private readonly IBlobStorageService _blobStorageService;
     private readonly ILLMJudgeService _llmJudgeService;
 
     public HealthCheckFunction(
         ILogger<HealthCheckFunction> logger,
         IDataverseService dataverseService,
         IServiceBusService serviceBusService,
-        IBlobStorageService blobStorageService,
         ILLMJudgeService llmJudgeService)
     {
         _logger = logger;
         _dataverseService = dataverseService;
         _serviceBusService = serviceBusService;
-        _blobStorageService = blobStorageService;
         _llmJudgeService = llmJudgeService;
     }
 
@@ -94,26 +91,6 @@ public class HealthCheckFunction
             checks["serviceBus"] = new HealthCheckResult { Status = "Unhealthy", Message = ex.Message };
             overallHealthy = false;
             _logger.LogError(ex, "Service Bus check: Unhealthy");
-        }
-
-        // Check Blob Storage connectivity
-        try
-        {
-            _logger.LogInformation("Checking Blob Storage connectivity...");
-            var isHealthy = await _blobStorageService.CheckHealthAsync();
-            checks["blobStorage"] = new HealthCheckResult 
-            { 
-                Status = isHealthy ? "Healthy" : "Unhealthy", 
-                Message = isHealthy ? "Connected successfully" : "Connection failed"
-            };
-            overallHealthy = overallHealthy && isHealthy;
-            _logger.LogInformation("Blob Storage check: {Status}", isHealthy ? "Healthy" : "Unhealthy");
-        }
-        catch (Exception ex)
-        {
-            checks["blobStorage"] = new HealthCheckResult { Status = "Unhealthy", Message = ex.Message };
-            overallHealthy = false;
-            _logger.LogError(ex, "Blob Storage check: Unhealthy");
         }
 
         // Check Azure OpenAI connectivity
@@ -192,7 +169,6 @@ public class HealthCheckFunction
         {
             hasDataverseConfig = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DataverseBaseUrl")),
             hasServiceBusConfig = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ServiceBusNamespace")),
-            hasStorageConfig = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("StorageAccountName")),
             hasOpenAIConfig = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("AzureOpenAIEndpoint"))
         };
 

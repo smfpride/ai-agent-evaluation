@@ -19,7 +19,6 @@ public class MonitorFunctionTests
     private readonly Mock<IDataverseService> _mockDataverseService;
     private readonly Mock<IServiceBusService> _mockServiceBusService;
     private readonly Mock<ILLMJudgeService> _mockLLMJudgeService;
-    private readonly Mock<IBlobStorageService> _mockBlobStorageService;
     private readonly MonitorFunction _monitorFunction;
 
     public MonitorFunctionTests()
@@ -28,20 +27,17 @@ public class MonitorFunctionTests
         _mockDataverseService = new Mock<IDataverseService>();
         _mockServiceBusService = new Mock<IServiceBusService>();
         _mockLLMJudgeService = new Mock<ILLMJudgeService>();
-        _mockBlobStorageService = new Mock<IBlobStorageService>();
 
         // Setup default health check returns
         _mockDataverseService.Setup(x => x.CheckHealthAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);
         _mockServiceBusService.Setup(x => x.CheckHealthAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);
         _mockLLMJudgeService.Setup(x => x.CheckHealthAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);
-        _mockBlobStorageService.Setup(x => x.CheckHealthAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);
 
         _monitorFunction = new MonitorFunction(
             _mockLogger.Object,
             _mockDataverseService.Object,
             _mockServiceBusService.Object,
-            _mockLLMJudgeService.Object,
-            _mockBlobStorageService.Object);
+            _mockLLMJudgeService.Object);
     }
 
     #region TC-MON-001: Timer Trigger Execution
@@ -114,7 +110,6 @@ public class MonitorFunctionTests
         Assert.Contains("\"dataverse\":\"Healthy\"", result);
         Assert.Contains("\"serviceBus\":\"Healthy\"", result);
         Assert.Contains("\"azureOpenAI\":\"Healthy\"", result);
-        Assert.Contains("\"blobStorage\":\"Healthy\"", result);
     }
 
     [Fact]
@@ -166,22 +161,6 @@ public class MonitorFunctionTests
     }
 
     [Fact]
-    public async Task HealthCheck_BlobStorageUnhealthy_ReturnsDegradedStatus()
-    {
-        // Arrange
-        var httpRequestData = CreateMockHttpRequestData();
-        _mockBlobStorageService.Setup(x => x.CheckHealthAsync(It.IsAny<CancellationToken>())).ReturnsAsync(false);
-
-        // Act
-        var result = await _monitorFunction.HealthCheck(httpRequestData, CancellationToken.None);
-
-        // Assert
-        Assert.NotNull(result);
-        Assert.Contains("Degraded", result);
-        Assert.Contains("\"blobStorage\":\"Unhealthy\"", result);
-    }
-
-    [Fact]
     public async Task HealthCheck_ContainsVersionInformation()
     {
         // Arrange
@@ -221,7 +200,6 @@ public class MonitorFunctionTests
         _mockDataverseService.Verify(x => x.CheckHealthAsync(It.IsAny<CancellationToken>()), Times.Once);
         _mockServiceBusService.Verify(x => x.CheckHealthAsync(It.IsAny<CancellationToken>()), Times.Once);
         _mockLLMJudgeService.Verify(x => x.CheckHealthAsync(It.IsAny<CancellationToken>()), Times.Once);
-        _mockBlobStorageService.Verify(x => x.CheckHealthAsync(It.IsAny<CancellationToken>()), Times.Once);
     }
 
     #endregion
@@ -296,9 +274,52 @@ public class MonitorFunctionTests
 
     #endregion
 
+    #region Progress Tracking Tests (NEW)
+
+    [Fact]
+    public async Task MonitorEvaluationRuns_CalculatesProgressFromActualResults()
+    {
+        // Arrange - This test validates the fix for progress tracking
+        var evaluationRunId = Guid.NewGuid();
+        var evaluationRun = new AiAgentEvaluation.Models.EvaluationRun
+        {
+            Id = evaluationRunId,
+            StatusCode = AiAgentEvaluation.Models.EvaluationRunStatus.Running,
+            TotalTestCases = 5,
+            CompletedTestCases = 0, // Initially 0 (may be stale)
+            FailedTestCases = 0,
+            StartTime = DateTime.UtcNow.AddMinutes(-5)
+        };
+
+        // Setup actual results (3 completed, 1 failed)
+        var results = new List<AiAgentEvaluation.Models.EvaluationResult>
+        {
+            new() { Id = Guid.NewGuid(), Score = 0.8m, ErrorMessage = null },
+            new() { Id = Guid.NewGuid(), Score = 0.9m, ErrorMessage = null },
+            new() { Id = Guid.NewGuid(), Score = 0.7m, ErrorMessage = null },
+            new() { Id = Guid.NewGuid(), Score = null, ErrorMessage = "Test failed" } // Failed
+        };
+
+        _mockDataverseService.Setup(x => x.GetRunningEvaluationRunsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<AiAgentEvaluation.Models.EvaluationRun> { evaluationRun });
+        _mockDataverseService.Setup(x => x.GetEvaluationResultsAsync(evaluationRunId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(results);
+
+        var timerInfo = CreateTimerInfo(isPastDue: false);
+
+        // Act
+        await _monitorFunction.MonitorEvaluationRuns(timerInfo, CancellationToken.None);
+
+        // Assert - Verify progress updated with actual counts (4 completed, 1 failed)
+        _mockDataverseService.Verify(x => x.UpdateEvaluationRunProgressAsync(
+            evaluationRunId, 4, 1, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    #endregion
+
     #region Helper Methods
 
-    private TimerInfo CreateTimerInfo(bool isPastDue)
+    private TimerInfo CreateTimerInfo(bool isPastDue = false)
     {
         return new TimerInfo
         {
