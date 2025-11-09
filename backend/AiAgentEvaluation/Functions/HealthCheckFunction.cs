@@ -30,23 +30,70 @@ public class HealthCheckFunction
     }
 
     /// <summary>
-    /// Basic health check endpoint - returns 200 if function app is running
+    /// Comprehensive health check - validates all dependencies and returns detailed status
+    /// This is the main health check endpoint for monitoring systems
     /// </summary>
     [Function("HealthCheck")]
     public async Task<HttpResponseData> HealthCheck(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "health")] HttpRequestData req)
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "api/health")] HttpRequestData req,
+        CancellationToken cancellationToken)
     {
-        _logger.LogInformation("Health check endpoint called");
+        _logger.LogInformation("Health check requested");
 
-        var response = req.CreateResponse(HttpStatusCode.OK);
-        await response.WriteAsJsonAsync(new
+        try
         {
-            status = "Healthy",
-            timestamp = DateTime.UtcNow,
-            version = "1.0.0"
-        });
+            // Perform health checks for all dependencies in parallel
+            var dataverseHealthTask = _dataverseService.CheckHealthAsync(cancellationToken);
+            var serviceBusHealthTask = _serviceBusService.CheckHealthAsync(cancellationToken);
+            var azureOpenAIHealthTask = _llmJudgeService.CheckHealthAsync(cancellationToken);
 
-        return response;
+            await Task.WhenAll(dataverseHealthTask, serviceBusHealthTask, azureOpenAIHealthTask);
+
+            var dataverseHealthy = await dataverseHealthTask;
+            var serviceBusHealthy = await serviceBusHealthTask;
+            var azureOpenAIHealthy = await azureOpenAIHealthTask;
+
+            var allHealthy = dataverseHealthy && serviceBusHealthy && azureOpenAIHealthy;
+
+            _logger.LogInformation("Health check completed: Overall={Status}, Dataverse={Dataverse}, ServiceBus={ServiceBus}, AzureOpenAI={AzureOpenAI}",
+                allHealthy ? "Healthy" : "Degraded", 
+                dataverseHealthy ? "Healthy" : "Unhealthy",
+                serviceBusHealthy ? "Healthy" : "Unhealthy",
+                azureOpenAIHealthy ? "Healthy" : "Unhealthy");
+
+            var statusCode = allHealthy ? HttpStatusCode.OK : HttpStatusCode.ServiceUnavailable;
+            var response = req.CreateResponse(statusCode);
+
+            await response.WriteAsJsonAsync(new
+            {
+                status = allHealthy ? "Healthy" : "Degraded",
+                timestamp = DateTime.UtcNow,
+                version = "1.0.0",
+                environment = Environment.GetEnvironmentVariable("AZURE_FUNCTIONS_ENVIRONMENT") ?? "Development",
+                services = new
+                {
+                    dataverse = dataverseHealthy ? "Healthy" : "Unhealthy",
+                    serviceBus = serviceBusHealthy ? "Healthy" : "Unhealthy",
+                    azureOpenAI = azureOpenAIHealthy ? "Healthy" : "Unhealthy"
+                }
+            });
+
+            return response;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Health check failed");
+
+            var response = req.CreateResponse(HttpStatusCode.ServiceUnavailable);
+            await response.WriteAsJsonAsync(new
+            {
+                status = "Unhealthy",
+                timestamp = DateTime.UtcNow,
+                error = ex.Message
+            });
+
+            return response;
+        }
     }
 
     /// <summary>

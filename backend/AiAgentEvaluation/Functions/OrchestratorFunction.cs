@@ -29,7 +29,7 @@ public class OrchestratorFunction
 
     [Function("StartEvaluationRun")]
     public async Task<HttpResponseData> StartEvaluationRun(
-        [HttpTrigger(AuthorizationLevel.Function, "post", Route = "evaluations/start")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "evaluations/start")] HttpRequestData req,
         CancellationToken cancellationToken)
     {
         _logger.LogInformation("Starting evaluation run request received");
