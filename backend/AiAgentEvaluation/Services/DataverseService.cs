@@ -29,15 +29,18 @@ public class DataverseService : IDataverseService, IDisposable
         // Initialize resilient service
         _resilientService = new ResilientService(_logger, settings);
 
+        // CRITICAL: Skip ServiceClient initialization entirely if connection string is not configured
+        // This prevents SDK from making authentication attempts to cached/default Dataverse instances
+        if (string.IsNullOrWhiteSpace(_settings.Dataverse.ConnectionString))
+        {
+            _connectionError = "Dataverse ConnectionString is not configured. Dataverse operations will not be available. Please configure DataverseConnectionString with OAuth authentication (AuthenticationType=OAuth).";
+            _logger.LogWarning(_connectionError);
+            _serviceClient = null;
+            return;
+        }
+
         try
         {
-            if (string.IsNullOrEmpty(_settings.Dataverse.ConnectionString))
-            {
-                _connectionError = "Dataverse ConnectionString is required. Please configure DataverseConnectionString with OAuth authentication (AuthenticationType=OAuth).";
-                _logger.LogError(_connectionError);
-                return;
-            }
-
             _logger.LogInformation("Attempting to connect to Dataverse with connection string: {ConnectionString}", 
                 _settings.Dataverse.ConnectionString.Substring(0, Math.Min(50, _settings.Dataverse.ConnectionString.Length)) + "...");
 
@@ -60,6 +63,10 @@ public class DataverseService : IDataverseService, IDisposable
                     _serviceClient.ActiveAuthenticationType,
                     _serviceClient.ConnectedOrgFriendlyName ?? "None");
                 
+                // Dispose the failed client to prevent background authentication retries
+                _serviceClient.Dispose();
+                _serviceClient = null;
+                
                 return;
             }
             
@@ -71,6 +78,14 @@ public class DataverseService : IDataverseService, IDisposable
             _connectionError = $"Error initializing Dataverse service: {ex.Message}";
             _logger.LogError(ex, "Error initializing Dataverse service. Connection string length: {Length}, InnerException: {InnerException}", 
                 _settings.Dataverse.ConnectionString?.Length ?? 0, ex.InnerException?.Message ?? "None");
+            
+            // Dispose the client to prevent background authentication retries
+            if (_serviceClient != null)
+            {
+                _serviceClient.Dispose();
+                _serviceClient = null;
+            }
+            
             // Don't throw - let the service degrade gracefully
         }
     }
