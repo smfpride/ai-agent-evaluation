@@ -70,8 +70,8 @@ public class ProcessTestCaseMessage
     [JsonPropertyName("expectedResponse")]
     public string ExpectedResponse { get; set; } = string.Empty;
 
-    [JsonPropertyName("testType")]
-    public int TestType { get; set; }
+    [JsonPropertyName("evaluatorTypeId")]
+    public Guid? EvaluatorTypeId { get; set; }
 
     [JsonPropertyName("conversationId")]
     public string? ConversationId { get; set; }
@@ -115,9 +115,8 @@ public class CopilotDirectLineResponse
 /// </summary>
 public class LLMJudgeRequest
 {
-    [Required]
-    [JsonPropertyName("testType")]
-    public int TestType { get; set; }
+    [JsonPropertyName("evaluatorTypeId")]
+    public Guid? EvaluatorTypeId { get; set; }
 
     [Required]
     [JsonPropertyName("userInput")]

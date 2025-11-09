@@ -19,9 +19,8 @@ public class TestCase
     [Required]
     public Guid EvaluationRunId { get; set; }
 
-    [JsonPropertyName("mcicaps_testtype")]
-    [Required]
-    public int TestType { get; set; }
+    [JsonPropertyName("_mcicaps_evaluatortype_value")]
+    public Guid? EvaluatorTypeId { get; set; }
 
     [JsonPropertyName("mcicaps_prompt")]
     [Required]
@@ -33,12 +32,6 @@ public class TestCase
 
     [JsonPropertyName("mcicaps_conversationid")]
     public string? ConversationId { get; set; }
-
-    [JsonPropertyName("mcicaps_testorder")]
-    public int? TestOrder { get; set; }
-
-    [JsonPropertyName("mcicaps_metadata")]
-    public string? Metadata { get; set; }
 
     [JsonPropertyName("statecode")]
     public int StateCode { get; set; } = 0; // Default: Active

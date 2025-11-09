@@ -50,7 +50,6 @@ public class WorkerFunctionTests
             DirectLineUrl = "https://test.powerplatform.com/powervirtualagents/botsbyschema/test/directline/token",
             UserInput = "What are the features of Product X?",
             ExpectedResponse = "Product X includes AI capabilities, cloud integration, and mobile support.",
-            TestType = TestType.Similarity,
             RetryCount = 0,
             MaxRetries = 3
         };
@@ -98,7 +97,6 @@ public class WorkerFunctionTests
             DirectLineUrl = "https://test.powerplatform.com/powervirtualagents/botsbyschema/test/directline/token",
             UserInput = "What is the capital of France?",
             ExpectedResponse = "Paris",
-            TestType = TestType.Accuracy,
             RetryCount = 0,
             MaxRetries = 3
         };
@@ -146,7 +144,6 @@ public class WorkerFunctionTests
             DirectLineUrl = "https://test.powerplatform.com/powervirtualagents/botsbyschema/test/directline/token",
             UserInput = "How do I reset my password?",
             ExpectedResponse = "Instructions for password reset",
-            TestType = TestType.Relevancy,
             RetryCount = 0,
             MaxRetries = 3
         };
@@ -616,7 +613,6 @@ public class WorkerFunctionTests
             DirectLineUrl = "https://test.powerplatform.com/powervirtualagents/botsbyschema/test/directline/token",
             UserInput = "Test input",
             ExpectedResponse = "Expected output",
-            TestType = TestType.Similarity,
             RetryCount = 0,
             MaxRetries = 3
         };

@@ -193,9 +193,6 @@ public class MonitorFunction
         await _dataverseService.UpdateEvaluationRunScoresAsync(
             evaluationRun.Id,
             metrics.OverallScore,
-            metrics.SimilarityScore,
-            metrics.AccuracyScore,
-            metrics.RelevancyScore,
             cancellationToken);
 
         await _dataverseService.UpdateEvaluationRunCompletionAsync(
@@ -207,10 +204,8 @@ public class MonitorFunction
             cancellationToken);
 
         _logger.LogInformation(
-            "Evaluation run {EvaluationRunId} completed successfully: OverallScore={OverallScore:F3}, Pass={Pass}, " +
-            "SimilarityScore={SimilarityScore:F3}, AccuracyScore={AccuracyScore:F3}, RelevancyScore={RelevancyScore:F3}",
-            evaluationRun.Id, metrics.OverallScore, overallPass,
-            metrics.SimilarityScore, metrics.AccuracyScore, metrics.RelevancyScore);
+            "Evaluation run {EvaluationRunId} completed successfully: OverallScore={OverallScore:F3}, Pass={Pass}",
+            evaluationRun.Id, metrics.OverallScore, overallPass);
     }
 
     /// <summary>
@@ -227,42 +222,22 @@ public class MonitorFunction
             return new EvaluationMetrics();
         }
 
-        // Get test cases to determine test types
-        var testCases = _dataverseService.GetTestCasesAsync(evaluationRun.Id).GetAwaiter().GetResult();
-        var testCaseDict = testCases.ToDictionary(tc => tc.Id, tc => tc.TestType);
-
         // Calculate overall average score
         var overallScore = validResults.Average(r => r.Score!.Value);
-
-        // Calculate type-specific scores
-        var similarityResults = validResults.Where(r => 
-            testCaseDict.TryGetValue(r.TestCaseId, out var type) && type == TestType.Similarity).ToList();
-        var accuracyResults = validResults.Where(r => 
-            testCaseDict.TryGetValue(r.TestCaseId, out var type) && type == TestType.Accuracy).ToList();
-        var relevancyResults = validResults.Where(r => 
-            testCaseDict.TryGetValue(r.TestCaseId, out var type) && type == TestType.Relevancy).ToList();
 
         var metrics = new EvaluationMetrics
         {
             OverallScore = overallScore,
-            SimilarityScore = similarityResults.Any() ? similarityResults.Average(r => r.Score!.Value) : (decimal?)null,
-            AccuracyScore = accuracyResults.Any() ? accuracyResults.Average(r => r.Score!.Value) : (decimal?)null,
-            RelevancyScore = relevancyResults.Any() ? relevancyResults.Average(r => r.Score!.Value) : (decimal?)null,
             TotalResults = results.Count,
             ValidResults = validResults.Count,
-            ErrorCount = results.Count - validResults.Count,
-            SimilarityCount = similarityResults.Count,
-            AccuracyCount = accuracyResults.Count,
-            RelevancyCount = relevancyResults.Count
+            ErrorCount = results.Count - validResults.Count
         };
 
         _logger.LogInformation(
             "Calculated metrics for evaluation run {EvaluationRunId}: " +
-            "Total={Total}, Valid={Valid}, Errors={Errors}, " +
-            "Similarity={SimilarityCount}, Accuracy={AccuracyCount}, Relevancy={RelevancyCount}",
+            "Total={Total}, Valid={Valid}, Errors={Errors}, Overall Score={OverallScore}",
             evaluationRun.Id,
-            metrics.TotalResults, metrics.ValidResults, metrics.ErrorCount,
-            metrics.SimilarityCount, metrics.AccuracyCount, metrics.RelevancyCount);
+            metrics.TotalResults, metrics.ValidResults, metrics.ErrorCount, metrics.OverallScore);
 
         return metrics;
     }
@@ -273,14 +248,8 @@ public class MonitorFunction
     private class EvaluationMetrics
     {
         public decimal OverallScore { get; set; }
-        public decimal? SimilarityScore { get; set; }
-        public decimal? AccuracyScore { get; set; }
-        public decimal? RelevancyScore { get; set; }
         public int TotalResults { get; set; }
         public int ValidResults { get; set; }
         public int ErrorCount { get; set; }
-        public int SimilarityCount { get; set; }
-        public int AccuracyCount { get; set; }
-        public int RelevancyCount { get; set; }
     }
 }

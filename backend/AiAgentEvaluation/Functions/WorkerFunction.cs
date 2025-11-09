@@ -90,7 +90,7 @@ public class WorkerFunction
             // Step 2: Evaluate the response using LLM Judge
             var judgeRequest = new LLMJudgeRequest
             {
-                TestType = message.TestType,
+                EvaluatorTypeId = message.EvaluatorTypeId,
                 UserInput = message.UserInput,
                 ExpectedResponse = message.ExpectedResponse,
                 ActualResponse = copilotResponse.Response,
@@ -177,7 +177,7 @@ public class WorkerFunction
                     DirectLineUrl = message.DirectLineUrl,
                     UserInput = message.UserInput,
                     ExpectedResponse = message.ExpectedResponse,
-                    TestType = message.TestType,
+                    EvaluatorTypeId = message.EvaluatorTypeId,
                     ConversationId = message.ConversationId,
                     PassingThreshold = message.PassingThreshold,
                     RetryCount = message.RetryCount + 1,

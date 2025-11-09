@@ -60,7 +60,6 @@ public class WorkflowIntegrationTests : IntegrationTestBase
             DirectLineUrl = "https://test.powerplatform.com/powervirtualagents/botsbyschema/test/directline/token",
             UserInput = "What is the capital of France?",
             ExpectedResponse = "Paris",
-            TestType = TestType.Accuracy,
             AgentId = "test-bot-123",
             MaxRetries = 3
         };
@@ -90,7 +89,6 @@ public class WorkflowIntegrationTests : IntegrationTestBase
         var llmJudgeService = GetService<ILLMJudgeService>();
         var request = new LLMJudgeRequest
         {
-            TestType = TestType.Similarity,
             UserInput = "What is the capital of France?",
             ExpectedResponse = "Paris",
             ActualResponse = "The capital of France is Paris."

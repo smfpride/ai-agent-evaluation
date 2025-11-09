@@ -66,14 +66,14 @@ public class LLMJudgeService : ILLMJudgeService, IDisposable
 
     public async Task<LLMJudgeResponse> EvaluateResponseAsync(LLMJudgeRequest request, CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Evaluating response for test type {TestType}", request.TestType);
+        _logger.LogInformation("Evaluating response with evaluator type {EvaluatorTypeId}", request.EvaluatorTypeId);
         
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
 
         return await _resilientService.ExecuteAsync(async ct =>
         {
             // Get the appropriate prompt template
-            var promptTemplate = await GetPromptTemplateAsync(request.TestType, ct);
+            var promptTemplate = await GetPromptTemplateAsync(request.EvaluatorTypeId, ct);
             
             // Build the evaluation prompt
             var evaluationPrompt = BuildEvaluationPrompt(promptTemplate, request);
@@ -119,10 +119,7 @@ public class LLMJudgeService : ILLMJudgeService, IDisposable
 
     private string BuildEvaluationPrompt(string template, LLMJudgeRequest request)
     {
-        var testTypeName = TestType.GetName(request.TestType);
-        
         return template
-            .Replace("{TestType}", testTypeName)
             .Replace("{UserInput}", request.UserInput)
             .Replace("{ExpectedResponse}", request.ExpectedResponse)
             .Replace("{ActualResponse}", request.ActualResponse)
@@ -289,36 +286,44 @@ public class LLMJudgeService : ILLMJudgeService, IDisposable
         };
     }
 
-    public async Task<string> GetPromptTemplateAsync(int testType, CancellationToken cancellationToken = default)
+    public async Task<string> GetPromptTemplateAsync(Guid? evaluatorTypeId, CancellationToken cancellationToken = default)
     {
         try
         {
-            var judgePrompt = await _dataverseService.GetJudgePromptByTestTypeAsync(testType, cancellationToken);
-            
-            if (judgePrompt != null && !string.IsNullOrWhiteSpace(judgePrompt.PromptTemplate))
+            // If evaluator type is specified, use it to get the prompt
+            if (evaluatorTypeId.HasValue)
             {
-                _logger.LogInformation("Retrieved judge prompt '{PromptName}' for test type {TestType}", 
-                    judgePrompt.Name, testType);
-                return judgePrompt.PromptTemplate;
+                var evaluatorType = await _dataverseService.GetEvaluatorTypeAsync(evaluatorTypeId.Value, cancellationToken);
+                
+                if (evaluatorType != null && !string.IsNullOrWhiteSpace(evaluatorType.EvaluatorPrompt))
+                {
+                    _logger.LogInformation("Retrieved evaluator prompt '{EvaluatorName}' for evaluator type {EvaluatorTypeId}", 
+                        evaluatorType.Name, evaluatorTypeId);
+                    return evaluatorType.EvaluatorPrompt;
+                }
+                
+                _logger.LogWarning("Evaluator type {EvaluatorTypeId} not found or has no prompt, using default", evaluatorTypeId);
+            }
+            else
+            {
+                _logger.LogWarning("No evaluator type specified, using default");
             }
             
-            _logger.LogWarning("No judge prompt found for test type {TestType}, using default", testType);
-            return GetDefaultPromptTemplate(testType);
+            return GetDefaultPromptTemplate();
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to get judge prompt for test type {TestType}, using default", testType);
-            return GetDefaultPromptTemplate(testType);
+            _logger.LogWarning(ex, "Failed to get prompt for evaluator type {EvaluatorTypeId}, using default", evaluatorTypeId);
+            return GetDefaultPromptTemplate();
         }
     }
 
-    private static string GetDefaultPromptTemplate(int testType) => testType switch
+    private static string GetDefaultPromptTemplate()
     {
-        TestType.Similarity => "Evaluate the similarity between the expected and actual responses. Score from 0-1.",
-        TestType.Accuracy => "Evaluate the accuracy of the actual response compared to the expected response. Score from 0-1.",
-        TestType.Relevancy => "Evaluate how relevant the actual response is to the user input. Score from 0-1.",
-        _ => "Evaluate the response quality. Score from 0-1."
-    };
+        return "Evaluate the quality of the actual response compared to the expected response and user input. " +
+               "Provide a score from 0 to 1, where 0 is completely incorrect and 1 is perfect. " +
+               "Consider accuracy, relevance, and completeness in your evaluation.";
+    }
 
     public async Task<bool> CheckHealthAsync(CancellationToken cancellationToken = default)
     {

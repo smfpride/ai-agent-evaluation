@@ -60,54 +60,66 @@ public class LLMJudgeServiceTests
             new LLMJudgeService(_mockLogger.Object, invalidSettings, _mockDataverseService.Object));
     }
 
-    [Theory]
-    [InlineData(TestType.Similarity, "Similarity Judge Prompt")]
-    [InlineData(TestType.Accuracy, "Accuracy Judge Prompt")]
-    [InlineData(TestType.Relevancy, "Relevancy Judge Prompt")]
-    public async Task GetPromptTemplateAsync_ForTestType_ReturnsCorrectTemplate(int testType, string promptName)
+    [Fact]
+    public async Task GetPromptTemplateAsync_WithEvaluatorType_ReturnsCorrectTemplate()
     {
         // Arrange
-        var templateContent = "Test template content for {TestType}";
-        var judgePrompt = new JudgePrompt
+        var templateContent = "Test template content";
+        var evaluatorTypeId = Guid.NewGuid();
+        var evaluatorType = new EvaluatorType
         {
-            Id = Guid.NewGuid(),
-            Name = promptName,
-            PromptTemplate = templateContent,
-            TestType = testType
+            Id = evaluatorTypeId,
+            Name = "Test Evaluator",
+            EvaluatorPrompt = templateContent
         };
         
         _mockDataverseService
-            .Setup(x => x.GetJudgePromptByTestTypeAsync(testType, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(judgePrompt);
+            .Setup(x => x.GetEvaluatorTypeAsync(evaluatorTypeId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(evaluatorType);
 
         using var service = new LLMJudgeService(_mockLogger.Object, _settings, _mockDataverseService.Object);
 
         // Act
-        var result = await service.GetPromptTemplateAsync(testType);
+        var result = await service.GetPromptTemplateAsync(evaluatorTypeId);
 
         // Assert
         Assert.Equal(templateContent, result);
         _mockDataverseService.Verify(
-            x => x.GetJudgePromptByTestTypeAsync(testType, It.IsAny<CancellationToken>()),
+            x => x.GetEvaluatorTypeAsync(evaluatorTypeId, It.IsAny<CancellationToken>()),
             Times.Once);
+    }
+
+    [Fact]
+    public async Task GetPromptTemplateAsync_WithoutEvaluatorType_ReturnsDefaultTemplate()
+    {
+        // Arrange
+        using var service = new LLMJudgeService(_mockLogger.Object, _settings, _mockDataverseService.Object);
+
+        // Act
+        var result = await service.GetPromptTemplateAsync(null);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Contains("Evaluate", result);
     }
 
     [Fact]
     public async Task GetPromptTemplateAsync_WhenDataverseFails_ReturnsDefaultTemplate()
     {
         // Arrange
+        var evaluatorTypeId = Guid.NewGuid();
         _mockDataverseService
-            .Setup(x => x.GetJudgePromptByTestTypeAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Setup(x => x.GetEvaluatorTypeAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new Exception("Dataverse error"));
 
         using var service = new LLMJudgeService(_mockLogger.Object, _settings, _mockDataverseService.Object);
 
         // Act
-        var result = await service.GetPromptTemplateAsync(TestType.Similarity);
+        var result = await service.GetPromptTemplateAsync(evaluatorTypeId);
 
         // Assert
         Assert.NotNull(result);
-        Assert.Contains("similarity", result.ToLowerInvariant());
+        Assert.Contains("evaluate", result.ToLowerInvariant());
     }
 
     [Fact]
@@ -234,10 +246,9 @@ public class LLMJudgeServiceTests
     public void BuildEvaluationPrompt_ReplacesAllPlaceholders()
     {
         // Arrange
-        var template = "Test: {TestType}, Input: {UserInput}, Expected: {ExpectedResponse}, Actual: {ActualResponse}, Conv: {ConversationId}";
+        var template = "Input: {UserInput}, Expected: {ExpectedResponse}, Actual: {ActualResponse}, Conv: {ConversationId}";
         var request = new LLMJudgeRequest
         {
-            TestType = TestType.Similarity,
             UserInput = "Test input",
             ExpectedResponse = "Expected output",
             ActualResponse = "Actual output",
@@ -251,7 +262,6 @@ public class LLMJudgeServiceTests
         var result = (string)buildMethod.Invoke(service, new object[] { template, request })!;
 
         // Assert
-        Assert.Contains("Similarity", result);
         Assert.Contains("Test input", result);
         Assert.Contains("Expected output", result);
         Assert.Contains("Actual output", result);
@@ -266,7 +276,6 @@ public class LLMJudgeServiceTests
         var template = "Conv: {ConversationId}";
         var request = new LLMJudgeRequest
         {
-            TestType = TestType.Similarity,
             UserInput = "Test",
             ExpectedResponse = "Expected",
             ActualResponse = "Actual",

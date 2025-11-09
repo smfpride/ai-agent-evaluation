@@ -67,8 +67,7 @@ public class PerformanceTests
             {
                 Id = Guid.NewGuid(),
                 UserInput = $"Test {i}",
-                ExpectedResponse = $"Expected {i}",
-                TestType = TestType.Similarity
+                ExpectedResponse = $"Expected {i}"
             })
             .ToList();
 
@@ -119,8 +118,7 @@ public class PerformanceTests
                     {
                         Id = Guid.NewGuid(),
                         UserInput = $"Test {j}",
-                        ExpectedResponse = $"Expected {j}",
-                        TestType = TestType.Similarity
+                        ExpectedResponse = $"Expected {j}"
                     })
                     .ToList()
             })
@@ -190,7 +188,6 @@ public class PerformanceTests
                 DirectLineUrl = "https://test.powerplatform.com/powervirtualagents/botsbyschema/test/directline/token",
                 UserInput = $"Test {i}",
                 ExpectedResponse = $"Expected {i}",
-                TestType = TestType.Similarity,
                 MaxRetries = 3
             })
             .ToList();
@@ -243,7 +240,6 @@ public class PerformanceTests
             DirectLineUrl = "https://test.powerplatform.com/powervirtualagents/botsbyschema/test/directline/token",
             UserInput = "Test input",
             ExpectedResponse = "Expected output",
-            TestType = TestType.Similarity,
             MaxRetries = 3
         };
 
@@ -344,8 +340,7 @@ public class PerformanceTests
             {
                 Id = Guid.NewGuid(),
                 UserInput = $"Test {i}",
-                ExpectedResponse = $"Expected {i}",
-                TestType = TestType.Similarity
+                ExpectedResponse = $"Expected {i}"
             })
             .ToList();
 
@@ -417,7 +412,6 @@ public class PerformanceTests
             DirectLineUrl = "https://test.powerplatform.com/powervirtualagents/botsbyschema/test/directline/token",
             UserInput = $"Test {i}",
             ExpectedResponse = $"Expected {i}",
-            TestType = TestType.Similarity,
             MaxRetries = 3
         }).ToList();
 
@@ -457,7 +451,6 @@ public class PerformanceTests
 
             UserInput = "Test input with some content",
             ExpectedResponse = "Expected output with detailed response",
-            TestType = TestType.Similarity,
             ConversationId = "conv-123",
             MaxRetries = 3
         };
@@ -486,7 +479,6 @@ public class PerformanceTests
                 Id = Guid.NewGuid(),
                 UserInput = $"Test case {i}",
                 ExpectedResponse = $"Expected response {i}",
-                TestType = TestType.Similarity,
                 Name = $"Test {i}"
             })
             .ToList();

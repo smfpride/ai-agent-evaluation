@@ -67,8 +67,8 @@ public class OrchestratorFunctionTests
 
         var testCases = new List<TestCase>
         {
-            new() { Id = Guid.NewGuid(), UserInput = "Test 1", ExpectedResponse = "Expected 1", TestType = TestType.Similarity },
-            new() { Id = Guid.NewGuid(), UserInput = "Test 2", ExpectedResponse = "Expected 2", TestType = TestType.Accuracy }
+            new() { Id = Guid.NewGuid(), UserInput = "Test 1", ExpectedResponse = "Expected 1" },
+            new() { Id = Guid.NewGuid(), UserInput = "Test 2", ExpectedResponse = "Expected 2" }
         };
 
         _mockDataverseService.Setup(x => x.GetEvaluationRunAsync(evaluationRunId, It.IsAny<CancellationToken>()))
@@ -126,14 +126,12 @@ public class OrchestratorFunctionTests
             AgentToEvalId = Guid.NewGuid()};
 
         // Create 50,000 test cases
-        var testTypes = new[] { TestType.Similarity, TestType.Accuracy, TestType.Relevancy };
         var testCases = Enumerable.Range(0, 50000)
             .Select(i => new TestCase
             {
                 Id = Guid.NewGuid(),
                 UserInput = $"Test {i}",
-                ExpectedResponse = $"Expected {i}",
-                TestType = testTypes[i % 3] // Distribute across test types
+                ExpectedResponse = $"Expected {i}"
             })
             .ToList();
 
@@ -298,7 +296,7 @@ public class OrchestratorFunctionTests
 
         var testCases = new List<TestCase>
         {
-            new() { Id = Guid.NewGuid(), UserInput = "Test", ExpectedResponse = "Expected", TestType = TestType.Similarity }
+            new() { Id = Guid.NewGuid(), UserInput = "Test", ExpectedResponse = "Expected" }
         };
 
         _mockDataverseService.Setup(x => x.GetEvaluationRunAsync(evaluationRunId, It.IsAny<CancellationToken>()))

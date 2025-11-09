@@ -121,7 +121,7 @@ public class OrchestratorFunction
                 DirectLineUrl = directLineUrl,
                 UserInput = testCase.UserInput,
                 ExpectedResponse = testCase.ExpectedResponse,
-                TestType = testCase.TestType,
+                EvaluatorTypeId = testCase.EvaluatorTypeId,
                 ConversationId = testCase.ConversationId,
                 PassingThreshold = passingThreshold,
                 RetryCount = 0,

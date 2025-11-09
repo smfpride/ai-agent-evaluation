@@ -60,15 +60,6 @@ public class EvaluationRun
     [JsonPropertyName("mcicaps_passingthreshold")]
     public decimal? PassingThreshold { get; set; }
 
-    [JsonPropertyName("mcicaps_similarityscore")]
-    public decimal? SimilarityScore { get; set; }
-
-    [JsonPropertyName("mcicaps_accuracyscore")]
-    public decimal? AccuracyScore { get; set; }
-
-    [JsonPropertyName("mcicaps_relevancyscore")]
-    public decimal? RelevancyScore { get; set; }
-
     [JsonPropertyName("createdon")]
     public DateTime CreatedOn { get; set; }
 
