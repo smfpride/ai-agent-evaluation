@@ -1,7 +1,6 @@
 @description('Main deployment template for AI Agent Evaluation Function')
 param location string = resourceGroup().location
 param environmentName string = 'dev'
-param appName string = 'ai-agent-eval'
 
 @description('Unique suffix for resource naming')
 param uniqueSuffix string = uniqueString(resourceGroup().id)
