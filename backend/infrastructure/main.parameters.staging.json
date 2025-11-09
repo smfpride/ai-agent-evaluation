@@ -12,10 +12,10 @@
       "value": "ai-agent-eval"
     },
     "functionAppSku": {
-      "value": "EP1"
+      "value": "Y1"
     },
     "functionAppTier": {
-      "value": "ElasticPremium"
+      "value": "Dynamic"
     },
     "serviceBusSkuName": {
       "value": "Standard"

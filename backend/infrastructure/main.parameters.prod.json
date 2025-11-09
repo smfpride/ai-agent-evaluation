@@ -9,13 +9,13 @@
       "value": "ai-agent-eval"
     },
     "location": {
-      "value": "East US"
+      "value": "eastus"
     },
     "functionAppSku": {
-      "value": "EP1"
+      "value": "Y1"
     },
     "functionAppTier": {
-      "value": "ElasticPremium"
+      "value": "Dynamic"
     },
     "serviceBusSkuName": {
       "value": "Premium"
@@ -24,7 +24,7 @@
       "value": "Standard_ZRS"
     },
     "azureOpenAILocation": {
-      "value": "East US"
+      "value": "eastus"
     },
     "azureOpenAISkuName": {
       "value": "S0"

@@ -9,7 +9,7 @@
       "value": "ai-agent-eval"
     },
     "location": {
-      "value": "East US"
+      "value": "eastus"
     },
     "functionAppSku": {
       "value": "Y1"
@@ -24,7 +24,7 @@
       "value": "Standard_LRS"
     },
     "azureOpenAILocation": {
-      "value": "East US"
+      "value": "eastus"
     },
     "azureOpenAISkuName": {
       "value": "S0"
