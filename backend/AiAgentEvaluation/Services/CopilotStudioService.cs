@@ -359,25 +359,25 @@ public class CopilotStudioService : ICopilotStudioService, IDisposable
         }
     }
 
-    public async Task<bool> CheckHealthAsync(CancellationToken cancellationToken = default)
+    public Task<bool> CheckHealthAsync(CancellationToken cancellationToken = default)
     {
         try
         {
             if (_httpClient == null)
             {
                 _logger.LogWarning("Copilot Studio HTTP client is not initialized");
-                return false;
+                return Task.FromResult(false);
             }
 
             // Health check is basic since we don't have a specific endpoint to check
             // The actual health will be verified when a specific Direct Line URL is used
             _logger.LogDebug("Copilot Studio service is initialized and ready");
-            return true;
+            return Task.FromResult(true);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Copilot Studio health check failed");
-            return false;
+            return Task.FromResult(false);
         }
     }
 
