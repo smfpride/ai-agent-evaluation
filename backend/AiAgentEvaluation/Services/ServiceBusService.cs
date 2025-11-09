@@ -16,8 +16,8 @@ public class ServiceBusService : IServiceBusService, IDisposable
 {
     private readonly ILogger<ServiceBusService> _logger;
     private readonly AppSettings _settings;
-    private readonly ServiceBusClient _serviceBusClient;
-    private readonly ServiceBusSender _sender;
+    private readonly ServiceBusClient? _serviceBusClient;
+    private readonly ServiceBusSender? _sender;
     private readonly JsonSerializerOptions _jsonOptions;
     private readonly ResilientService _resilientService;
     private bool _disposed;
@@ -37,6 +37,18 @@ public class ServiceBusService : IServiceBusService, IDisposable
 
         try
         {
+            // Check if Service Bus is configured
+            if (string.IsNullOrEmpty(_settings.ServiceBus.Namespace) && 
+                string.IsNullOrEmpty(_settings.ServiceBus.ConnectionString))
+            {
+                _logger.LogWarning(
+                    "Service Bus is not configured. Set either 'ServiceBusNamespace' (for managed identity) " +
+                    "or 'ServiceBusConnectionString' (for local development). Service Bus operations will fail until configured.");
+                
+                // Don't throw - allow the service to be created but mark as not initialized
+                return;
+            }
+            
             // Use managed identity for authentication - no connection strings needed
             var credential = new DefaultAzureCredential();
             
@@ -57,20 +69,22 @@ public class ServiceBusService : IServiceBusService, IDisposable
                 
                 _logger.LogWarning("Using connection string for Service Bus - this should only be used for local development");
             }
-            else
-            {
-                throw new InvalidOperationException("Service Bus namespace is not configured. Please set ServiceBus:Namespace for managed identity authentication.");
-            }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error initializing Service Bus service");
+            _logger.LogError(ex, "Error initializing Service Bus service. Please verify your Service Bus configuration.");
             throw;
         }
     }
 
     public async Task SendTestCaseMessageAsync(ProcessTestCaseMessage message, CancellationToken cancellationToken = default)
     {
+        if (_sender == null)
+        {
+            throw new InvalidOperationException(
+                "Service Bus is not configured. Please set either 'ServiceBusNamespace' or 'ServiceBusConnectionString' in your configuration.");
+        }
+        
         _logger.LogInformation("Sending test case message for test case {TestCaseId}", message.TestCaseId);
         
         await _resilientService.ExecuteAsync(async ct =>
@@ -106,6 +120,12 @@ public class ServiceBusService : IServiceBusService, IDisposable
 
     public async Task SendBatchTestCaseMessagesAsync(IEnumerable<ProcessTestCaseMessage> messages, CancellationToken cancellationToken = default)
     {
+        if (_sender == null)
+        {
+            throw new InvalidOperationException(
+                "Service Bus is not configured. Please set either 'ServiceBusNamespace' or 'ServiceBusConnectionString' in your configuration.");
+        }
+        
         var messageList = messages.ToList();
         
         await _resilientService.ExecuteAsync(async (ct) =>

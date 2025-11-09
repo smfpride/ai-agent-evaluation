@@ -15,7 +15,8 @@
     "_README3": "=== LOCAL DEVELOPMENT FALLBACK CONFIGURATION ===",
     "_README4": "For local development, uncomment and configure these connection strings:",
     "_StorageAccountConnectionString": "DefaultEndpointsProtocol=https;AccountName=your-storage;AccountKey=your-key;EndpointSuffix=core.windows.net",
-    "_ServiceBusConnectionString": "Endpoint=sb://your-namespace.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=your-key",
+    "_ServiceBusConnectionString": "Endpoint=sb://sbus-aiestagingmbwc.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=your-key",
+    "_QueueName": "test-case-processing",
     "_DataverseConnectionString": "AuthType=OAuth;Url=https://yourorg.crm.dynamics.com/;AppId=your-app-id;AppSecret=your-secret;LoginPrompt=Never",
     "_AzureOpenAIApiKey": "your-azure-openai-api-key",
     

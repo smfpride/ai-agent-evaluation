@@ -8,14 +8,14 @@ namespace AiAgentEvaluation.Models;
 /// </summary>
 public class EvaluationResult
 {
-    [JsonPropertyName("mcicaps_evaluationresultid")]
+    [JsonPropertyName("mcicaps_evaluationresultsid")]
     public Guid Id { get; set; }
 
     [JsonPropertyName("mcicaps_evaluationresultname")]
     [Required]
     public string Name { get; set; } = string.Empty;
 
-    [JsonPropertyName("_mcicaps_evaluationrun_value")]
+    [JsonPropertyName("_mcicaps_evaluation_value")]
     [Required]
     public Guid EvaluationRunId { get; set; }
 

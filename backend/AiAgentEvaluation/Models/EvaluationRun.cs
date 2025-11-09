@@ -25,6 +25,9 @@ public class EvaluationRun
     [JsonPropertyName("mcicaps_description")]
     public string? Description { get; set; }
 
+    [JsonPropertyName("mcicaps_testset")]
+    public Guid? TestSetId { get; set; }
+
     [JsonPropertyName("statecode")]
     public int StateCode { get; set; } = 1; // Default: Created
 
