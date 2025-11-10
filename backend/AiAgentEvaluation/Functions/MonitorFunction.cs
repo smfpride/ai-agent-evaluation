@@ -147,10 +147,18 @@ public class MonitorFunction
         var results = await _dataverseService.GetEvaluationResultsAsync(evaluationRun.Id, cancellationToken);
         
         // Calculate completed and failed counts from actual results
-        var completedCount = results.Count;
-        var failedCount = results.Count(r => !string.IsNullOrEmpty(r.ErrorMessage) || !r.Score.HasValue);
+        // Only count test case level results, not individual turns:
+        // - Single-turn: TestCaseTurnId is null AND isaggregate is false
+        // - Multi-turn: isaggregate is true (the aggregate result for the entire multi-turn sequence)
+        var testCaseResults = results.Where(r => 
+            r.IsAggregate == true ||  // Multi-turn aggregate result
+            (r.TestCaseTurnId == null && r.IsAggregate == false)  // Single-turn result
+        ).ToList();
+        
+        var completedCount = testCaseResults.Count;
+        var failedCount = testCaseResults.Count(r => !string.IsNullOrEmpty(r.ErrorMessage) || !r.Score.HasValue);
 
-        _logger.LogInformation("Evaluation run {EvaluationRunId} progress: {CompletedCount}/{TotalTestCases} completed, {FailedCount} failed",
+        _logger.LogInformation("Evaluation run {EvaluationRunId} progress: {CompletedCount}/{TotalTestCases} completed, {FailedCount} failed (excluding individual turn results)",
             evaluationRun.Id, completedCount, evaluationRun.TotalTestCases, failedCount);
 
         // Update the counts in the evaluation run
@@ -167,9 +175,9 @@ public class MonitorFunction
         _logger.LogInformation("Evaluation run {EvaluationRunId} completed all test cases, calculating final metrics",
             evaluationRun.Id);
         
-        if (results.Count == 0)
+        if (testCaseResults.Count == 0)
         {
-            _logger.LogWarning("No evaluation results found for completed evaluation run {EvaluationRunId}",
+            _logger.LogWarning("No test case results found for completed evaluation run {EvaluationRunId}",
                 evaluationRun.Id);
             
             await _dataverseService.UpdateEvaluationRunCompletionAsync(
@@ -182,8 +190,8 @@ public class MonitorFunction
             return;
         }
 
-        // Calculate overall metrics
-        var metrics = CalculateMetrics(results, evaluationRun);
+        // Calculate overall metrics from test case level results only
+        var metrics = CalculateMetrics(testCaseResults, evaluationRun);
         
         // Determine pass/fail status based on threshold
         var passingThreshold = evaluationRun.PassingThreshold ?? DefaultPassingThreshold;

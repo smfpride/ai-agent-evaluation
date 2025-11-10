@@ -93,12 +93,11 @@ public class MultiTurnWorkerFunction
 
             stopwatch.Stop();
 
-            // Increment the completed test cases counter
-            // For multi-turn, we consider it failed if not all turns passed
-            var failed = context.PassedTurns < context.TotalTurns;
+            // Increment the completed test cases counter for immediate progress feedback
+            // The aggregate result (IsAggregate=true) was already created by ExecuteTestCaseAsync
             await _dataverseService.IncrementCompletedTestCasesAsync(
-                message.EvaluationRunId,
-                failed: failed,
+                message.EvaluationRunId, 
+                failed: false, 
                 cancellationToken);
 
             _logger.LogInformation(
@@ -163,10 +162,10 @@ public class MultiTurnWorkerFunction
 
             await _dataverseService.CreateEvaluationResultAsync(createResultRequest, cancellationToken);
 
-            // Increment failed test cases counter
+            // Increment the completed test cases counter (as failed) for immediate progress feedback
             await _dataverseService.IncrementCompletedTestCasesAsync(
-                message.EvaluationRunId,
-                failed: true,
+                message.EvaluationRunId, 
+                failed: true, 
                 cancellationToken);
 
             _logger.LogError("Multi-turn test case {TestCaseId} failed after {MaxRetries} retries: {ErrorMessage}",

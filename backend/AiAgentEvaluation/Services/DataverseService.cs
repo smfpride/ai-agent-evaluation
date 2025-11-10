@@ -472,7 +472,7 @@ public class DataverseService : IDataverseService, IDisposable
             
             // Handle multi-turn fields
             if (request.TestCaseTurnId.HasValue)
-                resultEntity["mcicaps_testcaseturnid"] = new EntityReference("mcicaps_testcaseturns", request.TestCaseTurnId.Value);
+                resultEntity["mcicaps_testcaseturnid"] = new EntityReference("mcicaps_testcaseturn", request.TestCaseTurnId.Value);
             
             resultEntity["mcicaps_isaggregate"] = request.IsAggregate;
             
@@ -696,6 +696,8 @@ public class DataverseService : IDataverseService, IDisposable
                     "mcicaps_evaluationresultname",
                     "mcicaps_evaluation",
                     "mcicaps_testcase",
+                    "mcicaps_testcaseturnid",
+                    "mcicaps_isaggregate",
                     "mcicaps_actualresponse",
                     "mcicaps_score",
                     "mcicaps_reasoning",
@@ -728,6 +730,8 @@ public class DataverseService : IDataverseService, IDisposable
                     Name = entity.GetAttributeValue<string>("mcicaps_evaluationresultname") ?? string.Empty,
                     EvaluationRunId = entity.GetAttributeValue<EntityReference>("mcicaps_evaluation")?.Id ?? Guid.Empty,
                     TestCaseId = entity.GetAttributeValue<EntityReference>("mcicaps_testcase")?.Id ?? Guid.Empty,
+                    TestCaseTurnId = entity.GetAttributeValue<EntityReference>("mcicaps_testcaseturnid")?.Id,
+                    IsAggregate = entity.GetAttributeValue<bool>("mcicaps_isaggregate"),
                     ActualResponse = entity.GetAttributeValue<string>("mcicaps_actualresponse"),
                     Score = GetDecimalValue(entity, "mcicaps_score"),
                     Reasoning = entity.GetAttributeValue<string>("mcicaps_reasoning"),
@@ -996,7 +1000,7 @@ public class DataverseService : IDataverseService, IDisposable
 
         return await _resilientService.ExecuteAsync(async ct =>
         {
-            var query = new QueryExpression("mcicaps_testcaseturns")
+            var query = new QueryExpression("mcicaps_testcaseturn")
             {
                 ColumnSet = new ColumnSet(
                     "mcicaps_testcaseturnid",
@@ -1073,12 +1077,22 @@ public class DataverseService : IDataverseService, IDisposable
 
             // Calculate aggregate metrics
             var passRate = context.PassRate;
-            var scoreAsDouble = Convert.ToDouble(passRate);
-            resultEntity["mcicaps_score"] = scoreAsDouble;
+            
+            // Calculate average score from all turn results
+            var turnScores = context.TurnResults.Values
+                .Where(r => r.Score.HasValue)
+                .Select(r => r.Score!.Value)
+                .ToList();
+            
+            var averageScore = turnScores.Any() 
+                ? Convert.ToDouble(turnScores.Average()) 
+                : 0.0;
+            
+            resultEntity["mcicaps_score"] = averageScore;
             resultEntity["mcicaps_passed"] = context.PassedTurns == context.TotalTurns;
 
             // Create summary reasoning
-            var summary = $"Multi-turn test case completed: {context.PassedTurns}/{context.TotalTurns} turns passed ({passRate:P0} pass rate)";
+            var summary = $"Multi-turn test case completed: {context.PassedTurns}/{context.TotalTurns} turns passed ({passRate:P0} pass rate), average score: {averageScore:F2}";
             resultEntity["mcicaps_reasoning"] = summary;
 
             // Calculate average execution time

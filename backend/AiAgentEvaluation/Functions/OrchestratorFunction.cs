@@ -153,13 +153,11 @@ public class OrchestratorFunction
                 _logger.LogInformation("Sent {Count} single-turn test case messages", singleTurnMessages.Count);
             }
 
-            // Note: Multi-turn messages would need a separate queue and send method
-            // For now, we'll log them - this will be implemented when Service Bus queue is created
+            // Send multi-turn messages to separate queue
             if (multiTurnMessages.Any())
             {
-                _logger.LogInformation("Multi-turn test cases detected: {Count} (queue implementation pending)", multiTurnMessages.Count);
-                // TODO: Implement SendBatchMultiTurnTestCaseMessagesAsync in ServiceBusService
-                // await _serviceBusService.SendBatchMultiTurnTestCaseMessagesAsync(multiTurnMessages, cancellationToken);
+                await _serviceBusService.SendBatchMultiTurnTestCaseMessagesAsync(multiTurnMessages, cancellationToken);
+                _logger.LogInformation("Sent {Count} multi-turn test case messages", multiTurnMessages.Count);
             }
 
             // Calculate estimated completion time

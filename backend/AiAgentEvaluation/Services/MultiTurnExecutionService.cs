@@ -53,20 +53,38 @@ public class MultiTurnExecutionService : IMultiTurnExecutionService
                     turn.Sequence, context.TotalTurns, testCase.Id);
 
                 // 1. Send message to Copilot Studio with conversation context
+                _logger.LogWarning(
+                    "[MULTITURN] Turn {Sequence}/{Total}: SENDING PROMPT='{Prompt}' ConversationId='{ConversationId}'",
+                    turn.Sequence, context.TotalTurns, turn.PromptText?.Substring(0, Math.Min(100, turn.PromptText?.Length ?? 0)), context.ConversationId ?? "NULL-WILL-CREATE");
+                
                 var copilotResponse = await _copilotStudioService.SendMessageAsync(
                     directLineUrl,
-                    turn.PromptText,
+                    turn.PromptText ?? string.Empty,
                     context.ConversationId,
                     cancellationToken);
+                
+                _logger.LogWarning(
+                    "[MULTITURN] Turn {Sequence}: RECEIVED RESPONSE='{Response}' ConversationId='{ConvId}'",
+                    turn.Sequence, copilotResponse.Response?.Substring(0, Math.Min(100, copilotResponse.Response?.Length ?? 0)) ?? "NULL", copilotResponse.ConversationId);
 
                 // 2. Store conversation ID after first turn
                 if (turn.Sequence == 1 && !string.IsNullOrEmpty(copilotResponse.ConversationId))
                 {
                     context.ConversationId = copilotResponse.ConversationId;
                     _logger.LogInformation(
-                        "Stored conversation ID {ConversationId} for test case {TestCaseId}",
+                        "Turn 1: Stored conversation ID {ConversationId} for test case {TestCaseId}",
                         context.ConversationId, testCase.Id);
                 }
+                else if (turn.Sequence > 1)
+                {
+                    _logger.LogInformation(
+                        "Turn {Sequence}: Reusing conversation ID {ConversationId}",
+                        turn.Sequence, context.ConversationId);
+                }
+                
+                _logger.LogInformation(
+                    "Turn {Sequence}: Received response: '{Response}'",
+                    turn.Sequence, copilotResponse.Response?.Substring(0, Math.Min(100, copilotResponse.Response?.Length ?? 0)) ?? "(null)");
 
                 if (!copilotResponse.Success)
                 {
@@ -181,6 +199,12 @@ public class MultiTurnExecutionService : IMultiTurnExecutionService
                     CreatedOn = DateTime.UtcNow
                 };
 
+                _logger.LogInformation(
+                    "Turn {Sequence}: Creating result - Prompt='{Prompt}', Response='{Response}', Score={Score}",
+                    turn.Sequence, turn.PromptText?.Substring(0, Math.Min(50, turn.PromptText?.Length ?? 0)) ?? "(null)",
+                    copilotResponse.Response?.Substring(0, Math.Min(50, copilotResponse.Response?.Length ?? 0)) ?? "(null)",
+                    judgeResponse.Score);
+
                 var createResultRequest = new CreateEvaluationResultRequest
                 {
                     EvaluationRunId = testRunId,
@@ -201,9 +225,20 @@ public class MultiTurnExecutionService : IMultiTurnExecutionService
 
                 context.TurnResults[turn.Sequence] = result;
 
+                _logger.LogWarning(
+                    "[MULTITURN] Turn {Sequence}: SAVED ResultId={ResultId} WITH RESPONSE='{Response}'",
+                    turn.Sequence, result.Id, createResultRequest.ActualResponse?.Substring(0, Math.Min(100, createResultRequest.ActualResponse?.Length ?? 0)) ?? "NULL");
+
                 _logger.LogInformation(
-                    "Turn {Sequence} completed: {Status} (Score: {Score})",
+                    "Turn {Sequence}: {Result} - Score: {Score}",
                     turn.Sequence, result.Passed == true ? "PASSED" : "FAILED", result.Score);
+                
+                // Add delay between turns to allow bot to process and maintain conversation state
+                if (turn.Sequence < context.TotalTurns)
+                {
+                    _logger.LogInformation("Waiting 2 seconds before next turn to allow bot state to stabilize...");
+                    await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
+                }
             }
             catch (Exception ex)
             {

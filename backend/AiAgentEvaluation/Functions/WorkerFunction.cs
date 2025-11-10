@@ -138,7 +138,7 @@ public class WorkerFunction
 
             var resultId = await _dataverseService.CreateEvaluationResultAsync(createResultRequest, cancellationToken);
 
-            // Increment the completed test cases counter atomically
+            // Increment the completed test cases counter for immediate progress feedback
             await _dataverseService.IncrementCompletedTestCasesAsync(
                 message.EvaluationRunId, 
                 failed: false, 
@@ -205,7 +205,7 @@ public class WorkerFunction
 
             await _dataverseService.CreateEvaluationResultAsync(createResultRequest, cancellationToken);
 
-            // Increment the completed test cases counter (as failed)
+            // Increment the completed test cases counter (as failed) for immediate progress feedback
             await _dataverseService.IncrementCompletedTestCasesAsync(
                 message.EvaluationRunId, 
                 failed: true, 

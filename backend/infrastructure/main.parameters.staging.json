@@ -8,9 +8,6 @@
     "environmentName": {
       "value": "staging"
     },
-    "appName": {
-      "value": "ai-agent-eval"
-    },
     "functionAppSku": {
       "value": "Y1"
     },

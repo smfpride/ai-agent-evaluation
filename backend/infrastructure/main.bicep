@@ -99,10 +99,26 @@ resource serviceBusNamespace 'Microsoft.ServiceBus/namespaces@2022-10-01-preview
   }
 }
 
-// Create Service Bus Queue
+// Create Service Bus Queue for single-turn test cases
 resource testCaseProcessingQueue 'Microsoft.ServiceBus/namespaces/queues@2022-10-01-preview' = {
   parent: serviceBusNamespace
   name: 'test-case-processing'
+  properties: {
+    maxSizeInMegabytes: 5120
+    defaultMessageTimeToLive: 'P14D'
+    deadLetteringOnMessageExpiration: true
+    duplicateDetectionHistoryTimeWindow: 'PT10M'
+    maxDeliveryCount: 10
+    lockDuration: 'PT5M'
+    enablePartitioning: false
+    requiresSession: false
+  }
+}
+
+// Create Service Bus Queue for multi-turn test cases
+resource multiTurnTestCaseProcessingQueue 'Microsoft.ServiceBus/namespaces/queues@2022-10-01-preview' = {
+  parent: serviceBusNamespace
+  name: 'multi-turn-test-case-processing'
   properties: {
     maxSizeInMegabytes: 5120
     defaultMessageTimeToLive: 'P14D'
