@@ -1088,11 +1088,14 @@ public class DataverseService : IDataverseService, IDisposable
                 ? Convert.ToDouble(turnScores.Average()) 
                 : 0.0;
             
+            // Check if average score meets the passing threshold
+            var passedOverall = averageScore >= Convert.ToDouble(context.PassingThreshold);
+            
             resultEntity["mcicaps_score"] = averageScore;
-            resultEntity["mcicaps_passed"] = context.PassedTurns == context.TotalTurns;
+            resultEntity["mcicaps_passed"] = passedOverall;
 
             // Create summary reasoning
-            var summary = $"Multi-turn test case completed: {context.PassedTurns}/{context.TotalTurns} turns passed ({passRate:P0} pass rate), average score: {averageScore:F2}";
+            var summary = $"Multi-turn test case completed: {context.PassedTurns}/{context.TotalTurns} turns passed ({passRate:P0} pass rate), average score: {averageScore:F2}, threshold: {context.PassingThreshold:F2}, overall: {(passedOverall ? "PASSED" : "FAILED")}";
             resultEntity["mcicaps_reasoning"] = summary;
 
             // Calculate average execution time

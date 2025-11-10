@@ -40,6 +40,7 @@ public class MultiTurnExecutionService : IMultiTurnExecutionService
         {
             TestCase = testCase,
             TestRunId = testRunId,
+            PassingThreshold = passingThreshold,
             Turns = testCase.Turns?.OrderBy(t => t.Sequence).ToList() ?? new()
         };
 
@@ -56,6 +57,13 @@ public class MultiTurnExecutionService : IMultiTurnExecutionService
                 _logger.LogWarning(
                     "[MULTITURN] Turn {Sequence}/{Total}: SENDING PROMPT='{Prompt}' ConversationId='{ConversationId}'",
                     turn.Sequence, context.TotalTurns, turn.PromptText?.Substring(0, Math.Min(100, turn.PromptText?.Length ?? 0)), context.ConversationId ?? "NULL-WILL-CREATE");
+                
+                // Add delay before sending subsequent turns to ensure bot has processed previous turn
+                if (turn.Sequence > 1)
+                {
+                    _logger.LogInformation("Waiting 3 seconds before sending turn {Sequence} to ensure bot is ready...", turn.Sequence);
+                    await Task.Delay(TimeSpan.FromSeconds(3), cancellationToken);
+                }
                 
                 var copilotResponse = await _copilotStudioService.SendMessageAsync(
                     directLineUrl,
@@ -129,9 +137,9 @@ public class MultiTurnExecutionService : IMultiTurnExecutionService
                 var judgeRequest = new LLMJudgeRequest
                 {
                     EvaluatorTypeId = testCase.EvaluatorTypeId,
-                    UserInput = turn.PromptText,
+                    UserInput = turn.PromptText ?? string.Empty,
                     ExpectedResponse = turn.ExpectedResponse ?? string.Empty,
-                    ActualResponse = copilotResponse.Response,
+                    ActualResponse = copilotResponse.Response ?? string.Empty,
                     ConversationId = copilotResponse.ConversationId
                 };
 
@@ -232,13 +240,6 @@ public class MultiTurnExecutionService : IMultiTurnExecutionService
                 _logger.LogInformation(
                     "Turn {Sequence}: {Result} - Score: {Score}",
                     turn.Sequence, result.Passed == true ? "PASSED" : "FAILED", result.Score);
-                
-                // Add delay between turns to allow bot to process and maintain conversation state
-                if (turn.Sequence < context.TotalTurns)
-                {
-                    _logger.LogInformation("Waiting 2 seconds before next turn to allow bot state to stabilize...");
-                    await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
-                }
             }
             catch (Exception ex)
             {

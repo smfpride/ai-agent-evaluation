@@ -31,6 +31,11 @@ public class MultiTurnExecutionContext
     public Guid TestRunId { get; set; }
 
     /// <summary>
+    /// Passing threshold for evaluating success (0.0 to 1.0)
+    /// </summary>
+    public decimal PassingThreshold { get; set; }
+
+    /// <summary>
     /// Total number of turns
     /// </summary>
     public int TotalTurns => Turns.Count;

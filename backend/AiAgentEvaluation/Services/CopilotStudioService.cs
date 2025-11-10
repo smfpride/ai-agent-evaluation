@@ -227,6 +227,7 @@ public class CopilotStudioService : ICopilotStudioService, IDisposable
         var maxAttempts = 30; // 30 attempts with 1-second intervals = 30 seconds max wait
         var attempt = 0;
         string? watermark = null;
+        HashSet<string> seenActivityIds = new HashSet<string>();
 
         while (attempt < maxAttempts && !cancellationToken.IsCancellationRequested)
         {
@@ -250,43 +251,45 @@ public class CopilotStudioService : ICopilotStudioService, IDisposable
                     watermark = activitiesResponse.Watermark;
                     
                     // Log all activities for debugging - use Information level to ensure it's captured
-                    _logger.LogInformation("WaitForBot: Received {Count} activities in conversation {ConversationId}", 
-                        activitiesResponse.Activities.Length, conversationId);
+                    _logger.LogInformation("WaitForBot: Received {Count} activities in conversation {ConversationId}, watermark={Watermark}", 
+                        activitiesResponse.Activities.Length, conversationId, watermark);
                     
                     foreach (var activity in activitiesResponse.Activities)
                     {
                         var textPreview = activity.Text?.Length > 50 
                             ? activity.Text.Substring(0, 50) + "..." 
                             : activity.Text ?? "(no text)";
-                        _logger.LogInformation("WaitForBot Activity: Type={Type}, From.Id={FromId}, From.Name={FromName}, Text={Text}, Timestamp={Timestamp}",
-                            activity.Type, activity.From?.Id ?? "null", activity.From?.Name ?? "null", 
+                        _logger.LogInformation("WaitForBot Activity: Type={Type}, From.Id={FromId}, Id={ActivityId}, Text={Text}, Timestamp={Timestamp}",
+                            activity.Type, activity.From?.Id ?? "null", activity.Id ?? "null",
                             textPreview, activity.Timestamp);
                     }
                     
-                    // Look for bot responses with improved filtering
+                    // Look for NEW bot responses that we haven't seen before
                     var botMessages = activitiesResponse.Activities
                         .Where(a => a.Type == "message" 
                             && !string.IsNullOrEmpty(a.Text)
-                            && a.Text != userInputText  // NOT the exact same text we sent (critical filter!)
+                            && a.Text != userInputText  // NOT the exact same text we sent
                             && a.From?.Id != null 
                             && a.From.Id != "user"  // Not from user
-                            && a.Timestamp > userMessageTimestamp.AddSeconds(-5))  // After user message (with buffer)
+                            && a.Timestamp > userMessageTimestamp  // Must be AFTER we sent our message (no buffer)
+                            && !string.IsNullOrEmpty(a.Id)
+                            && !seenActivityIds.Contains(a.Id))  // NEW activity we haven't processed
                         .ToList();
 
-                    _logger.LogInformation("WaitForBot: Found {Count} bot messages after filtering (attempt {Attempt})", 
+                    _logger.LogInformation("WaitForBot: Found {Count} NEW bot messages after filtering (attempt {Attempt})", 
                         botMessages.Count, attempt);
 
                     if (botMessages.Any())
                     {
-                        // Return the latest bot message with raw JSON
-                        var latestMessage = botMessages.Last();
-                        var rawJson = JsonSerializer.Serialize(latestMessage, _jsonOptions);
+                        // Return the FIRST new bot message (not last, to avoid skipping)
+                        var newMessage = botMessages.First();
+                        seenActivityIds.Add(newMessage.Id!);
+                        var rawJson = JsonSerializer.Serialize(newMessage, _jsonOptions);
                         
-                        _logger.LogInformation("WaitForBot: Returning bot response in conversation {ConversationId} from {BotId}: {Response}", 
-                            conversationId, latestMessage.From?.Id, latestMessage.Text);
-                        _logger.LogInformation("WaitForBot: Raw activity JSON length: {Length}", rawJson?.Length ?? 0);
+                        _logger.LogWarning("[DIRECTLINE] Returning NEW bot response ActivityId={ActivityId}, Timestamp={Timestamp}, Text='{Text}'", 
+                            newMessage.Id, newMessage.Timestamp, newMessage.Text?.Substring(0, Math.Min(100, newMessage.Text?.Length ?? 0)));
                         
-                        return (latestMessage.Text, rawJson);
+                        return (newMessage.Text, rawJson);
                     }
                 }
 
