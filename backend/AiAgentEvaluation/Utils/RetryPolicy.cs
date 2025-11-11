@@ -1,6 +1,8 @@
 using Microsoft.Extensions.Logging;
 using System.Net;
 using System.Net.Sockets;
+using Azure;
+using System.ClientModel;
 
 namespace AiAgentEvaluation.Utils;
 
@@ -42,7 +44,7 @@ public class RetryPolicy
             {
                 if (attempt > 0)
                 {
-                    var delay = CalculateDelay(attempt);
+                    var delay = CalculateDelay(attempt, lastException);
                     _logger.LogInformation("Retrying {OperationName} (attempt {Attempt}/{MaxRetries}) after {Delay}ms delay", 
                         operationName ?? "operation", attempt + 1, _maxRetries + 1, delay.TotalMilliseconds);
                     
@@ -86,8 +88,19 @@ public class RetryPolicy
         }, shouldRetry, operationName, cancellationToken);
     }
 
-    private TimeSpan CalculateDelay(int attempt)
+    private TimeSpan CalculateDelay(int attempt, Exception? lastException = null)
     {
+        // Check for Retry-After header in Azure SDK exceptions
+        if (lastException != null)
+        {
+            TimeSpan? retryAfter = ExtractRetryAfter(lastException);
+            if (retryAfter.HasValue)
+            {
+                _logger.LogInformation("Using Retry-After delay of {Delay}ms from exception", retryAfter.Value.TotalMilliseconds);
+                return retryAfter.Value;
+            }
+        }
+
         // Exponential backoff: 2^attempt * baseDelay
         var delay = TimeSpan.FromTicks(_baseDelay.Ticks * (long)Math.Pow(2, attempt - 1));
         
@@ -105,6 +118,64 @@ public class RetryPolicy
         return delay;
     }
 
+    private TimeSpan? ExtractRetryAfter(Exception ex)
+    {
+        // Extract Retry-After from Azure SDK RequestFailedException
+        if (ex is RequestFailedException azEx)
+        {
+            try
+            {
+                var response = azEx.GetRawResponse();
+                if (response?.Headers != null && response.Headers.TryGetValue("Retry-After", out var retryAfter))
+                {
+                    // Retry-After can be either seconds (int) or HTTP-date
+                    if (int.TryParse(retryAfter, out var seconds))
+                    {
+                        _logger.LogInformation("Extracted Retry-After header: {Seconds} seconds", seconds);
+                        return TimeSpan.FromSeconds(seconds);
+                    }
+                    // If it's an HTTP-date, parse and calculate diff
+                    else if (DateTimeOffset.TryParse(retryAfter, out var retryDate))
+                    {
+                        var delay = retryDate - DateTimeOffset.UtcNow;
+                        if (delay.TotalSeconds > 0)
+                        {
+                            _logger.LogInformation("Extracted Retry-After date: {RetryDate}, delay: {Seconds} seconds", 
+                                retryDate, delay.TotalSeconds);
+                            return delay;
+                        }
+                    }
+                }
+            }
+            catch (Exception extractEx)
+            {
+                _logger.LogDebug(extractEx, "Failed to extract Retry-After header, using exponential backoff");
+            }
+        }
+        
+        // Extract Retry-After from ClientResultException (Azure OpenAI SDK v2.1.0+)
+        // The message format is: "HTTP 429 (429)\r\n\r\nRate limit is exceeded. Try again in X seconds."
+        if (ex is ClientResultException clientEx)
+        {
+            try
+            {
+                var message = clientEx.Message;
+                var match = System.Text.RegularExpressions.Regex.Match(message, @"Try again in (\d+) seconds?", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (match.Success && int.TryParse(match.Groups[1].Value, out var seconds))
+                {
+                    _logger.LogInformation("Extracted Retry-After from ClientResultException message: {Seconds} seconds", seconds);
+                    return TimeSpan.FromSeconds(seconds);
+                }
+            }
+            catch (Exception extractEx)
+            {
+                _logger.LogDebug(extractEx, "Failed to extract Retry-After from ClientResultException message, using exponential backoff");
+            }
+        }
+
+        return null;
+    }
+
     private static bool IsRetriableException(Exception ex, Func<Exception, bool>? customShouldRetry)
     {
         // Use custom retry logic if provided
@@ -118,11 +189,41 @@ public class RetryPolicy
             HttpRequestException httpEx => IsRetriableHttpException(httpEx),
             SocketException => true,
             TimeoutException => true,
+            
+            // Azure SDK exceptions (for Azure OpenAI, Storage, etc.)
+            RequestFailedException azEx => IsRetriableAzureException(azEx),
+            
+            // System.ClientModel exceptions (from Azure OpenAI SDK v2.1.0+)
+            ClientResultException clientEx => IsRetriableClientException(clientEx),
+            
             System.ServiceModel.FaultException<Microsoft.Xrm.Sdk.OrganizationServiceFault> dataverseFault => IsRetriableDataverseFault(dataverseFault),
             Azure.Messaging.ServiceBus.ServiceBusException sbEx => IsRetriableServiceBusException(sbEx),
             System.Net.WebException webEx => IsRetriableWebException(webEx),
             _ => false
         };
+    }
+
+    private static bool IsRetriableAzureException(RequestFailedException ex)
+    {
+        // Handle Azure SDK exceptions (OpenAI, Storage, etc.)
+        // Status code 429 = Too Many Requests (rate limit)
+        // Status code 503 = Service Unavailable
+        // Status code 502 = Bad Gateway
+        // Status code 504 = Gateway Timeout
+        return ex.Status == 429 ||
+               ex.Status == 503 ||
+               ex.Status == 502 ||
+               ex.Status == 504;
+    }
+
+    private static bool IsRetriableClientException(ClientResultException ex)
+    {
+        // Handle ClientResultException from Azure.AI.OpenAI SDK v2.1.0+
+        // This is the new exception type used by the Azure OpenAI SDK
+        return ex.Status == 429 ||  // Rate limit
+               ex.Status == 503 ||  // Service unavailable
+               ex.Status == 502 ||  // Bad Gateway
+               ex.Status == 504;    // Gateway Timeout
     }
 
     private static bool IsRetriableHttpException(HttpRequestException ex)

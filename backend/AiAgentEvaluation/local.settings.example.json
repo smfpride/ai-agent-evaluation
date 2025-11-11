@@ -23,12 +23,16 @@
     "_README4A": "=== COPILOT STUDIO CONFIGURATION ===",
     "_README4B": "Direct Line URLs are now configured in Dataverse in the mcicaps_agenttoeval table",
     "_README4C": "No local configuration is needed - URLs are dynamically retrieved per evaluation run",
-    "_CopilotStudio:TimeoutSeconds": "30",
+    "_CopilotStudio__TimeoutSeconds": "60",
+    "_CopilotStudio__BotResponseTimeoutSeconds": "60",
+    "_CopilotStudio__MaxRetryAttempts": "3",
     
     "_README5": "=== APPLICATION CONFIGURATION ===",
     "DefaultEvaluationTimeoutMinutes": "5",
     "MaxConcurrentTestCases": "100",
     "PromptTemplateContainerName": "evaluation-prompts",
+    "_AzureOpenAI__MaxRetryAttempts": "5",
+    "_AzureOpenAI__TimeoutSeconds": "60",
     
     "_README6": "=== AZURE FUNCTIONS CONFIGURATION ===",
     "APPLICATIONINSIGHTS_CONNECTION_STRING": "InstrumentationKey=your-key;IngestionEndpoint=https://your-region.in.applicationinsights.azure.com/;LiveEndpoint=https://your-region.livediagnostics.monitor.azure.com/",

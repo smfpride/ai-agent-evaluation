@@ -194,7 +194,7 @@ public class HealthCheckFunction
     /// </summary>
     [Function("HealthCheckDetailed")]
     public async Task<HttpResponseData> HealthCheckDetailed(
-        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "health/detailed")] HttpRequestData req)
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "health/detailed")] HttpRequestData req)
     {
         _logger.LogInformation("Detailed health check endpoint called");
 

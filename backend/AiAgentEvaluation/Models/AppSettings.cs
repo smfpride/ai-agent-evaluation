@@ -33,14 +33,19 @@ public class CopilotStudioSettings
     public string DefaultBotId { get; set; } = string.Empty;
     
     /// <summary>
-    /// HTTP timeout in seconds
+    /// HTTP timeout in seconds for API calls
     /// </summary>
-    public int TimeoutSeconds { get; set; } = 30;
+    public int TimeoutSeconds { get; set; } = 60;
     
     /// <summary>
     /// Maximum retry attempts for failed requests
     /// </summary>
     public int MaxRetryAttempts { get; set; } = 3;
+    
+    /// <summary>
+    /// Maximum time to wait for bot response in seconds (polling timeout)
+    /// </summary>
+    public int BotResponseTimeoutSeconds { get; set; } = 60;
 }
 
 public class AzureOpenAISettings
@@ -52,7 +57,7 @@ public class AzureOpenAISettings
     public int MaxTokens { get; set; } = 4000;
     public double Temperature { get; set; } = 0.0;
     public int TimeoutSeconds { get; set; } = 60;
-    public int MaxRetryAttempts { get; set; } = 3;
+    public int MaxRetryAttempts { get; set; } = 5; // Increased from 3 to 5 for better rate limit handling
 }
 
 public class ServiceBusSettings
@@ -64,6 +69,12 @@ public class ServiceBusSettings
     public int AutoCompleteTimeoutMinutes { get; set; } = 5;
     public int MaxRetryAttempts { get; set; } = 3;
     public int RetryDelaySeconds { get; set; } = 30;
+    
+    /// <summary>
+    /// Message lock duration for multi-turn test cases in minutes
+    /// Multi-turn conversations can take longer (10 turns × ~60s = 10 minutes)
+    /// </summary>
+    public int MultiTurnAutoCompleteTimeoutMinutes { get; set; } = 15;
 }
 
 public class KeyVaultSettings

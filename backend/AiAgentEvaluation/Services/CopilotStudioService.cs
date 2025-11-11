@@ -72,7 +72,7 @@ public class CopilotStudioService : ICopilotStudioService, IDisposable
     }
 
     /// <summary>
-    /// Fetch a new token from the Copilot Studio token endpoint URL
+    /// Fetch a new token from the Copilot Studio token endpoint URL with retry logic
     /// </summary>
     private async Task<string> FetchNewTokenAsync(string directLineSpeechUrl, CancellationToken cancellationToken = default)
     {
@@ -83,25 +83,31 @@ public class CopilotStudioService : ICopilotStudioService, IDisposable
 
         _logger.LogDebug("Fetching new Direct Line token from endpoint: {Endpoint}", directLineSpeechUrl);
 
-        var response = await _tokenHttpClient.GetAsync(directLineSpeechUrl, cancellationToken);
-        response.EnsureSuccessStatusCode();
-
-        var content = await response.Content.ReadAsStringAsync(cancellationToken);
-        var tokenResponse = JsonSerializer.Deserialize<CopilotStudioTokenResponse>(content, _jsonOptions);
-
-        if (string.IsNullOrEmpty(tokenResponse?.Token))
+        // Wrap token fetch in resilient service for automatic retries on transient failures
+        return await _resilientService.ExecuteAsync(async ct =>
         {
-            throw new InvalidOperationException("Failed to get Direct Line token - no token returned from endpoint");
-        }
+            var response = await _tokenHttpClient.GetAsync(directLineSpeechUrl, ct);
+            response.EnsureSuccessStatusCode();
 
-        lock (_tokenLock)
-        {
-            _tokenCache[directLineSpeechUrl] = (tokenResponse.Token, DateTime.UtcNow.AddSeconds(tokenResponse.ExpiresIn));
-        }
+            var content = await response.Content.ReadAsStringAsync(ct);
+            var tokenResponse = JsonSerializer.Deserialize<CopilotStudioTokenResponse>(content, _jsonOptions);
 
-        _logger.LogDebug("Successfully obtained Direct Line token for {Endpoint}, expires in {ExpiresIn} seconds", 
-            directLineSpeechUrl, tokenResponse.ExpiresIn);
-        return tokenResponse.Token;
+            if (string.IsNullOrEmpty(tokenResponse?.Token))
+            {
+                throw new InvalidOperationException("Failed to get Direct Line token - no token returned from endpoint");
+            }
+
+            lock (_tokenLock)
+            {
+                _tokenCache[directLineSpeechUrl] = (tokenResponse.Token, DateTime.UtcNow.AddSeconds(tokenResponse.ExpiresIn));
+            }
+
+            _logger.LogDebug("Successfully obtained Direct Line token for {Endpoint}, expires in {ExpiresIn} seconds", 
+                directLineSpeechUrl, tokenResponse.ExpiresIn);
+            return tokenResponse.Token;
+        }, "FetchDirectLineToken",
+        exception => exception is HttpRequestException || exception is TaskCanceledException,
+        cancellationToken);
     }
 
     /// <summary>
@@ -224,10 +230,14 @@ public class CopilotStudioService : ICopilotStudioService, IDisposable
 
     private async Task<(string? ResponseText, string? RawActivityJson)> WaitForBotResponseAsync(string directLineSpeechUrl, string directLineBaseUrl, string conversationId, DateTime userMessageTimestamp, string userInputText, CancellationToken cancellationToken)
     {
-        var maxAttempts = 30; // 30 attempts with 1-second intervals = 30 seconds max wait
+        // Use configurable timeout instead of hardcoded 30 seconds
+        var timeoutSeconds = _settings.CopilotStudio.BotResponseTimeoutSeconds;
+        var maxAttempts = timeoutSeconds; // 1 attempt per second
         var attempt = 0;
         string? watermark = null;
         HashSet<string> seenActivityIds = new HashSet<string>();
+        
+        _logger.LogInformation("Waiting for bot response with timeout of {TimeoutSeconds} seconds", timeoutSeconds);
 
         while (attempt < maxAttempts && !cancellationToken.IsCancellationRequested)
         {
@@ -306,8 +316,8 @@ public class CopilotStudioService : ICopilotStudioService, IDisposable
             }
         }
 
-        _logger.LogWarning("Timeout waiting for bot response in conversation {ConversationId} after {Attempts} attempts", 
-            conversationId, attempt);
+        _logger.LogWarning("Timeout waiting for bot response in conversation {ConversationId} after {Attempts} attempts ({TimeoutSeconds} seconds)", 
+            conversationId, attempt, timeoutSeconds);
         return (null, null);
     }
 

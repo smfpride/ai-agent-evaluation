@@ -285,6 +285,28 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
           name: 'MaxConcurrentTestCases'
           value: '100'
         }
+        // Copilot Studio configuration
+        {
+          name: 'CopilotStudio__TimeoutSeconds'
+          value: '60'
+        }
+        {
+          name: 'CopilotStudio__BotResponseTimeoutSeconds'
+          value: '60'
+        }
+        {
+          name: 'CopilotStudio__MaxRetryAttempts'
+          value: '3'
+        }
+        // Azure OpenAI configuration
+        {
+          name: 'AzureOpenAI__MaxRetryAttempts'
+          value: '5'
+        }
+        {
+          name: 'AzureOpenAI__TimeoutSeconds'
+          value: '60'
+        }
       ]
     }
   }
