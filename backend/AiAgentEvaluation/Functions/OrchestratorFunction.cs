@@ -1,5 +1,7 @@
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
+using Microsoft.DurableTask;
+using Microsoft.DurableTask.Client;
 using Microsoft.Extensions.Logging;
 using AiAgentEvaluation.Models;
 using AiAgentEvaluation.Services;
@@ -30,6 +32,7 @@ public class OrchestratorFunction
     [Function("StartEvaluationRun")]
     public async Task<HttpResponseData> StartEvaluationRun(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "evaluations/start")] HttpRequestData req,
+        [DurableClient] DurableTaskClient durableClient,
         CancellationToken cancellationToken)
     {
         _logger.LogInformation("Starting evaluation run request received");
@@ -135,29 +138,52 @@ public class OrchestratorFunction
                 MaxRetries = 3
             }).ToList();
 
-            // Create Service Bus messages for multi-turn test cases
-            var multiTurnMessages = multiTurnTestCases.Select(testCase => new ProcessMultiTurnTestCaseMessage
-            {
-                EvaluationRunId = request.EvaluationRunId,
-                TestCaseId = testCase.Id,
-                DirectLineUrl = directLineUrl,
-                PassingThreshold = passingThreshold,
-                RetryCount = 0,
-                MaxRetries = 3
-            }).ToList();
-
-            // Send messages to Service Bus in batches
+            // Send single-turn messages to Service Bus
             if (singleTurnMessages.Any())
             {
                 await _serviceBusService.SendBatchTestCaseMessagesAsync(singleTurnMessages, cancellationToken);
-                _logger.LogInformation("Sent {Count} single-turn test case messages", singleTurnMessages.Count);
+                _logger.LogInformation("Sent {Count} single-turn test case messages to Service Bus", singleTurnMessages.Count);
             }
 
-            // Send multi-turn messages to separate queue
-            if (multiTurnMessages.Any())
+            // Start Durable Functions orchestrations for multi-turn test cases
+            if (multiTurnTestCases.Any())
             {
-                await _serviceBusService.SendBatchMultiTurnTestCaseMessagesAsync(multiTurnMessages, cancellationToken);
-                _logger.LogInformation("Sent {Count} multi-turn test case messages", multiTurnMessages.Count);
+                foreach (var testCase in multiTurnTestCases)
+                {
+                    var orchestratorInput = new MultiTurnOrchestratorInput
+                    {
+                        TestCaseId = testCase.Id,
+                        TestRunId = request.EvaluationRunId,
+                        DirectLineUrl = directLineUrl,
+                        EvaluatorTypeId = testCase.EvaluatorTypeId,
+                        PassingThreshold = passingThreshold
+                    };
+
+                    // Use test case ID as instance ID for idempotency and tracking
+                    string instanceId = $"multiturn-{testCase.Id}";
+                    
+                    try
+                    {
+                        await durableClient.ScheduleNewOrchestrationInstanceAsync(
+                            "MultiTurnTestCaseOrchestrator",
+                            orchestratorInput,
+                            new StartOrchestrationOptions 
+                            { 
+                                InstanceId = instanceId 
+                            });
+
+                        _logger.LogInformation("Started Durable Functions orchestration {InstanceId} for test case {TestCaseId}",
+                            instanceId, testCase.Id);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to start orchestration for test case {TestCaseId}", testCase.Id);
+                        // Continue with other test cases
+                    }
+                }
+
+                _logger.LogInformation("Started {Count} Durable Functions orchestrations for multi-turn test cases",
+                    multiTurnTestCases.Count);
             }
 
             // Calculate estimated completion time

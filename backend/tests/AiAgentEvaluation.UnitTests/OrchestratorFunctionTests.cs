@@ -3,6 +3,7 @@ using AiAgentEvaluation.Models;
 using AiAgentEvaluation.Services;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
+using Microsoft.DurableTask.Client;
 using Microsoft.Extensions.Logging;
 using Moq;
 using System.Net;
@@ -21,6 +22,7 @@ public class OrchestratorFunctionTests
     private readonly Mock<ILogger<OrchestratorFunction>> _mockLogger;
     private readonly Mock<IDataverseService> _mockDataverseService;
     private readonly Mock<IServiceBusService> _mockServiceBusService;
+    private readonly Mock<DurableTaskClient> _mockDurableClient;
     private readonly Mock<FunctionContext> _mockFunctionContext;
     private readonly OrchestratorFunction _orchestratorFunction;
 
@@ -29,6 +31,7 @@ public class OrchestratorFunctionTests
         _mockLogger = new Mock<ILogger<OrchestratorFunction>>();
         _mockDataverseService = new Mock<IDataverseService>();
         _mockServiceBusService = new Mock<IServiceBusService>();
+        _mockDurableClient = new Mock<DurableTaskClient>("test-client");
         _mockFunctionContext = new Mock<FunctionContext>();
 
         _orchestratorFunction = new OrchestratorFunction(
@@ -81,7 +84,7 @@ public class OrchestratorFunctionTests
         var httpRequestData = CreateMockHttpRequestData(request);
 
         // Act
-        var result = await _orchestratorFunction.StartEvaluationRun(httpRequestData, CancellationToken.None);
+        var result = await _orchestratorFunction.StartEvaluationRun(httpRequestData, _mockDurableClient.Object, CancellationToken.None);
 
         // Assert
         Assert.Equal(HttpStatusCode.Accepted, result.StatusCode);
@@ -145,7 +148,7 @@ public class OrchestratorFunctionTests
         var httpRequestData = CreateMockHttpRequestData(request);
 
         // Act
-        var result = await _orchestratorFunction.StartEvaluationRun(httpRequestData, CancellationToken.None);
+        var result = await _orchestratorFunction.StartEvaluationRun(httpRequestData, _mockDurableClient.Object, CancellationToken.None);
 
         // Assert
         Assert.Equal(HttpStatusCode.Accepted, result.StatusCode);
@@ -179,7 +182,7 @@ public class OrchestratorFunctionTests
         var httpRequestData = CreateMockHttpRequestData(request);
 
         // Act
-        var result = await _orchestratorFunction.StartEvaluationRun(httpRequestData, CancellationToken.None);
+        var result = await _orchestratorFunction.StartEvaluationRun(httpRequestData, _mockDurableClient.Object, CancellationToken.None);
 
         // Assert
         Assert.Equal(HttpStatusCode.NotFound, result.StatusCode);
@@ -218,7 +221,7 @@ public class OrchestratorFunctionTests
         var httpRequestData = CreateMockHttpRequestData(request);
 
         // Act
-        var result = await _orchestratorFunction.StartEvaluationRun(httpRequestData, CancellationToken.None);
+        var result = await _orchestratorFunction.StartEvaluationRun(httpRequestData, _mockDurableClient.Object, CancellationToken.None);
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, result.StatusCode);
@@ -258,7 +261,7 @@ public class OrchestratorFunctionTests
         var httpRequestData = CreateMockHttpRequestData(request);
 
         // Act
-        var result = await _orchestratorFunction.StartEvaluationRun(httpRequestData, CancellationToken.None);
+        var result = await _orchestratorFunction.StartEvaluationRun(httpRequestData, _mockDurableClient.Object, CancellationToken.None);
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, result.StatusCode);
@@ -312,7 +315,7 @@ public class OrchestratorFunctionTests
         var httpRequestData = CreateMockHttpRequestData(request);
 
         // Act
-        var result = await _orchestratorFunction.StartEvaluationRun(httpRequestData, CancellationToken.None);
+        var result = await _orchestratorFunction.StartEvaluationRun(httpRequestData, _mockDurableClient.Object, CancellationToken.None);
 
         // Assert
         Assert.Equal(HttpStatusCode.InternalServerError, result.StatusCode);
@@ -338,7 +341,7 @@ public class OrchestratorFunctionTests
         var httpRequestData = CreateMockHttpRequestData(request);
 
         // Act
-        var result = await _orchestratorFunction.StartEvaluationRun(httpRequestData, CancellationToken.None);
+        var result = await _orchestratorFunction.StartEvaluationRun(httpRequestData, _mockDurableClient.Object, CancellationToken.None);
 
         // Assert
         Assert.Equal(HttpStatusCode.InternalServerError, result.StatusCode);
@@ -355,7 +358,7 @@ public class OrchestratorFunctionTests
         var httpRequestData = CreateMockHttpRequestData("{ invalid json }");
 
         // Act
-        var result = await _orchestratorFunction.StartEvaluationRun(httpRequestData, CancellationToken.None);
+        var result = await _orchestratorFunction.StartEvaluationRun(httpRequestData, _mockDurableClient.Object, CancellationToken.None);
 
         // Assert
         Assert.Equal(HttpStatusCode.InternalServerError, result.StatusCode);
@@ -368,7 +371,7 @@ public class OrchestratorFunctionTests
         var httpRequestData = CreateMockHttpRequestData("");
 
         // Act
-        var result = await _orchestratorFunction.StartEvaluationRun(httpRequestData, CancellationToken.None);
+        var result = await _orchestratorFunction.StartEvaluationRun(httpRequestData, _mockDurableClient.Object, CancellationToken.None);
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, result.StatusCode);
@@ -390,7 +393,7 @@ public class OrchestratorFunctionTests
         var httpRequestData = CreateMockHttpRequestData(request);
 
         // Act
-        var result = await _orchestratorFunction.StartEvaluationRun(httpRequestData, CancellationToken.None);
+        var result = await _orchestratorFunction.StartEvaluationRun(httpRequestData, _mockDurableClient.Object, CancellationToken.None);
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, result.StatusCode);
