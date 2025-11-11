@@ -26,7 +26,7 @@ The AI Agent Evaluation System is a cloud-native, serverless solution built on A
 ---
 
 ## Architecture Diagram
-![](./images/ArchitectureDiagram.png)
+<!-- ![](./images/ArchitectureDiagram.png) -->
 ```mermaid
 flowchart TB
     subgraph subGraph0["External Systems"]
@@ -433,7 +433,7 @@ mcicaps_testcaseturn (1) ←→ (N) mcicaps_evaluationresults
 ## Data Flow
 
 ### Single-Turn Test Case Execution
-![](./images/SingleTurnTestCaseExecution.png)
+<!-- ![](./images/SingleTurnTestCaseExecution.png) -->
 ```mermaid
 sequenceDiagram
     participant User
@@ -469,7 +469,7 @@ sequenceDiagram
 ```
 
 ### Multi-Turn Test Case Execution
-![](./images/Multi-TurnTestCaseExecution.png)
+<!-- ![](./images/Multi-TurnTestCaseExecution.png) -->
 ```mermaid
 sequenceDiagram
     participant Orchestrator
@@ -550,7 +550,7 @@ sequenceDiagram
 
 #### Managed Identity (Primary Method)
 All Azure-to-Azure connections use Managed Identity:
-![](./images/ManagedIdentity.png)
+<!-- ![](./images/ManagedIdentity.png) -->
 ```mermaid
 graph LR
     FA[Function App<br/>Managed Identity]
@@ -701,7 +701,7 @@ Use `OperationId` and `ParentId` for distributed tracing:
 ## Deployment Architecture
 
 ### Environment Strategy
-![](./images/EnvironmentStrategy.png)
+<!-- ![](./images/EnvironmentStrategy.png) -->
 ```mermaid
 graph TB
     subgraph "Staging"
