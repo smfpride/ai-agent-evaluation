@@ -38,10 +38,10 @@ Monitor Function (Status Updates)
 
 ### Core Capabilities
 
-- **Three Evaluation Types**: 
-  - **Similarity** (778760000): Semantic meaning alignment
-  - **Accuracy** (778760001): Factual correctness
-  - **Relevancy** (778760002): Response appropriateness
+- **Three Sample Evaluation Types**: 
+  - **Similarity**: Semantic meaning alignment
+  - **Accuracy**: Factual correctness
+  - **Relevancy**: Response appropriateness
   
 - **Multi-Turn Support**: Execute complex conversation flows with context preservation across turns
 
