@@ -326,7 +326,7 @@ var status = await durableClient.GetStatusAsync(instanceId);
 - [ ] Compare performance with current implementation
 
 ### Phase 4: Deployment & Monitoring (1 day)
-- [ ] Deploy to staging environment
+- [ ] Deploy to staging function app - func-aiestagingmbwc
 - [ ] Run production test suite
 - [ ] Verify no regressions for single-turn test cases
 - [ ] Monitor execution times and success rates

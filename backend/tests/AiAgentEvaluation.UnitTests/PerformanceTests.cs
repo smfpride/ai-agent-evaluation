@@ -1,6 +1,7 @@
 using AiAgentEvaluation.Functions;
 using AiAgentEvaluation.Models;
 using AiAgentEvaluation.Services;
+using Microsoft.DurableTask.Client;
 using Microsoft.Extensions.Logging;
 using Moq;
 using System.Diagnostics;
@@ -20,6 +21,7 @@ public class PerformanceTests
     private readonly Mock<ILogger<WorkerFunction>> _mockWorkerLogger;
     private readonly Mock<IDataverseService> _mockDataverseService;
     private readonly Mock<IServiceBusService> _mockServiceBusService;
+    private readonly Mock<DurableTaskClient> _mockDurableClient;
     private readonly Mock<ICopilotStudioService> _mockCopilotStudioService;
     private readonly Mock<ILLMJudgeService> _mockLLMJudgeService;
 
@@ -29,6 +31,7 @@ public class PerformanceTests
         _mockWorkerLogger = new Mock<ILogger<WorkerFunction>>();
         _mockDataverseService = new Mock<IDataverseService>();
         _mockServiceBusService = new Mock<IServiceBusService>();
+        _mockDurableClient = new Mock<DurableTaskClient>("test-client");
         _mockCopilotStudioService = new Mock<ICopilotStudioService>();
         _mockLLMJudgeService = new Mock<ILLMJudgeService>();
     }
@@ -83,7 +86,7 @@ public class PerformanceTests
 
         // Act
         var stopwatch = Stopwatch.StartNew();
-        await orchestrator.StartEvaluationRun(httpRequestData, CancellationToken.None);
+        await orchestrator.StartEvaluationRun(httpRequestData, _mockDurableClient.Object, CancellationToken.None);
         stopwatch.Stop();
 
         // Assert - Should complete within 30 seconds (PRD requirement)
@@ -154,7 +157,7 @@ public class PerformanceTests
         {
             var request = new StartEvaluationRunRequest { EvaluationRunId = run.Id };
             var httpRequestData = CreateMockHttpRequestData(request);
-            return await orchestrator.StartEvaluationRun(httpRequestData, CancellationToken.None);
+            return await orchestrator.StartEvaluationRun(httpRequestData, _mockDurableClient.Object, CancellationToken.None);
         });
 
         var stopwatch = Stopwatch.StartNew();

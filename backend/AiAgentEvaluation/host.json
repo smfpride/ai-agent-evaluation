@@ -13,5 +13,19 @@
         "id": "Microsoft.Azure.Functions.ExtensionBundle",
         "version": "[4.*, 5.0.0)"
     },
-    "functionTimeout": "00:05:00"
+    "functionTimeout": "00:05:00",
+    "extensions": {
+        "durableTask": {
+            "storageProvider": {
+                "connectionName": "AzureWebJobsStorage"
+            },
+            "hubName": "AiAgentEvaluationHub",
+            "tracing": {
+                "traceInputsAndOutputs": true,
+                "traceReplayEvents": false
+            },
+            "maxConcurrentActivityFunctions": 100,
+            "maxConcurrentOrchestratorFunctions": 10
+        }
+    }
 }
