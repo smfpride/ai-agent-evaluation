@@ -24,12 +24,13 @@ With Dataverse connection string:
 - **Function App**: .NET 8 isolated worker, consumption plan
 - **Key Vault**: Stores DataverseConnectionString secret (OAuth credentials)
 - **Storage Account**: Function storage and Durable Functions state
-- **Service Bus**: Two message queues for test case distribution
-  - `test-case-processing` - Single-turn test cases
-  - `multi-turn-test-case-processing` - Multi-turn conversation test cases
+- **Service Bus**: Message queue for single-turn test case distribution
+  - `test-case-processing` - Single-turn test cases only
 - **Azure OpenAI**: GPT-4o deployment for LLM judge evaluation
 - **App Insights**: Monitoring and diagnostics
 - **Log Analytics**: Centralized logging
+
+**Note**: Multi-turn test cases use Durable Functions orchestration instead of Service Bus queuing.
 
 ## Managed Identity RBAC
 

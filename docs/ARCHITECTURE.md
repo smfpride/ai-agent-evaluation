@@ -861,14 +861,14 @@ graph TB
 
 Provisions:
 - Function App with Premium Plan (supports Durable Functions)
-- Service Bus namespace with 2 queues (only test-case-processing actively used)
+- Service Bus namespace with 1 queue (test-case-processing for single-turn)
 - Azure OpenAI with GPT-4o deployment
 - Key Vault
 - Application Insights
 - Storage Account (required for Durable Functions state management)
 - All RBAC role assignments
 
-**Note**: The multi-turn-test-case-processing queue is provisioned but unused. Multi-turn execution uses Durable Functions orchestration.
+**Note**: Multi-turn execution uses Durable Functions orchestration and does not require Service Bus queuing.
 
 **Deployment Command**:
 ```bash

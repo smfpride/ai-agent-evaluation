@@ -1,6 +1,10 @@
 # Documentation Update Summary
 
-**Date**: November 12, 2025  
+> **⚠️ SUPERSEDED**: This document describes an earlier update. See `DOCUMENTATION_UPDATE_SUMMARY_2025-11-12.md` for the latest changes.
+> 
+> **Key Change**: The multi-turn queue mentioned in this document has since been removed. Multi-turn execution now uses ONLY Durable Functions orchestration.
+
+**Date**: November 12, 2025 (Initial Update)  
 **Updated By**: GitHub Copilot  
 **Purpose**: Sync documentation with current implementation
 
