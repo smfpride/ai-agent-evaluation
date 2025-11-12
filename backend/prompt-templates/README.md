@@ -202,4 +202,4 @@ The templates are tested in the unit tests:
 
 ## Default Templates
 
-If a template is not found in Blob Storage, the service will fall back to a default template embedded in the code. This ensures the system continues to function even if storage is temporarily unavailable.
+If a template is not found in DataVerse, the service will fall back to a default template embedded in the code. This ensures the system continues to function even if storage is temporarily unavailable.
