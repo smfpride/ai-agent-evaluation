@@ -2,16 +2,41 @@
 
 This directory contains the prompt templates used by the LLM Judge service to evaluate AI agent responses.
 
-## Template Files
+## Directory Structure
 
-### similarity-evaluation-prompt.txt
+```
+prompt-templates/
+├── README.md
+├── default/           # General-purpose evaluation prompts
+│   ├── accuracy-evaluation-prompt.txt
+│   ├── default-evaluation-prompt.txt
+│   ├── relevancy-evaluation-prompt.txt
+│   └── similarity-evaluation-prompt.txt
+└── fashion/          # Fashion/clothing industry-specific prompts
+    ├── README.md
+    ├── color-accuracy-evaluation-prompt.txt
+    ├── fashion-accuracy-evaluation-prompt.txt
+    ├── fashion-relevancy-evaluation-prompt.txt
+    ├── fashion-similarity-evaluation-prompt.txt
+    ├── gender-accuracy-evaluation-prompt.txt
+    ├── grounded-data-evaluation-prompt.txt
+    ├── intent-support-evaluation-prompt.txt
+    ├── product-id-evaluation-prompt.txt
+    └── rewritten-query-evaluation-prompt.txt
+```
+
+## Default Evaluation Templates
+
+The `default/` subdirectory contains general-purpose evaluation prompts suitable for most AI agent use cases:
+
+### default/similarity-evaluation-prompt.txt
 Evaluates semantic similarity between the expected response and the actual agent response. Focuses on:
 - Semantic meaning alignment
 - Content coverage
 - Information accuracy
 - Intent alignment
 
-### accuracy-evaluation-prompt.txt
+### default/accuracy-evaluation-prompt.txt
 Assesses the factual accuracy of the agent's response. Evaluates:
 - Factual correctness
 - Information completeness
@@ -19,7 +44,7 @@ Assesses the factual accuracy of the agent's response. Evaluates:
 - Absence of misleading information
 - Contextual accuracy
 
-### relevancy-evaluation-prompt.txt
+### default/relevancy-evaluation-prompt.txt
 Measures how relevant the agent's response is to the user's input. Considers:
 - Topic alignment
 - User intent fulfillment
@@ -27,7 +52,7 @@ Measures how relevant the agent's response is to the user's input. Considers:
 - Focus and directness
 - Completeness
 
-### default-evaluation-prompt.txt
+### default/default-evaluation-prompt.txt
 General-purpose evaluation template for overall response quality. Assesses:
 - Appropriateness
 - Quality
@@ -72,12 +97,86 @@ To upload these templates to Azure Blob Storage for use in production:
 2. Use the `BlobStorageService.UploadPromptTemplateAsync()` method
 3. The templates will be stored in the container specified by `Storage:PromptTemplateContainerName`
 
-Example:
+Example for default prompts:
 ```csharp
 await blobStorageService.UploadPromptTemplateAsync(
-    "similarity-evaluation-prompt.txt", 
-    File.ReadAllText("prompt-templates/similarity-evaluation-prompt.txt"));
+    "default/similarity-evaluation-prompt.txt", 
+    File.ReadAllText("prompt-templates/default/similarity-evaluation-prompt.txt"));
 ```
+
+Example for fashion prompts:
+```csharp
+await blobStorageService.UploadPromptTemplateAsync(
+    "fashion/gender-accuracy-evaluation-prompt.txt", 
+    File.ReadAllText("prompt-templates/fashion/gender-accuracy-evaluation-prompt.txt"));
+```
+
+## Fashion Industry Specific Templates
+
+The `fashion/` subdirectory contains specialized evaluation prompts for fashion and clothing e-commerce systems. See `fashion/README.md` for detailed documentation.
+
+### General Fashion Evaluation Prompts
+
+**fashion/fashion-accuracy-evaluation-prompt.txt**
+- Evaluates factual accuracy specific to fashion products
+- Verifies product attributes (color, gender, size, style)
+- Checks product ID accuracy (msind_productid)
+- Validates fashion domain knowledge and terminology
+- Assesses catalog grounding and metadata accuracy
+
+**fashion/fashion-relevancy-evaluation-prompt.txt**
+- Measures relevance of fashion product recommendations
+- Evaluates product type and attribute alignment
+- Assesses user intent fulfillment for fashion queries
+- Checks focus and precision in product recommendations
+
+**fashion/fashion-similarity-evaluation-prompt.txt**
+- Compares expected vs actual fashion product responses
+- Evaluates product match similarity (msind_productid comparison)
+- Assesses attribute consistency across responses
+- Validates semantic similarity in fashion recommendations
+
+### Specialized Fashion Evaluation Prompts
+
+**fashion/gender-accuracy-evaluation-prompt.txt**
+- Evaluates if products match requested gender category
+- Validates gender-specific filtering (women's, men's, unisex, etc.)
+- Assesses cross-gender product exclusion
+
+**fashion/color-accuracy-evaluation-prompt.txt**
+- Validates products match requested colors
+- Evaluates color family accuracy
+- Assesses color synonym recognition (e.g., navy vs dark blue)
+
+**fashion/product-id-evaluation-prompt.txt**
+- Compares msind_productid values between expected and actual responses
+- Evaluates complete coverage of expected products
+- Assesses precision and relevance of product IDs returned
+
+**fashion/intent-support-evaluation-prompt.txt**
+- Validates IsIntentSupported (from Flow) accuracy
+- Evaluates Intent Type classification correctness
+- Assesses consistency between intent support and type
+
+**fashion/rewritten-query-evaluation-prompt.txt**
+- Evaluates RewrittenUserQuery relevance to original input
+- Assesses semantic preservation and clarity enhancement
+- Validates information retention in query rewriting
+
+**fashion/grounded-data-evaluation-prompt.txt**
+- Verifies products come from actual catalog (not hallucinated)
+- Evaluates presence of catalog identifiers (msind_productid)
+- Assesses structured product data and consistency
+
+## Creating Domain-Specific Prompt Sets
+
+You can create additional domain-specific prompt sets similar to the `fashion/` directory:
+
+1. Create a new subdirectory (e.g., `healthcare/`, `finance/`, `legal/`)
+2. Copy and customize the default prompts for your domain
+3. Add specialized evaluation prompts for domain-specific requirements
+4. Create a README.md in the subdirectory documenting the prompts
+5. Update this main README to reference the new prompt set
 
 ## Customization
 

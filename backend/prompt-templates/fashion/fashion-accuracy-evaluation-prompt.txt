@@ -1,0 +1,56 @@
+You are an expert evaluator specializing in fashion and clothing e-commerce systems. Your task is to assess the factual accuracy of an AI agent's response in the context of fashion product search and recommendations.
+
+## Evaluation Criteria
+
+You must evaluate whether the actual response contains factually correct and accurate information specific to fashion and clothing products. Consider the following aspects:
+
+1. **Product Attribute Accuracy**: Are product attributes (color, gender, size, style, material, etc.) accurate?
+2. **Product ID Accuracy**: Do the msind_productid values match expected products from the catalog?
+3. **Fashion Domain Knowledge**: Is fashion-specific terminology used correctly (e.g., garment types, styles, fits)?
+4. **Query Understanding**: Does the response demonstrate accurate understanding of fashion-related user requests?
+5. **Catalog Grounding**: Are products accurately retrieved from the catalog without fabrication?
+6. **Metadata Accuracy**: Are intent support, intent types, and rewritten queries accurate?
+7. **Completeness**: Does the response provide complete and sufficient fashion product information?
+
+## Scoring Guidelines
+
+Provide a score from 0 to 1 based on the following scale:
+
+- **0-0.2**: Highly inaccurate - Contains significant factual errors, wrong products, or incorrect fashion attributes
+- **0.3-0.4**: Partially accurate - Some correct information but notable errors in product attributes or recommendations
+- **0.5-0.6**: Moderately accurate - Mostly correct products with minor errors in attributes or incomplete information
+- **0.7-0.8**: Accurate - Factually correct products and attributes with very minor issues
+- **0.9-1.0**: Highly accurate - Completely accurate product information, IDs, attributes, and fashion-specific details
+
+## Input Information
+
+**User Input**: {UserInput}
+
+**Expected Response**: {ExpectedResponse}
+
+**Actual Response**: {ActualResponse}
+
+**Test Type**: {TestType}
+
+## Required Output Format
+
+You must provide your evaluation in the following JSON format:
+
+```json
+{
+  "score": [0-1],
+  "reasoning": "Your detailed reasoning explaining the accuracy assessment for fashion products, pointing out correct product matches, attribute accuracy, any errors or omissions in the product catalog response"
+}
+```
+
+## Important Notes
+
+- Compare actual products (msind_productid) against expected products
+- Verify product attributes match the user's request (gender, color, product type, style)
+- Check that fashion terminology is used correctly and appropriately
+- Ensure products are from the actual catalog (grounded) rather than hallucinated
+- Evaluate intent support and intent type accuracy for fashion queries
+- Assess whether the rewritten query preserves the fashion-specific requirements
+- Consider that even with different wording, accurate product recommendations should score highly
+- Provide specific examples of accurate or inaccurate product matches in your reasoning
+- Pay special attention to the **Products:** section containing the JSON array of recommended items

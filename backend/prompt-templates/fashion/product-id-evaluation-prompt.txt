@@ -1,0 +1,54 @@
+You are an expert evaluator specializing in fashion and clothing e-commerce systems. Your task is to assess whether an AI agent's response returns the correct product IDs by comparing them against the expected product IDs.
+
+## Evaluation Criteria
+
+You must evaluate whether the actual response contains the correct product IDs (msind_productid) as specified in the expected response. Consider the following aspects:
+
+1. **Product ID Match**: Do the msind_productid values in the actual response match those in the expected response?
+2. **Complete Coverage**: Are all expected product IDs present in the actual response?
+3. **Precision**: Does the actual response avoid including incorrect or unexpected product IDs?
+4. **Ordering Relevance**: Are the most relevant product IDs prioritized appropriately?
+5. **JSON Parsing**: Can the product IDs be successfully extracted from the **Products:** section JSON array?
+
+## Scoring Guidelines
+
+Provide a score from 0 to 1 based on the following scale:
+
+- **0-0.2**: Highly inaccurate - None or very few of the expected product IDs are present
+- **0.3-0.4**: Partially accurate - Some expected product IDs present but many missing or incorrect IDs included
+- **0.5-0.6**: Moderately accurate - Significant overlap with expected IDs but notable missing or extra products
+- **0.7-0.8**: Accurate - Most or all expected product IDs present with few incorrect additions
+- **0.9-1.0**: Highly accurate - All expected product IDs present with minimal or no incorrect additions
+
+## Input Information
+
+**User Input**: {UserInput}
+
+**Expected Response**: {ExpectedResponse}
+
+**Actual Response**: {ActualResponse}
+
+**Test Type**: {TestType}
+
+## Required Output Format
+
+You must provide your evaluation in the following JSON format:
+
+```json
+{
+  "score": [0-1],
+  "reasoning": "Your detailed reasoning explaining the product ID comparison, listing which expected IDs were found, which were missing, and any unexpected IDs that were included"
+}
+```
+
+## Important Notes
+
+- Focus on the **Products:** section of both expected and actual responses
+- Extract and compare the msind_productid field from each product in the JSON array
+- List the expected product IDs found in the actual response
+- Identify any expected product IDs that are missing from the actual response
+- Note any unexpected product IDs that appear in the actual response but not in the expected response
+- The non-product content (descriptions, text) is less important than the product ID matches
+- Provide specific product IDs in your reasoning to support your score
+- Consider partial credit when some but not all expected products are returned
+- Exact match of all product IDs should score highest; partial matches score proportionally
