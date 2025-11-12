@@ -115,22 +115,6 @@ resource testCaseProcessingQueue 'Microsoft.ServiceBus/namespaces/queues@2022-10
   }
 }
 
-// Create Service Bus Queue for multi-turn test cases
-resource multiTurnTestCaseProcessingQueue 'Microsoft.ServiceBus/namespaces/queues@2022-10-01-preview' = {
-  parent: serviceBusNamespace
-  name: 'multi-turn-test-case-processing'
-  properties: {
-    maxSizeInMegabytes: 5120
-    defaultMessageTimeToLive: 'P14D'
-    deadLetteringOnMessageExpiration: true
-    duplicateDetectionHistoryTimeWindow: 'PT10M'
-    maxDeliveryCount: 10
-    lockDuration: 'PT5M'
-    enablePartitioning: false
-    requiresSession: false
-  }
-}
-
 // Deploy Key Vault
 resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   name: keyVaultNameValid

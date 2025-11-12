@@ -65,7 +65,6 @@ public class ServiceBusSettings
     public string ConnectionString { get; set; } = string.Empty; // Legacy - will be removed
     public string Namespace { get; set; } = string.Empty; // For managed identity: "yournamespace.servicebus.windows.net"
     public string QueueName { get; set; } = "test-case-processing";
-    public int MaxConcurrentCalls { get; set; } = 100;
     public int AutoCompleteTimeoutMinutes { get; set; } = 5;
     public int MaxRetryAttempts { get; set; } = 3;
     public int RetryDelaySeconds { get; set; } = 30;
@@ -86,7 +85,6 @@ public class KeyVaultSettings
 public class EvaluationSettings
 {
     public int DefaultTimeoutMinutes { get; set; } = 5;
-    public int MaxConcurrentTestCases { get; set; } = 100;
     public int MaxRetryAttempts { get; set; } = 3;
     public int RetryDelaySeconds { get; set; } = 30;
     public bool EnableDetailedLogging { get; set; } = true;

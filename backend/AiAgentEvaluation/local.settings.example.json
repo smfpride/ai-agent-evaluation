@@ -29,7 +29,6 @@
     
     "_README5": "=== APPLICATION CONFIGURATION ===",
     "DefaultEvaluationTimeoutMinutes": "5",
-    "MaxConcurrentTestCases": "100",
     "PromptTemplateContainerName": "evaluation-prompts",
     "_AzureOpenAI__MaxRetryAttempts": "5",
     "_AzureOpenAI__TimeoutSeconds": "60",

@@ -68,8 +68,6 @@ builder.Services.Configure<AppSettings>(options =>
     // Evaluation settings
     if (int.TryParse(builder.Configuration["DefaultEvaluationTimeoutMinutes"], out int timeout))
         options.Evaluation.DefaultTimeoutMinutes = timeout;
-    if (int.TryParse(builder.Configuration["MaxConcurrentTestCases"], out int maxCases))
-        options.Evaluation.MaxConcurrentTestCases = maxCases;
 });
 
 // Azure Identity

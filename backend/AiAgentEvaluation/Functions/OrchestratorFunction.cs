@@ -188,10 +188,10 @@ public class OrchestratorFunction
 
             // Calculate estimated completion time
             // Estimate: ~30 seconds per test case on average (copilot + LLM judge)
-            // With concurrency, divide by max concurrent (assume 100 concurrent by default)
+            // With concurrency of 100 (from host.json maxConcurrentActivityFunctions)
             var startTime = DateTime.UtcNow;
             var estimatedSecondsPerTest = 30;
-            var estimatedConcurrency = Math.Min(100, request.MaxConcurrency);
+            var estimatedConcurrency = 100;
             var estimatedTotalSeconds = (testCases.Count * estimatedSecondsPerTest) / estimatedConcurrency;
             var estimatedCompletionTime = startTime.AddSeconds(estimatedTotalSeconds);
 

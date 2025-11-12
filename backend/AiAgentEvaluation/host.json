@@ -25,7 +25,7 @@
                 "traceReplayEvents": false
             },
             "maxConcurrentActivityFunctions": 100,
-            "maxConcurrentOrchestratorFunctions": 10
+            "maxConcurrentOrchestratorFunctions": 100
         }
     }
 }

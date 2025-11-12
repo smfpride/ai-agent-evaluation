@@ -18,7 +18,6 @@ public class ServiceBusService : IServiceBusService, IDisposable
     private readonly AppSettings _settings;
     private readonly ServiceBusClient? _serviceBusClient;
     private readonly ServiceBusSender? _sender;
-    private readonly ServiceBusSender? _multiTurnSender;
     private readonly JsonSerializerOptions _jsonOptions;
     private readonly ResilientService _resilientService;
     private bool _disposed;
@@ -58,7 +57,6 @@ public class ServiceBusService : IServiceBusService, IDisposable
                 // Use managed identity with Service Bus namespace
                 _serviceBusClient = new ServiceBusClient(_settings.ServiceBus.Namespace, credential);
                 _sender = _serviceBusClient.CreateSender(_settings.ServiceBus.QueueName);
-                _multiTurnSender = _serviceBusClient.CreateSender("multi-turn-test-case-processing");
                 
                 _logger.LogInformation("Initialized Service Bus client with managed identity for namespace {Namespace}, queue {QueueName}", 
                     _settings.ServiceBus.Namespace, _settings.ServiceBus.QueueName);
@@ -68,7 +66,6 @@ public class ServiceBusService : IServiceBusService, IDisposable
                 // Fallback to connection string for local development
                 _serviceBusClient = new ServiceBusClient(_settings.ServiceBus.ConnectionString);
                 _sender = _serviceBusClient.CreateSender(_settings.ServiceBus.QueueName);
-                _multiTurnSender = _serviceBusClient.CreateSender("multi-turn-test-case-processing");
                 
                 _logger.LogWarning("Using connection string for Service Bus - this should only be used for local development");
             }
@@ -219,139 +216,6 @@ public class ServiceBusService : IServiceBusService, IDisposable
         cancellationToken);
     }
 
-    public async Task SendMultiTurnTestCaseMessageAsync(ProcessMultiTurnTestCaseMessage message, CancellationToken cancellationToken = default)
-    {
-        if (_multiTurnSender == null)
-        {
-            throw new InvalidOperationException(
-                "Service Bus is not configured. Please set either 'ServiceBusNamespace' or 'ServiceBusConnectionString' in your configuration.");
-        }
-        
-        _logger.LogInformation("Sending multi-turn test case message for test case {TestCaseId}", message.TestCaseId);
-        
-        await _resilientService.ExecuteAsync(async ct =>
-        {
-            // Serialize the message
-            var messageJson = JsonSerializer.Serialize(message, _jsonOptions);
-            var serviceBusMessage = new ServiceBusMessage(Encoding.UTF8.GetBytes(messageJson))
-            {
-                MessageId = Guid.NewGuid().ToString(),
-                Subject = $"MultiTurnTestCase-{message.TestCaseId}",
-                ContentType = "application/json"
-            };
-
-            // Add custom properties for routing and monitoring
-            serviceBusMessage.ApplicationProperties.Add("EvaluationRunId", message.EvaluationRunId.ToString());
-            serviceBusMessage.ApplicationProperties.Add("TestCaseId", message.TestCaseId.ToString());
-            serviceBusMessage.ApplicationProperties.Add("RetryCount", message.RetryCount);
-            serviceBusMessage.ApplicationProperties.Add("EnqueuedAt", DateTime.UtcNow);
-            serviceBusMessage.ApplicationProperties.Add("IsMultiTurn", true);
-
-            // Set message time-to-live
-            serviceBusMessage.TimeToLive = TimeSpan.FromMinutes(_settings.Evaluation.DefaultTimeoutMinutes);
-
-            // Send the message
-            await _multiTurnSender.SendMessageAsync(serviceBusMessage, ct);
-            
-            _logger.LogInformation("Successfully sent multi-turn test case message {MessageId} for test case {TestCaseId}", 
-                serviceBusMessage.MessageId, message.TestCaseId);
-        }, "SendMultiTurnTestCaseMessage",
-        exception => exception is ServiceBusException,
-        cancellationToken);
-    }
-
-    public async Task SendBatchMultiTurnTestCaseMessagesAsync(IEnumerable<ProcessMultiTurnTestCaseMessage> messages, CancellationToken cancellationToken = default)
-    {
-        if (_multiTurnSender == null)
-        {
-            throw new InvalidOperationException(
-                "Service Bus is not configured. Please set either 'ServiceBusNamespace' or 'ServiceBusConnectionString' in your configuration.");
-        }
-        
-        var messageList = messages.ToList();
-        
-        await _resilientService.ExecuteAsync(async (ct) =>
-        {
-            _logger.LogInformation("Sending batch of {MessageCount} multi-turn test case messages", messageList.Count);
-            
-            if (messageList.Count == 0)
-            {
-                _logger.LogWarning("No multi-turn messages to send in batch");
-                return;
-            }
-
-            // Create batch of Service Bus messages
-            using var messageBatch = await _multiTurnSender.CreateMessageBatchAsync(ct);
-            var batchCount = 0;
-            var totalSent = 0;
-
-            foreach (var message in messageList)
-            {
-                // Serialize the message
-                var messageJson = JsonSerializer.Serialize(message, _jsonOptions);
-                var serviceBusMessage = new ServiceBusMessage(Encoding.UTF8.GetBytes(messageJson))
-                {
-                    MessageId = Guid.NewGuid().ToString(),
-                    Subject = $"MultiTurnTestCase-{message.TestCaseId}",
-                    ContentType = "application/json"
-                };
-
-                // Add custom properties
-                serviceBusMessage.ApplicationProperties.Add("EvaluationRunId", message.EvaluationRunId.ToString());
-                serviceBusMessage.ApplicationProperties.Add("TestCaseId", message.TestCaseId.ToString());
-                serviceBusMessage.ApplicationProperties.Add("RetryCount", message.RetryCount);
-                serviceBusMessage.ApplicationProperties.Add("EnqueuedAt", DateTime.UtcNow);
-                serviceBusMessage.ApplicationProperties.Add("IsMultiTurn", true);
-
-                // Set message time-to-live
-                serviceBusMessage.TimeToLive = TimeSpan.FromMinutes(_settings.Evaluation.DefaultTimeoutMinutes);
-
-                // Try to add to batch
-                if (messageBatch.TryAddMessage(serviceBusMessage))
-                {
-                    batchCount++;
-                }
-                else
-                {
-                    // Send current batch if it's full
-                    if (batchCount > 0)
-                    {
-                        await _multiTurnSender.SendMessagesAsync(messageBatch, ct);
-                        totalSent += batchCount;
-                        _logger.LogInformation("Sent batch of {BatchCount} multi-turn messages", batchCount);
-                        batchCount = 0;
-                    }
-
-                    // Create new batch and add current message
-                    using var newBatch = await _multiTurnSender.CreateMessageBatchAsync(ct);
-                    if (newBatch.TryAddMessage(serviceBusMessage))
-                    {
-                        await _multiTurnSender.SendMessagesAsync(newBatch, ct);
-                        totalSent += 1;
-                        _logger.LogInformation("Sent individual multi-turn message {MessageId}", serviceBusMessage.MessageId);
-                    }
-                    else
-                    {
-                        _logger.LogError("Multi-turn message too large to fit in batch for test case {TestCaseId}", message.TestCaseId);
-                        throw new InvalidOperationException($"Multi-turn message too large for test case {message.TestCaseId}");
-                    }
-                }
-            }
-
-            // Send remaining messages in batch
-            if (batchCount > 0)
-            {
-                await _multiTurnSender.SendMessagesAsync(messageBatch, ct);
-                totalSent += batchCount;
-                _logger.LogInformation("Sent final batch of {BatchCount} multi-turn messages", batchCount);
-            }
-
-            _logger.LogInformation("Successfully sent {TotalSent} multi-turn test case messages in batch", totalSent);
-        }, "SendBatchMultiTurnTestCaseMessages",
-        exception => exception is ServiceBusException,
-        cancellationToken);
-    }
-
     public async Task<bool> CheckHealthAsync(CancellationToken cancellationToken = default)
     {
         try
@@ -395,7 +259,6 @@ public class ServiceBusService : IServiceBusService, IDisposable
             try
             {
                 _sender?.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(5));
-                _multiTurnSender?.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(5));
                 _serviceBusClient?.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(5));
             }
             catch (Exception ex)

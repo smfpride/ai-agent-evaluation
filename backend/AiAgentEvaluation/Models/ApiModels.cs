@@ -12,10 +12,6 @@ public class StartEvaluationRunRequest
     [JsonPropertyName("evaluationRunId")]
     public Guid EvaluationRunId { get; set; }
 
-    [JsonPropertyName("maxConcurrency")]
-    [Range(1, 1000)]
-    public int MaxConcurrency { get; set; } = 100;
-
     [JsonPropertyName("timeoutMinutes")]
     [Range(1, 30)]
     public int TimeoutMinutes { get; set; } = 5;
@@ -161,30 +157,4 @@ public class LLMJudgeResponse
 
     [JsonPropertyName("executionTimeMs")]
     public int ExecutionTimeMs { get; set; }
-}
-
-/// <summary>
-/// Service Bus message for processing multi-turn test cases
-/// </summary>
-public class ProcessMultiTurnTestCaseMessage
-{
-    [Required]
-    [JsonPropertyName("evaluationRunId")]
-    public Guid EvaluationRunId { get; set; }
-
-    [Required]
-    [JsonPropertyName("testCaseId")]
-    public Guid TestCaseId { get; set; }
-
-    [JsonPropertyName("directLineUrl")]
-    public string DirectLineUrl { get; set; } = string.Empty;
-
-    [JsonPropertyName("passingThreshold")]
-    public decimal PassingThreshold { get; set; } = 0.7m;
-
-    [JsonPropertyName("retryCount")]
-    public int RetryCount { get; set; } = 0;
-
-    [JsonPropertyName("maxRetries")]
-    public int MaxRetries { get; set; } = 3;
 }
