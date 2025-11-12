@@ -223,27 +223,15 @@ public class DataverseService : IDataverseService, IDisposable
         return await _resilientService.ExecuteAsync(async ct =>
         {
             // First, get the evaluation run to retrieve the test set
-            var evaluationRunQuery = new QueryExpression("mcicaps_evaluationruns")
-            {
-                ColumnSet = new ColumnSet("mcicaps_testset"),
-                Criteria = new FilterExpression
-                {
-                    Conditions =
-                    {
-                        new ConditionExpression("mcicaps_evaluationrunsid", ConditionOperator.Equal, evaluationRunId)
-                    }
-                }
-            };
-
-            var evaluationRunResult = await Task.Run(() => _serviceClient.RetrieveMultiple(evaluationRunQuery), ct);
+            var evaluationRunResult = await Task.Run(() => _serviceClient.Retrieve("mcicaps_evaluationruns", evaluationRunId, new ColumnSet("mcicaps_testset")), ct);
             
-            if (evaluationRunResult.Entities.Count == 0)
+            if (evaluationRunResult == null)
             {
                 _logger.LogWarning("Evaluation run {EvaluationRunId} not found", evaluationRunId);
                 return new List<TestCase>();
             }
 
-            var testSetReference = evaluationRunResult.Entities[0].GetAttributeValue<EntityReference>("mcicaps_testset");
+            var testSetReference = evaluationRunResult.GetAttributeValue<EntityReference>("mcicaps_testset");
             
             if (testSetReference == null)
             {
@@ -270,30 +258,47 @@ public class DataverseService : IDataverseService, IDisposable
                         new ConditionExpression("mcicaps_testset", ConditionOperator.Equal, testSetReference.Id),
                         new ConditionExpression("statecode", ConditionOperator.Equal, 0) // Active only
                     }
+                },
+                PageInfo = new PagingInfo
+                {
+                    Count = 5000, // Maximum page size
+                    PageNumber = 1
                 }
             };
 
-            var result = await Task.Run(() => _serviceClient.RetrieveMultiple(query), ct);
-            
             var testCases = new List<TestCase>();
             
-            foreach (var entity in result.Entities)
+            // Retrieve all pages of test cases
+            EntityCollection result;
+            do
             {
-                var evaluatorTypeRef = entity.GetAttributeValue<EntityReference>("mcicaps_evaluatortype");
+                result = await Task.Run(() => _serviceClient.RetrieveMultiple(query), ct);
                 
-                testCases.Add(new TestCase
+                foreach (var entity in result.Entities)
                 {
-                    Id = entity.Id,
-                    Name = entity.GetAttributeValue<string>("mcicaps_testcasename") ?? string.Empty,
-                    EvaluationRunId = evaluationRunId,
-                    UserInput = entity.GetAttributeValue<string>("mcicaps_prompt") ?? string.Empty,
-                    ExpectedResponse = entity.GetAttributeValue<string>("mcicaps_expectedresponse") ?? string.Empty,
-                    EvaluatorTypeId = evaluatorTypeRef?.Id,
-                    ConversationId = null, // ConversationId is on EvaluationResult, not TestCase
-                    IsMultiTurn = entity.GetAttributeValue<bool>("mcicaps_ismultiturn"),
-                    CreatedOn = entity.GetAttributeValue<DateTime>("createdon")
-                });
-            }
+                    var evaluatorTypeRef = entity.GetAttributeValue<EntityReference>("mcicaps_evaluatortype");
+                    
+                    testCases.Add(new TestCase
+                    {
+                        Id = entity.Id,
+                        Name = entity.GetAttributeValue<string>("mcicaps_testcasename") ?? string.Empty,
+                        EvaluationRunId = evaluationRunId,
+                        UserInput = entity.GetAttributeValue<string>("mcicaps_prompt") ?? string.Empty,
+                        ExpectedResponse = entity.GetAttributeValue<string>("mcicaps_expectedresponse") ?? string.Empty,
+                        EvaluatorTypeId = evaluatorTypeRef?.Id,
+                        ConversationId = null, // ConversationId is on EvaluationResult, not TestCase
+                        IsMultiTurn = entity.GetAttributeValue<bool>("mcicaps_ismultiturn"),
+                        CreatedOn = entity.GetAttributeValue<DateTime>("createdon")
+                    });
+                }
+                
+                // Check if there are more pages
+                if (result.MoreRecords)
+                {
+                    query.PageInfo.PageNumber++;
+                    query.PageInfo.PagingCookie = result.PagingCookie;
+                }
+            } while (result.MoreRecords);
             
             _logger.LogInformation("Retrieved {Count} test cases for evaluation run {EvaluationRunId}", 
                 testCases.Count, evaluationRunId);
