@@ -22,10 +22,12 @@ With Dataverse connection string:
 ## Deployed Resources
 
 - **Function App**: .NET 8 isolated worker, consumption plan
-- **Key Vault**: Stores DataverseConnectionString secret
-- **Storage Account**: Function storage and evaluation data
-- **Service Bus**: Test case message queue (test-case-processing)
-- **Azure OpenAI**: GPT-4o for LLM judge evaluation
+- **Key Vault**: Stores DataverseConnectionString secret (OAuth credentials)
+- **Storage Account**: Function storage and Durable Functions state
+- **Service Bus**: Two message queues for test case distribution
+  - `test-case-processing` - Single-turn test cases
+  - `multi-turn-test-case-processing` - Multi-turn conversation test cases
+- **Azure OpenAI**: GPT-4o deployment for LLM judge evaluation
 - **App Insights**: Monitoring and diagnostics
 - **Log Analytics**: Centralized logging
 
@@ -40,22 +42,27 @@ System-assigned managed identity with roles:
 
 ## Function App Settings
 
-15 application settings configured:
+Application settings configured via Bicep:
 - `APPLICATIONINSIGHTS_CONNECTION_STRING`
 - `FUNCTIONS_EXTENSION_VERSION`: ~4
 - `FUNCTIONS_WORKER_RUNTIME`: dotnet-isolated
 - `WEBSITE_USE_PLACEHOLDER_DOTNETISOLATED`: 1
-- `AzureWebJobsStorage__blobServiceUri`
-- `AzureWebJobsStorage__queueServiceUri`
-- `AzureWebJobsStorage__tableServiceUri`
-- `ServiceBusNamespace__fullyQualifiedNamespace` (for trigger binding)
-- `ServiceBus__Namespace` (for SDK usage)
-- `ServiceBus__QueueName`: test-case-processing
-- `AzureOpenAI__Endpoint`
-- `AzureOpenAI__DeploymentName`: gpt-4o
-- `KeyVault__VaultUri`
+- `AzureWebJobsStorage` (connection string for consumption plan)
 - `WEBSITE_CONTENTAZUREFILECONNECTIONSTRING`
 - `WEBSITE_CONTENTSHARE`
+- `ServiceBusNamespace__fullyQualifiedNamespace` (for Service Bus trigger binding)
+- `ServiceBus__Namespace` (for Service Bus SDK usage)
+- `ServiceBus__QueueName`: test-case-processing
+- `AzureOpenAIEndpoint`
+- `KeyVaultUrl`
+- `DataverseConnectionString`: Key Vault reference
+- `DefaultEvaluationTimeoutMinutes`: 5
+- `MaxConcurrentTestCases`: 100
+- `CopilotStudio__TimeoutSeconds`: 60
+- `CopilotStudio__BotResponseTimeoutSeconds`: 60
+- `CopilotStudio__MaxRetryAttempts`: 3
+- `AzureOpenAI__MaxRetryAttempts`: 5
+- `AzureOpenAI__TimeoutSeconds`: 60
 
 ## Deploy Function Code
 

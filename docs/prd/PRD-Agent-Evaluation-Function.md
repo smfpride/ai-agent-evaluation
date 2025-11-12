@@ -20,17 +20,22 @@ HTTP Trigger → Orchestrator Function → Service Bus Queue → Worker Function
 
 ### 2.2 Key Components
 1. **Orchestrator Function**: HTTP-triggered coordinator (.NET 8, isolated process model)
-2. **Azure Service Bus**: Message queue for test case distribution and scaling
-3. **Worker Functions**: Service Bus-triggered evaluation processors
-4. **Dataverse Integration**: Data source and result storage
-5. **Copilot Studio Agent**: Target system under test via Direct Line API
-6. **Azure OpenAI**: LLM Judge for response evaluation
-7. **Result Storage & Aggregation**: Evaluation outcomes and run completion tracking
+2. **Azure Service Bus**: Message queues for test case distribution and scaling (2 queues: single-turn and multi-turn)
+3. **Worker Functions**: Service Bus-triggered evaluation processors (single-turn and multi-turn)
+4. **Durable Functions**: Long-running orchestrators for multi-turn conversations (alternative to Service Bus worker)
+5. **Dataverse Integration**: Data source and result storage
+6. **Copilot Studio Agent**: Target system under test via Direct Line API
+7. **Azure OpenAI**: LLM Judge for response evaluation (Managed Identity authentication)
+8. **Result Storage & Aggregation**: Evaluation outcomes and run completion tracking
 
 ### 2.3 Function App Architecture
 - **HTTP Orchestrator Function**: `StartEvaluationRun` - Initiates evaluation runs
-- **Service Bus Worker Function**: `ProcessTestCase` - Executes individual test evaluations
+- **Service Bus Worker Function**: `ProcessTestCase` - Executes individual single-turn test evaluations
+- **Multi-Turn Worker Function**: `ProcessMultiTurnTestCase` - Executes multi-turn conversation tests
+- **Durable Functions Orchestrator**: `MultiTurnTestCaseOrchestrator` - Alternative long-running orchestration for multi-turn tests
+- **Durable Functions Activities**: Helper activities for turn execution and result aggregation
 - **Timer Function**: `MonitorEvaluationRuns` - Tracks completion and updates final status
+- **Health Check Function**: `HealthCheck` - Verifies system connectivity and health
 
 ## 3. Functional Requirements
 
@@ -45,67 +50,124 @@ HTTP Trigger → Orchestrator Function → Service Bus Queue → Worker Function
 6. Send test case messages to Azure Service Bus queue
 7. Return HTTP 202 Accepted with operation tracking information
 
-#### 3.1.2 Worker Function Workflow (`ProcessTestCase`)
-1. Receive test case message from Service Bus queue
-2. Parse test case type (`778760000` = Similarity, `778760001` = Accuracy, `778760002` = Relevancy)
-3. Load appropriate LLM Judge prompt template from Azure Blob Storage based on test type
+#### 3.1.2 Worker Function Workflow (`ProcessTestCase` - Single-Turn)
+1. Receive test case message from Service Bus queue (`test-case-processing`)
+2. Parse test case including EvaluatorType GUID reference
+3. Load appropriate LLM Judge prompt template from Dataverse EvaluatorType record
 4. Execute test case against Copilot Studio agent via Direct Line API
-5. Evaluate agent response using Azure OpenAI Judge with type-specific criteria
-6. Store individual evaluation result in Dataverse
-7. Update evaluation run progress counter
-8. Check if all test cases are completed and update overall status if needed
+5. Evaluate agent response using Azure OpenAI Judge (Managed Identity) with type-specific criteria
+6. Calculate pass/fail based on passing threshold
+7. Store individual evaluation result in Dataverse
+8. Atomically increment evaluation run progress counter
+9. Handle errors and retry logic with exponential backoff
 
-#### 3.1.3 Monitoring Workflow (`MonitorEvaluationRuns`)
+#### 3.1.3 Multi-Turn Worker Function Workflow (`ProcessMultiTurnTestCase`)
+1. Receive multi-turn test case message from Service Bus queue (`multi-turn-test-case-processing`)
+2. Fetch test case and all associated turns (ordered by sequence) from Dataverse
+3. Execute turns sequentially while maintaining conversation context:
+   - Turn 1: Create new conversation (conversationId = null)
+   - Subsequent turns: Use conversationId from Turn 1 to maintain context
+4. Evaluate each turn independently using Azure OpenAI Judge
+5. Store per-turn evaluation results in Dataverse
+6. Create aggregate result with overall pass rate and metrics
+7. Atomically increment evaluation run progress counter
+8. Continue execution even if individual turns fail (resilient design)
+
+#### 3.1.4 Durable Functions Orchestrator Workflow (`MultiTurnTestCaseOrchestrator` - Alternative)
+1. Started by Orchestrator Function for multi-turn test cases
+2. Uses Durable Functions for unlimited execution time (no 5-minute limit)
+3. Calls activities sequentially:
+   - `GetTestCaseWithTurns`: Retrieve test case and turns from Dataverse
+   - `ExecuteSingleTurn`: Execute each turn and evaluate (with conversation context)
+   - `CreateAggregateResult`: Generate final multi-turn result
+4. Maintains state and conversation context across activities
+5. Supports pause/resume and retry logic
+6. Ideal for very long multi-turn conversations (10+ turns)
+
+#### 3.1.5 Monitoring Workflow (`MonitorEvaluationRuns`)
 1. Timer-triggered function (every 1 minute)
 2. Query evaluation runs with status `778760002` (Running)
 3. Check completion status based on test case count vs results count
-4. Calculate overall metrics (average score, pass/fail)
-5. Update evaluation run status to `778760004` (Completed) or `778760003` (Errored) as appropriate
+4. Detect stalls: No progress for 30+ minutes or total runtime > 120 minutes
+5. Calculate overall metrics (average score, pass/fail rate)
+6. Update evaluation run status to `778760004` (Completed) or `778760003` (Errored) as appropriate
+7. Set end time and progress percentage to 100%
 
 ### 3.2 Data Schema Integration
 
 #### 3.2.1 Input Tables
 - **mcicaps_evaluationruns**: Source evaluation run configuration
   - Primary Key: `mcicaps_evaluationrunsid`
-  - Key Fields: `mcicaps_testset`, `mcicaps_passingthreshold`, `mcicaps_overallpass`, `mcicaps_overallscore`, `statuscode`
+  - Key Fields: `mcicaps_testset`, `mcicaps_agenttoevalid` (lookup to AgentToEval), `mcicaps_passingthreshold`, `mcicaps_overallpass`, `mcicaps_overallscore`, `mcicaps_progresspercentage`, `mcicaps_starttime`, `mcicaps_endtime`, `mcicaps_lastprogressupdate`, `mcicaps_totaltestcases`, `mcicaps_completedtestcases`, `mcicaps_failedtestcases`, `statuscode`
   - Status Codes: `1` (Created), `778760001` (Execute/Run), `778760002` (Running), `778760003` (Errored), `778760004` (Completed)
+
+- **mcicaps_agenttoevals**: Agent configuration (NEW)
+  - Primary Key: `mcicaps_agenttoevalid`
+  - Key Fields: `mcicaps_name`, `mcicaps_directlinespeechurl` (Direct Line endpoint)
+  - Purpose: Centralized agent configuration referenced by evaluation runs
   
 - **mcicaps_testcases**: Test case definitions
   - Primary Key: `mcicaps_testcasesid`
-  - Key Fields: `mcicaps_prompt`, `mcicaps_expectedresponse`, `mcicaps_testset`, `mcicaps_testtype`
-  - Test Types: `778760000` (Similarity), `778760001` (Accuracy), `778760002` (Relevancy)
+  - Key Fields: `mcicaps_prompt` (UserInput), `mcicaps_expectedresponse`, `mcicaps_testset`, `mcicaps_evaluatortypeid` (lookup to EvaluatorType), `mcicaps_ismultiturn`, `mcicaps_conversationid`
+  - Multi-Turn Support: `mcicaps_ismultiturn` flag indicates conversation test cases
+
+- **mcicaps_testcaseturns**: Multi-turn conversation turns (NEW)
+  - Primary Key: `mcicaps_testcaseturnid`
+  - Key Fields: `mcicaps_testcaseid` (parent test case), `mcicaps_sequence` (turn order), `mcicaps_prompttext` (user input for this turn), `mcicaps_expectedresponse` (expected response for this turn)
+  - Relationship: N:1 with mcicaps_testcases
+
+- **mcicaps_evaluatortypes**: Evaluation type definitions (NEW)
+  - Primary Key: `mcicaps_evaluatortypeid` (GUID)
+  - Key Fields: `mcicaps_name` (e.g., "Similarity", "Accuracy", "Relevancy"), `mcicaps_description`, `mcicaps_prompttemplate` (LLM Judge prompt text), `mcicaps_systemprompttemplate` (optional system prompt)
+  - Purpose: Stores evaluation criteria and prompts in Dataverse (replaces Azure Blob Storage approach)
 
 #### 3.2.2 Output Tables
 - **mcicaps_evaluationresults**: Individual test results
-  - Key Fields: `mcicaps_actualresponse`, `mcicaps_score`, `mcicaps_passed`, `mcicaps_evaluation`, `mcicaps_reasoning`, `mcicaps_testcase`
+  - Key Fields: `mcicaps_actualresponse`, `mcicaps_score`, `mcicaps_passed`, `mcicaps_evaluation`, `mcicaps_reasoning`, `mcicaps_testcase`, `mcicaps_testcaseturnid` (for multi-turn results), `mcicaps_conversationid`, `mcicaps_responsetimems`, `mcicaps_isaggregate` (for multi-turn aggregate results), `mcicaps_errormessage`
+  - Multi-Turn Support: Individual turn results linked via `mcicaps_testcaseturnid`, aggregate results marked with `mcicaps_isaggregate = true`
 
 #### 3.2.3 Message Queue Schema
-- **Service Bus Message**: Test case execution request
-  ```json
-  {
-    "evaluationRunId": "guid",
-    "testCaseId": "guid",
-    "testCaseName": "string",
-    "prompt": "string", 
-    "expectedResponse": "string",
-    "testType": 778760000,
-    "retryCount": 0,
-    "enqueuedAt": "datetime"
-  }
-  ```
-  
-  **Test Type Values**:
-  - `778760000`: Similarity
-  - `778760001`: Accuracy  
-  - `778760002`: Relevancy
+
+**Single-Turn Service Bus Message** (`test-case-processing` queue):
+```json
+{
+  "evaluationRunId": "guid",
+  "testCaseId": "guid",
+  "directLineUrl": "string",
+  "userInput": "string", 
+  "expectedResponse": "string",
+  "evaluatorTypeId": "guid",
+  "conversationId": "string (optional)",
+  "passingThreshold": 0.7,
+  "retryCount": 0,
+  "maxRetries": 3
+}
+```
+
+**Multi-Turn Service Bus Message** (`multi-turn-test-case-processing` queue):
+```json
+{
+  "evaluationRunId": "guid",
+  "testCaseId": "guid",
+  "directLineUrl": "string",
+  "evaluatorTypeId": "guid",
+  "passingThreshold": 0.7,
+  "retryCount": 0,
+  "maxRetries": 3
+}
+```
+
+**Note**: Multi-turn messages reference the test case ID only; individual turns are fetched from Dataverse.
 
 ### 3.3 API Integrations
 
 #### 3.3.1 Azure Service Bus Integration
 - Message queuing for test case distribution
+- **Two queues**: `test-case-processing` (single-turn) and `multi-turn-test-case-processing` (multi-turn)
 - Dead letter queue handling for failed messages
 - Batch processing capabilities
 - Automatic scaling based on queue depth
+- Managed Identity authentication (no connection strings)
 
 #### 3.3.2 Copilot Studio Direct Line API
 - Establish conversation sessions
@@ -114,17 +176,19 @@ HTTP Trigger → Orchestrator Function → Service Bus Queue → Worker Function
 - Implement retry logic for API failures
 
 #### 3.3.3 Azure OpenAI Judge Integration
-- Type-specific evaluation prompts loaded from Azure Blob Storage (778760000=Similarity, 778760001=Accuracy, 778760002=Relevancy)
+- Evaluation prompts loaded from Dataverse EvaluatorType records (not Azure Blob Storage)
 - Structured prompt templates for consistent evaluation
 - Score normalization (0-1 scale) with type-specific criteria
 - Reasoning capture for transparency and debugging
-- Rate limiting and error handling
+- Rate limiting and error handling with exponential backoff
+- **Managed Identity authentication** (Cognitive Services OpenAI User role)
 
-#### 3.3.4 Azure Blob Storage Integration
-- Centralized storage for evaluation prompt templates
-- Version-controlled prompt management
+#### 3.3.4 Dataverse Prompt Template Integration
+- Centralized storage for evaluation prompt templates in EvaluatorType records
+- Version-controlled prompt management through Dataverse
 - Easy updates without function redeployment
-- Caching strategy for frequently accessed prompts
+- Supports both prompt template and system prompt template
+- Fallback to default embedded prompts if Dataverse template is unavailable
 
 ## 4. Technical Requirements
 
@@ -137,12 +201,12 @@ HTTP Trigger → Orchestrator Function → Service Bus Queue → Worker Function
 - **Timeout**: 5 minutes (quick orchestration only)
 - **Response**: HTTP 202 Accepted
 
-#### 4.1.2 Worker Functions (`ProcessTestCase`)
+#### 4.1.2 Worker Functions (`ProcessTestCase` and `ProcessMultiTurnTestCase`)
 - **Runtime**: .NET 8 (isolated process model)
-- **Trigger**: Service Bus Queue
-- **Concurrency**: Up to 1000 concurrent instances
-- **Timeout**: 5 minutes per test case
-- **Scaling**: Event-driven auto-scaling
+- **Trigger**: Service Bus Queue (2 separate queues)
+- **Concurrency**: Up to 1000 concurrent instances per queue
+- **Timeout**: 5 minutes per test case (single-turn), 15 minutes per test case (multi-turn)
+- **Scaling**: Event-driven auto-scaling based on queue depth
 
 #### 4.1.3 Monitor Function (`MonitorEvaluationRuns`)
 - **Runtime**: .NET 8 (isolated process model)
@@ -150,49 +214,42 @@ HTTP Trigger → Orchestrator Function → Service Bus Queue → Worker Function
 - **Timeout**: 2 minutes
 - **Host Version**: v4 for all functions
 
+#### 4.1.4 Durable Functions Orchestrator (`MultiTurnTestCaseOrchestrator`)
+- **Runtime**: .NET 8 (isolated process model)
+- **Trigger**: Durable Functions orchestration
+- **Timeout**: Unlimited (can run for hours)
+- **Purpose**: Alternative to Service Bus worker for very long multi-turn conversations
+- **Activities**: GetTestCaseWithTurns, ExecuteSingleTurn, CreateAggregateResult
+
 ### 4.2 Authentication & Security
-- **Managed Identity**: Primary authentication method for ALL Azure services (no connection strings)
-- **Dataverse**: Managed identity with proper application user setup
+- **Managed Identity**: Primary authentication method for ALL Azure services (no connection strings or API keys)
+- **Dataverse**: OAuth connection string with ClientId + ClientSecret (Managed Identity not supported by Dataverse SDK)
 - **Azure OpenAI**: Managed identity with Cognitive Services OpenAI User role
-- **Service Bus**: Managed identity with Service Bus Data Sender/Receiver roles
-- **Azure Blob Storage**: Managed identity with Storage Blob Data Contributor role
-- **Key Vault**: Managed identity with Key Vault Secrets User role (for non-Azure service secrets only)
+- **Service Bus**: Managed identity with Service Bus Data Owner role
+- **Azure Blob Storage**: Managed identity with Storage Blob Data Contributor role (if used)
+- **Key Vault**: Managed identity with Key Vault Secrets User role (for Dataverse OAuth credentials only)
 - **Application Insights**: Managed identity with Monitoring Metrics Publisher role
 
 ### 4.3 Configuration Management
 ```json
 {
-  "ManagedIdentityClientId": null,
-  "DataverseEnvironmentUrl": "https://yourorg.crm.dynamics.com/",
-  "CopilotStudioDirectLineSecret": "Key Vault Reference",
+  "DataverseConnectionString": "@Microsoft.KeyVault(VaultName=kv-name;SecretName=DataverseConnectionString)",
   "AzureOpenAIEndpoint": "https://your-openai.openai.azure.com/",
-  "AzureOpenAIDeployment": "gpt-4o",
-  "JudgePromptTemplates": {
-    "StorageType": "BlobStorage",
-    "StorageAccountName": "yourstorageaccount",
-    "ContainerName": "evaluation-prompts",
-    "PromptFiles": {
-      "778760000": "similarity-judge-prompt.txt",
-      "778760001": "accuracy-judge-prompt.txt", 
-      "778760002": "relevancy-judge-prompt.txt"
-    }
-  },
-  "ServiceBusNamespace": "yournamespace.servicebus.windows.net",
-  "TestCaseQueueName": "evaluation-testcases",
-  "MaxConcurrentWorkers": 1000,
-  "DefaultTimeoutMinutes": 5,
-  "MonitoringIntervalMinutes": 1,
-  "StatusCodes": {
-    "Created": 1,
-    "ExecuteRun": 778760001,
-    "Running": 778760002,
-    "Errored": 778760003,
-    "Completed": 778760004
-  }
+  "ServiceBus__Namespace": "yournamespace.servicebus.windows.net",
+  "ServiceBus__QueueName": "test-case-processing",
+  "ServiceBusNamespace__fullyQualifiedNamespace": "yournamespace.servicebus.windows.net",
+  "KeyVaultUrl": "https://your-keyvault.vault.azure.net/",
+  "DefaultEvaluationTimeoutMinutes": "5",
+  "MaxConcurrentTestCases": "100",
+  "CopilotStudio__TimeoutSeconds": "60",
+  "CopilotStudio__BotResponseTimeoutSeconds": "60",
+  "CopilotStudio__MaxRetryAttempts": "3",
+  "AzureOpenAI__MaxRetryAttempts": "5",
+  "AzureOpenAI__TimeoutSeconds": "60"
 }
 ```
 
-**Note**: All Azure service connections use managed identity. Only the Copilot Studio Direct Line secret requires Key Vault storage as it's an external service credential.
+**Note**: All Azure service connections use managed identity. Only Dataverse requires OAuth connection string stored in Key Vault as it does not support Managed Identity authentication.
 
 ### 4.4 Managed Identity RBAC Requirements
 
@@ -205,28 +262,30 @@ The Function App's managed identity must be assigned the following roles:
 
 #### 4.4.2 Service Bus
 - **Roles**: 
-  - `Azure Service Bus Data Sender` (for enqueueing messages)
-  - `Azure Service Bus Data Receiver` (for processing queue messages)
+  - `Azure Service Bus Data Owner` (for both sending and receiving messages)
 - **Scope**: Service Bus namespace
-- **Purpose**: Send and receive test case messages
+- **Purpose**: Send and receive test case messages from both queues
 
-#### 4.4.3 Blob Storage
+#### 4.4.3 Blob Storage (Optional - Not currently used)
 - **Role**: `Storage Blob Data Contributor`
 - **Scope**: Storage account or specific containers
-- **Purpose**: Read evaluation prompt templates
+- **Purpose**: Read evaluation prompt templates (if migrated from Dataverse to Blob Storage)
+- **Note**: Currently prompts are stored in Dataverse EvaluatorType records
 
 #### 4.4.4 Key Vault
 - **Role**: `Key Vault Secrets User`
 - **Scope**: Key Vault instance
-- **Purpose**: Read Copilot Studio Direct Line secret
+- **Purpose**: Read Dataverse OAuth connection string (only external service credential)
 
 #### 4.4.5 Dataverse
-- **Setup**: Application user with appropriate security roles
+- **Setup**: OAuth Application User with ClientId and ClientSecret
+- **Authentication**: Connection string stored in Key Vault
 - **Roles**: 
-  - Read access to `mcicaps_evaluationruns` and `mcicaps_testcases`
+  - Read access to `mcicaps_evaluationruns`, `mcicaps_testcases`, `mcicaps_testcaseturns`, `mcicaps_evaluatortypes`, `mcicaps_agenttoevals`
   - Create/Update access to `mcicaps_evaluationresults`
-  - Update access to `mcicaps_evaluationruns` (for status updates)
+  - Update access to `mcicaps_evaluationruns` (for status and progress updates)
 - **Purpose**: Query test data and store evaluation results
+- **Note**: Managed Identity NOT supported by Microsoft Dataverse SDK
 
 #### 4.4.6 Application Insights
 - **Role**: `Monitoring Metrics Publisher`
@@ -291,33 +350,33 @@ The Function App's managed identity must be assigned the following roles:
 
 ### 5.3 LLM Judge Prompt Structure
 
-The evaluation prompts are stored in Azure Blob Storage for better management and versioning capabilities:
+The evaluation prompts are stored in Microsoft Dataverse EvaluatorType records for better management and versioning capabilities:
 
 #### 5.3.0 Prompt Storage Architecture
-- **Storage Location**: Azure Blob Storage container `evaluation-prompts`
-- **File Naming**: `{testType}-judge-prompt.txt` (e.g., `778760000-judge-prompt.txt`)
-- **Versioning**: Blob versioning enabled for prompt history and rollback
-- **Caching**: Function app caches prompts in memory with configurable TTL
-- **Updates**: Prompts can be updated without function redeployment
+- **Storage Location**: Microsoft Dataverse `mcicaps_evaluatortypes` table
+- **Fields**: 
+  - `mcicaps_name`: Evaluator type name (e.g., "Similarity", "Accuracy", "Relevancy")
+  - `mcicaps_prompttemplate`: User prompt template text
+  - `mcicaps_systemprompttemplate`: System prompt template text (optional)
+- **Versioning**: Managed through Dataverse solution lifecycle
+- **Updates**: Prompts can be updated through Dataverse without function redeployment
+- **Fallback**: Function includes default embedded prompts if Dataverse template is unavailable
 
-**Blob Structure**:
-```
-evaluation-prompts/
-├── 778760000-judge-prompt.txt    (Similarity evaluation)
-├── 778760001-judge-prompt.txt    (Accuracy evaluation)
-├── 778760002-judge-prompt.txt    (Relevancy evaluation)
-└── metadata.json                 (Prompt versions and metadata)
-```
+**Sample EvaluatorType Records**:
+- Similarity (GUID reference)
+- Accuracy (GUID reference)
+- Relevancy (GUID reference)
+- Custom domain-specific evaluators (fashion, healthcare, etc.)
 
-#### 5.3.1 Similarity Test Evaluation (Test Type: 778760000)
+#### 5.3.1 Similarity Test Evaluation
+Stored in Dataverse EvaluatorType record with name "Similarity":
 ```
 You are an AI response evaluator focusing on semantic similarity. Compare the agent's response to the expected response to determine how semantically similar they are.
 
-**Test Case**: {testCaseName}
-**Test Type**: Similarity
-**User Prompt**: {userPrompt}
-**Expected Response**: {expectedResponse}
-**Actual Response**: {actualResponse}
+**User Input**: {UserInput}
+**Expected Response**: {ExpectedResponse}
+**Actual Response**: {ActualResponse}
+**Conversation ID**: {ConversationId}
 
 **Evaluation Criteria**:
 - Semantic meaning alignment between expected and actual responses
@@ -336,21 +395,19 @@ You are an AI response evaluator focusing on semantic similarity. Compare the ag
 **Output Format** (JSON):
 {
   "score": 0.0-1.0,
-  "passed": boolean,
-  "reasoning": "detailed explanation of semantic similarity assessment",
-  "evaluation": "brief summary of similarity analysis"
+  "reasoning": "detailed explanation of semantic similarity assessment"
 }
 ```
 
-#### 5.3.2 Accuracy Test Evaluation (Test Type: 778760001)
+#### 5.3.2 Accuracy Test Evaluation
+Stored in Dataverse EvaluatorType record with name "Accuracy":
 ```
 You are an AI response evaluator focusing on factual accuracy. Evaluate whether the agent's response provides accurate information for the original user prompt.
 
-**Test Case**: {testCaseName}
-**Test Type**: Accuracy
-**User Prompt**: {userPrompt}
-**Expected Response**: {expectedResponse} (reference for context)
-**Actual Response**: {actualResponse}
+**User Input**: {UserInput}
+**Expected Response**: {ExpectedResponse} (reference for context)
+**Actual Response**: {ActualResponse}
+**Conversation ID**: {ConversationId}
 
 **Evaluation Criteria**:
 - Factual correctness of information provided
@@ -369,21 +426,19 @@ You are an AI response evaluator focusing on factual accuracy. Evaluate whether 
 **Output Format** (JSON):
 {
   "score": 0.0-1.0,
-  "passed": boolean,
-  "reasoning": "detailed explanation of accuracy assessment with specific factual issues noted",
-  "evaluation": "brief summary of accuracy analysis"
+  "reasoning": "detailed explanation of accuracy assessment with specific factual issues noted"
 }
 ```
 
-#### 5.3.3 Relevancy Test Evaluation (Test Type: 778760002)
+#### 5.3.3 Relevancy Test Evaluation
+Stored in Dataverse EvaluatorType record with name "Relevancy":
 ```
 You are an AI response evaluator focusing on relevancy. Evaluate whether the agent's response is relevant and appropriately addresses the original user prompt.
 
-**Test Case**: {testCaseName}
-**Test Type**: Relevancy
-**User Prompt**: {userPrompt}
-**Expected Response**: {expectedResponse} (reference for context)
-**Actual Response**: {actualResponse}
+**User Input**: {UserInput}
+**Expected Response**: {ExpectedResponse} (reference for context)
+**Actual Response**: {ActualResponse}
+**Conversation ID**: {ConversationId}
 
 **Evaluation Criteria**:
 - Direct relevance to the user's question or request
@@ -402,9 +457,7 @@ You are an AI response evaluator focusing on relevancy. Evaluate whether the age
 **Output Format** (JSON):
 {
   "score": 0.0-1.0,
-  "passed": boolean,
-  "reasoning": "detailed explanation of relevancy assessment",
-  "evaluation": "brief summary of relevancy analysis"
+  "reasoning": "detailed explanation of relevancy assessment"
 }
 ```
 
@@ -496,12 +549,13 @@ You are an AI response evaluator focusing on relevancy. Evaluate whether the age
 
 ### 11.1 Infrastructure
 - **Azure Functions Premium Plan**: For extended execution time and VNET integration
-- **Azure Service Bus Premium**: For high-throughput message processing
-- **Azure Blob Storage**: For storing evaluation prompt templates and versioning
+- **Azure Service Bus Standard**: For high-throughput message processing (2 queues)
+- **Azure Storage**: For function app state and configuration
 - **Application Insights**: For monitoring and telemetry
-- **Key Vault**: For external service secrets only (Copilot Studio)
+- **Key Vault**: For Dataverse OAuth credentials only
 - **Managed Identity**: System-assigned identity for all Azure service authentication
 - **RBAC Assignments**: Properly scoped role assignments for least privilege access
+- **Azure OpenAI**: GPT-4o deployment with Managed Identity access
 
 ### 11.2 Scaling Configuration
 - **Function App**: Auto-scale up to 1000 instances
@@ -517,12 +571,15 @@ You are an AI response evaluator focusing on relevancy. Evaluate whether the age
 ## 12. Success Criteria
 
 ### 12.1 Functional Success
-- ✅ Successfully execute evaluation runs end-to-end for all test types (778760000, 778760001, 778760002)
-- ✅ Apply appropriate evaluation criteria based on test case type numerical values
+- ✅ Successfully execute evaluation runs end-to-end for all test types
+- ✅ Support both single-turn and multi-turn conversation evaluations
+- ✅ Apply appropriate evaluation criteria based on EvaluatorType GUID references
 - ✅ Store complete evaluation results in Dataverse with type-specific scoring
-- ✅ Generate consistent scoring using LLM Judge with specialized prompts
+- ✅ Generate consistent scoring using LLM Judge with specialized prompts from Dataverse
 - ✅ Handle errors gracefully without data loss across all test types
 - ✅ Correctly update evaluation run status using proper Dataverse option set values
+- ✅ Maintain conversation context across multi-turn conversations
+- ✅ Provide real-time progress tracking with percentage and timestamps
 
 ### 12.2 Non-Functional Success
 - ✅ Process 50,000 test cases within 1 hour
@@ -535,14 +592,15 @@ You are an AI response evaluator focusing on relevancy. Evaluate whether the age
 ## 13. Future Enhancements
 
 ### 13.1 Planned Features
+- Custom domain-specific evaluator types (healthcare, finance, legal, etc.)
 - Batch evaluation API for multiple runs
-- Custom judge model configurations per test type
-- Real-time evaluation progress tracking with type breakdown
-- Advanced analytics and reporting by test type
+- Real-time evaluation progress tracking with WebSockets
+- Advanced analytics and reporting by test type and domain
 - Integration with Azure DevOps for CI/CD testing
 - A/B testing for different evaluation prompt variations
-- Prompt template versioning and rollback capabilities
-- Dynamic prompt template updates via management API
+- Migration option from Dataverse prompts to Azure Blob Storage for very high volume
+- Custom evaluator type management UI
+- Automated test case generation from conversation logs
 
 ### 13.2 Scaling Considerations
 - **Azure Durable Functions**: For complex orchestration workflows
@@ -553,6 +611,6 @@ You are an AI response evaluator focusing on relevancy. Evaluate whether the age
 
 ---
 
-**Document Version**: 1.0  
-**Last Updated**: November 7, 2024  
-**Status**: Draft - Pending Review
+**Document Version**: 2.0  
+**Last Updated**: November 12, 2025  
+**Status**: Current - Reflects Implemented System

@@ -11,15 +11,23 @@ This system provides automated quality assurance for Copilot Studio agents throu
 - **Multi-Turn Conversations**: Support for complex conversation scenarios with context preservation
 - **Scalable Processing**: Handle up to 50,000 test cases per evaluation run
 - **Comprehensive Results**: Store detailed results, reasoning, and metrics in Dataverse
+- **Flexible Evaluation Types**: Extensible evaluator types stored in Dataverse with custom prompts
+- **Dual Execution Paths**: Service Bus workers for standard cases, Durable Functions for very long conversations
 
 ## Architecture
 
 The system uses a serverless, queue-based architecture for massive scalability:
 
 ```
-HTTP Trigger → Orchestrator Function → Service Bus Queues → Worker Functions → 
+HTTP Trigger → Orchestrator Function → Service Bus Queues (2) → Worker Functions → 
 Copilot Studio (Direct Line) → Azure OpenAI (Judge) → Dataverse (Results) → 
 Monitor Function (Status Updates)
+```
+
+**Alternative Path for Long Conversations**:
+```
+Orchestrator Function → Durable Functions Orchestrator → Activities (Sequential Turns) →
+Copilot Studio + Azure OpenAI → Dataverse (Results)
 ```
 
 **📖 For detailed architecture information, see [Architecture Documentation](./docs/ARCHITECTURE.md)**
@@ -27,38 +35,55 @@ Monitor Function (Status Updates)
 ### Key Components
 
 - **Orchestrator Function**: HTTP-triggered function that initiates evaluation runs and queues test cases
-- **Worker Functions**: Service Bus-triggered functions that execute test cases (single-turn and multi-turn)
+- **Worker Functions**: Service Bus-triggered functions that execute test cases
+  - **Single-Turn Worker**: Processes single prompt/response tests
+  - **Multi-Turn Worker**: Processes conversation-based tests with context
+- **Durable Functions**: Alternative orchestration for very long multi-turn conversations (10+ turns)
 - **Monitor Function**: Timer-triggered function that tracks progress and updates completion status
-- **Azure Service Bus**: Message queues for scalable test case distribution
-- **Azure OpenAI**: GPT-4o model providing LLM-as-a-Judge evaluation
-- **Microsoft Dataverse**: Storage for test cases, results, and run metadata
+- **Azure Service Bus**: Two message queues for scalable test case distribution
+- **Azure OpenAI**: GPT-4o model providing LLM-as-a-Judge evaluation (Managed Identity)
+- **Microsoft Dataverse**: Storage for test cases, prompts, results, and run metadata
 - **Copilot Studio**: Target agents accessed via Direct Line API
 
 ## Features
 
 ### Core Capabilities
 
-- **Three Sample Evaluation Types**: 
-  - **Similarity**: Semantic meaning alignment
-  - **Accuracy**: Factual correctness
-  - **Relevancy**: Response appropriateness
+- **Extensible Evaluation Types**: 
+  - **Built-in**: Similarity (semantic alignment), Accuracy (factual correctness), Relevancy (response appropriateness)
+  - **Custom**: Domain-specific evaluators (fashion, healthcare, finance, etc.) via Dataverse
+  - **Prompt Templates**: Stored in Dataverse EvaluatorType records for easy management
   
-- **Multi-Turn Support**: Execute complex conversation flows with context preservation across turns
+- **Multi-Turn Support**: 
+  - Execute complex conversation flows with context preservation across turns
+  - Two execution modes: Service Bus workers (standard) and Durable Functions (very long conversations)
+  - Per-turn evaluation with aggregate results
 
-- **Massive Scale**: Process up to 50,000 test cases per run with automatic scaling
+- **Massive Scale**: 
+  - Process up to 50,000 test cases per run with automatic scaling
+  - Dual-queue architecture for single-turn and multi-turn separation
+  - Up to 1000 concurrent workers per queue
 
-- **Managed Identity**: Secure authentication to all Azure services without connection strings
+- **Managed Identity**: 
+  - Secure authentication to all Azure services without connection strings
+  - RBAC-based access control
+  - OAuth for Dataverse (Managed Identity not supported)
 
-- **Comprehensive Monitoring**: Application Insights integration with custom metrics and dashboards
+- **Comprehensive Monitoring**: 
+  - Application Insights integration with custom metrics and dashboards
+  - Real-time progress tracking with percentages
+  - Stall detection (30 min no progress or 120 min total runtime)
+  - Detailed logging and distributed tracing
 
 ## Technology Stack
 
 - **.NET 8**: Function runtime (isolated process model)
 - **Azure Functions v4**: Serverless compute platform
-- **Azure Service Bus**: Message queue (2 queues: single-turn and multi-turn)
-- **Azure OpenAI**: GPT-4o model for LLM judge
-- **Microsoft Dataverse**: Data storage and retrieval
-- **Azure Key Vault**: External service secrets management
+- **Azure Durable Functions**: Long-running orchestrations for multi-turn conversations
+- **Azure Service Bus**: Message queues (2 queues: single-turn and multi-turn)
+- **Azure OpenAI**: GPT-4o model for LLM judge (Managed Identity)
+- **Microsoft Dataverse**: Data storage, prompt templates, and retrieval
+- **Azure Key Vault**: External service secrets (Dataverse OAuth only)
 - **Application Insights**: Monitoring and telemetry
 
 ## Getting Started
@@ -78,14 +103,18 @@ The system uses managed identity for all Azure service authentication. Configura
 
 ```json
 {
-  "DataverseEnvironmentUrl": "https://yourorg.crm.dynamics.com/",
+  "DataverseConnectionString": "@Microsoft.KeyVault(VaultName=kv-name;SecretName=DataverseConnectionString)",
   "AzureOpenAIEndpoint": "https://your-openai.openai.azure.com/",
-  "ServiceBusNamespace": "yournamespace.servicebus.windows.net",
-  "KeyVaultUrl": "https://your-keyvault.vault.azure.net/"
+  "ServiceBus__Namespace": "yournamespace.servicebus.windows.net",
+  "ServiceBus__QueueName": "test-case-processing",
+  "ServiceBusNamespace__fullyQualifiedNamespace": "yournamespace.servicebus.windows.net",
+  "KeyVaultUrl": "https://your-keyvault.vault.azure.net/",
+  "CopilotStudio__TimeoutSeconds": "60",
+  "AzureOpenAI__MaxRetryAttempts": "5"
 }
 ```
 
-See [Architecture Documentation](./docs/ARCHITECTURE.md#configuration-reference) for complete configuration details.
+**Note**: Only Dataverse requires OAuth connection string (stored in Key Vault) as it does not support Managed Identity.
 
 ### Local Development
 
@@ -137,10 +166,20 @@ ai-agent-evaluation/
 ├── backend/
 │   ├── AiAgentEvaluation/          # Azure Functions project (.NET 8)
 │   │   ├── Functions/              # Function implementations
+│   │   │   ├── OrchestratorFunction.cs
+│   │   │   ├── WorkerFunction.cs (single-turn)
+│   │   │   ├── MultiTurnWorkerFunction.cs
+│   │   │   ├── MultiTurnDurableOrchestrator.cs
+│   │   │   ├── MultiTurnDurableActivities.cs
+│   │   │   ├── MonitorFunction.cs
+│   │   │   └── HealthCheckFunction.cs
 │   │   ├── Services/               # Business logic services
 │   │   ├── Models/                 # Data models
 │   │   └── Extensions/             # Utility extensions
 │   ├── infrastructure/             # Bicep IaC templates
+│   ├── prompt-templates/           # Sample prompt templates
+│   │   ├── default/               # General-purpose prompts
+│   │   └── fashion/               # Fashion industry prompts
 │   └── tests/                      # Unit and integration tests
 ├── docs/                           # Documentation
 │   ├── ARCHITECTURE.md            # System architecture
@@ -167,6 +206,18 @@ Content-Type: application/json
 ### Health Check Endpoint
 ```http
 GET /api/health
+
+Response: 200 OK
+{
+  "status": "healthy",
+  "services": {
+    "dataverse": "connected",
+    "serviceBus": "connected",
+    "azureOpenAI": "connected",
+    "keyVault": "connected"
+  },
+  "timestamp": "2025-11-12T10:00:00Z"
+}
 ```
 
 **📖 See [Architecture Documentation](./docs/ARCHITECTURE.md#api-endpoints) for complete API reference**
@@ -185,9 +236,17 @@ The system is designed for high-scale evaluation runs:
 This is a .NET 8 Azure Functions application built with:
 - .NET 8 (isolated process model)
 - Azure Functions v4
+- Azure Durable Functions (for multi-turn orchestrations)
 - Azure SDK for .NET
 - xUnit for testing
 - Moq for mocking
+
+### Key Design Patterns
+- **Queue-Based Architecture**: Decouple orchestration from execution
+- **Managed Identity**: Secure Azure service authentication
+- **Resilient Service Pattern**: Retry logic with exponential backoff
+- **Atomic Operations**: Progress counter updates with single Dataverse calls
+- **Durable Functions**: Long-running orchestrations for complex scenarios
 
 ## Contributing
 
