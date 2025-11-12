@@ -4,8 +4,10 @@
 
 ### Code Status
 - ✅ **All Services Updated** - BlobStorageService, LLMJudgeService, ServiceBusService, DataverseService
+- ✅ **Durable Functions** - Multi-turn orchestrator and activity functions implemented
 - ✅ **AppSettings Configuration** - Managed identity properties added with fallback support
 - ✅ **Build Success** - No compilation errors or warnings
+- ✅ **Unit Tests** - 15 Durable Functions tests passing
 - ✅ **Azure SDK Compatibility** - Latest Azure.AI.OpenAI SDK patterns implemented
 - ✅ **Authentication Flow** - DefaultAzureCredential integration complete
 
@@ -40,26 +42,73 @@ cd backend\infrastructure
 ```powershell
 # From the backend\AiAgentEvaluation folder
 cd backend\AiAgentEvaluation
+
+# Build and test before deployment
+dotnet build --configuration Release
+dotnet test ../tests/AiAgentEvaluation.UnitTests/AiAgentEvaluation.UnitTests.csproj
+
+# Deploy to Azure
 func azure functionapp publish YOUR_FUNCTION_APP_NAME
 ```
 
-### 3. Post-Deployment Validation
-```powershell
-# Test health endpoint
-Invoke-WebRequest https://YOUR_FUNCTION_APP_NAME.azurewebsites.net/api/health
+**Expected Functions Deployed:**
+- `StartEvaluationRun` - HTTP trigger for starting evaluations
+- `WorkerFunction` - Service Bus trigger for single-turn test cases
+- `MultiTurnTestCaseOrchestrator` - Orchestration trigger for multi-turn execution
+- `StartMultiTurnTestCase` - HTTP trigger for multi-turn orchestration
+- `ExecuteSingleTurn` - Activity for executing one turn
+- `GetTestCaseWithTurns` - Activity for fetching test data
+- `CreateAggregateResult` - Activity for creating aggregate results
+- `MonitorFunction` - Timer trigger for monitoring
+- `GetEvaluationRunStatus` - HTTP trigger for status checks
 
-# Test evaluation endpoint
-$testBody = @{
-    testCases = @(@{
-        id = "test-001"
-        question = "What is Microsoft Azure?"
-        expectedResponse = "Azure is Microsoft's cloud computing platform"
-        testType = "similarity"
-    })
+### 3. Post-Deployment Validation
+
+#### Verify Durable Functions Configuration
+```powershell
+# Check that AzureWebJobsStorage is configured (required for Durable Functions)
+$settings = az functionapp config appsettings list `
+    --name YOUR_FUNCTION_APP_NAME `
+    --resource-group YOUR_RESOURCE_GROUP | ConvertFrom-Json
+
+$settings | Where-Object { $_.name -eq "AzureWebJobsStorage" }
+```
+
+#### Test Single-Turn Evaluation (Existing Feature)
+```powershell
+# Create test evaluation run in Dataverse with single-turn test cases
+$body = @{
+    evaluationRunId = "YOUR_EVALUATION_RUN_ID"
+    maxConcurrency = 10
 } | ConvertTo-Json
 
-Invoke-WebRequest -Uri "https://YOUR_FUNCTION_APP_NAME.azurewebsites.net/api/StartEvaluation" `
-                  -Method POST -Body $testBody -ContentType "application/json"
+Invoke-RestMethod -Uri "https://YOUR_FUNCTION_APP_NAME.azurewebsites.net/api/evaluations/start" `
+                  -Method POST -Body $body -ContentType "application/json"
+```
+
+#### Test Multi-Turn Evaluation (New Feature)
+```powershell
+# Create test evaluation run with multi-turn test case (IsMultiTurn = true, with Turns collection)
+$body = @{
+    evaluationRunId = "YOUR_MULTI_TURN_EVALUATION_RUN_ID"
+    maxConcurrency = 10
+} | ConvertTo-Json
+
+$result = Invoke-RestMethod -Uri "https://YOUR_FUNCTION_APP_NAME.azurewebsites.net/api/evaluations/start" `
+                            -Method POST -Body $body -ContentType "application/json"
+
+Write-Host "Evaluation started. Check Durable Functions Monitor in Azure Portal."
+```
+
+#### Monitor Durable Functions Execution
+```powershell
+# View orchestration instances in Azure Portal:
+# Function App → Functions → MultiTurnTestCaseOrchestrator → Monitor
+
+# Or check Application Insights
+az monitor app-insights query `
+    --app YOUR_APP_INSIGHTS_NAME `
+    --analytics-query "traces | where message contains 'orchestration' | order by timestamp desc | take 20"
 ```
 
 ## Required Information for Deployment
@@ -126,31 +175,40 @@ Invoke-WebRequest "https://YOUR_FUNCTION_APP_NAME.azurewebsites.net/api/health" 
 # Test Dataverse entity access
 ```
 
-### 3. End-to-End Evaluation Testing
-```json
-{
-  "testCases": [
-    {
-      "id": "similarity-001",
-      "question": "What is artificial intelligence?",
-      "expectedResponse": "AI is computer systems performing tasks that typically require human intelligence",
-      "testType": "similarity"
-    },
-    {
-      "id": "accuracy-001", 
-      "question": "What is the capital of France?",
-      "expectedResponse": "Paris",
-      "testType": "accuracy"
-    },
-    {
-      "id": "relevancy-001",
-      "question": "How do I reset my password?",
-      "expectedResponse": "You can reset your password by clicking the 'Forgot Password' link on the login page",
-      "testType": "relevancy"
-    }
-  ]
-}
-```
+### 3. Single-Turn Test Case (Baseline)
+Create an evaluation run with single-turn test cases in Dataverse:
+- IsMultiTurn = false
+- UserInput and ExpectedResponse populated
+- EvaluatorTypeId set
+
+**Expected**: Test cases routed to Service Bus, processed by WorkerFunction.
+
+### 4. Multi-Turn Test Case (New - Story 7)
+Create an evaluation run with multi-turn test case:
+- IsMultiTurn = true
+- Turns collection with 2-10 turns
+- Each turn has Sequence, PromptText, ExpectedResponse
+
+**Expected**: 
+- Test case routed to Durable Functions orchestrator
+- Orchestration visible in Durable Functions Monitor
+- Each turn executes sequentially (can see in Application Insights)
+- Conversation ID maintained across all turns
+- Execution continues beyond 5 minutes without timeout
+- Individual result created per turn
+- Aggregate result created at completion
+
+### 5. Long-Running Multi-Turn Test (Stress Test)
+Create a test case with:
+- 15-20 turns
+- Complex prompts requiring 60+ seconds per turn
+- Total expected time: 15-20 minutes
+
+**Expected**:
+- No timeout errors
+- All turns complete successfully
+- If function restarts, orchestration resumes from last checkpoint
+- Storage costs remain reasonable (< $5/month for 100 tests)
 
 ## Monitoring Setup
 
@@ -166,6 +224,22 @@ traces
 | where cloud_RoleName == "YOUR_FUNCTION_APP_NAME"
 | where timestamp > ago(1h)
 | order by timestamp desc
+
+// Durable Functions orchestration tracking
+traces
+| where cloud_RoleName == "YOUR_FUNCTION_APP_NAME"
+| where message contains "Starting orchestration" 
+    or message contains "Executing turn" 
+    or message contains "Completed multi-turn"
+| order by timestamp desc
+| project timestamp, message, severityLevel, customDimensions
+
+// Multi-turn execution metrics
+traces
+| where cloud_RoleName == "YOUR_FUNCTION_APP_NAME"
+| where message contains "Completed multi-turn test case"
+| extend passRate = extract("Pass Rate: ([0-9.]+)%", 1, message)
+| project timestamp, passRate, message
 
 // Dependency calls to Azure services  
 dependencies
@@ -209,6 +283,26 @@ exceptions
    - **Solution**: Verify Dataverse base URL and managed identity setup
    - **Verification**: Test connection from Azure Cloud Shell
 
+6. **Multi-Turn Test Case Not Using Durable Functions**
+   - **Symptom**: Multi-turn test times out after 5 minutes
+   - **Solution**: Verify test case has `IsMultiTurn = true` and `Turns` collection populated
+   - **Verification**: Check Application Insights for "Started Durable Functions orchestration" message
+
+7. **Durable Functions Orchestration Not Starting**
+   - **Symptom**: Multi-turn test case queued but orchestration never starts
+   - **Solution**: Verify `AzureWebJobsStorage` is configured in Function App settings
+   - **Verification**: Check function logs for Durable Functions extension initialization
+
+8. **Conversation ID Not Maintained Across Turns**
+   - **Symptom**: Each turn creates new conversation
+   - **Solution**: Verify first turn returns ConversationId and subsequent turns receive it
+   - **Verification**: Query Dataverse for turn results - all should have same ConversationId
+
+9. **Orchestration State Corruption**
+   - **Symptom**: Orchestration stuck or replaying incorrectly
+   - **Solution**: Clear orchestration history from storage account
+   - **Verification**: Delete task hub containers in storage account, orchestrator will recreate
+
 ### Diagnostic Commands
 ```powershell
 # Check Function App managed identity
@@ -229,15 +323,20 @@ Get-AzCognitiveServicesAccountDeployment -ResourceGroupName "YOUR_RG" -AccountNa
 ### Deployment Success
 - [ ] All Azure resources created without errors
 - [ ] Function App deployed and running
+- [ ] All 9 functions deployed successfully (including Durable Functions)
 - [ ] Managed identity authentication working
 - [ ] No secrets stored in application configuration
-- [ ] All integration tests passing
+- [ ] `AzureWebJobsStorage` configured for Durable Functions
+- [ ] All unit tests passing (15 Durable Functions tests)
 
 ### Performance Validation
 - [ ] Health endpoint responds in < 2 seconds
-- [ ] Evaluation requests process within expected timeframes
+- [ ] Single-turn evaluation requests process within expected timeframes
+- [ ] Multi-turn orchestrations complete successfully (no 5-minute timeout)
 - [ ] Service Bus queue processing working correctly
+- [ ] Durable Functions orchestrations visible in Monitor
 - [ ] Azure OpenAI responses received successfully
+- [ ] Conversation ID maintained across all turns in multi-turn tests
 
 ### Security Validation
 - [ ] No API keys or connection strings in Function App settings

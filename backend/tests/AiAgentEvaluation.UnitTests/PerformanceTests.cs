@@ -262,7 +262,7 @@ public class PerformanceTests
             ExecutionTimeMs = 800
         };
 
-        _mockCopilotStudioService.Setup(x => x.SendMessageAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        _mockCopilotStudioService.Setup(x => x.SendMessageAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(copilotResponse);
 
         _mockLLMJudgeService.Setup(x => x.EvaluateResponseAsync(
@@ -395,7 +395,7 @@ public class PerformanceTests
             ExecutionTimeMs = 800
         };
 
-        _mockCopilotStudioService.Setup(x => x.SendMessageAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        _mockCopilotStudioService.Setup(x => x.SendMessageAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(copilotResponse);
 
         _mockLLMJudgeService.Setup(x => x.EvaluateResponseAsync(

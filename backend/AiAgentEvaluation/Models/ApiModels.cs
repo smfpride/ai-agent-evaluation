@@ -108,6 +108,13 @@ public class CopilotDirectLineResponse
 
     [JsonPropertyName("rawActivityJson")]
     public string? RawActivityJson { get; set; }
+
+    /// <summary>
+    /// DirectLine token used for this conversation. Required for multi-turn conversations
+    /// as each conversation is bound to the token that created it.
+    /// </summary>
+    [JsonPropertyName("directLineToken")]
+    public string? DirectLineToken { get; set; }
 }
 
 /// <summary>

@@ -113,6 +113,7 @@ public class MultiTurnDurableOrchestrator
                 executionContext.TotalTurns, input.TestCaseId);
 
             string? conversationId = null;
+            string? directLineToken = null;
 
             // Execute each turn sequentially
             foreach (var turn in executionContext.Turns)
@@ -121,6 +122,7 @@ public class MultiTurnDurableOrchestrator
                 {
                     Turn = turn,
                     ConversationId = conversationId,
+                    DirectLineToken = directLineToken,
                     DirectLineUrl = input.DirectLineUrl,
                     EvaluatorTypeId = input.EvaluatorTypeId,
                     PassingThreshold = input.PassingThreshold,
@@ -135,11 +137,13 @@ public class MultiTurnDurableOrchestrator
                     "ExecuteSingleTurn",
                     turnInput);
 
-                // Store conversation ID from first turn
+                // Store conversation ID and DirectLine token from first turn
                 if (turn.Sequence == 1 && !string.IsNullOrEmpty(turnResult.ConversationId))
                 {
                     conversationId = turnResult.ConversationId;
+                    directLineToken = turnResult.DirectLineToken;
                     executionContext.ConversationId = conversationId;
+                    logger.LogInformation("Captured conversation ID and token from turn 1: {ConversationId}", conversationId);
                 }
 
                 // Create an EvaluationResult object to store in the context

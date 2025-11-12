@@ -68,7 +68,7 @@ public class MultiTurnExecutionServiceTests
 
         // Setup Turn 1
         _mockCopilotStudioService
-            .Setup(s => s.SendMessageAsync(directLineUrl, testCase.Turns[0].PromptText, null, It.IsAny<CancellationToken>()))
+            .Setup(s => s.SendMessageAsync(directLineUrl, testCase.Turns[0].PromptText, null, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new CopilotDirectLineResponse
             {
                 Success = true,
@@ -88,7 +88,7 @@ public class MultiTurnExecutionServiceTests
 
         // Setup Turn 2
         _mockCopilotStudioService
-            .Setup(s => s.SendMessageAsync(directLineUrl, testCase.Turns[1].PromptText, conversationId, It.IsAny<CancellationToken>()))
+            .Setup(s => s.SendMessageAsync(directLineUrl, testCase.Turns[1].PromptText, conversationId, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new CopilotDirectLineResponse
             {
                 Success = true,
@@ -127,7 +127,7 @@ public class MultiTurnExecutionServiceTests
 
         // Verify conversation ID was passed to second turn
         _mockCopilotStudioService.Verify(
-            s => s.SendMessageAsync(directLineUrl, testCase.Turns[1].PromptText, conversationId, It.IsAny<CancellationToken>()),
+            s => s.SendMessageAsync(directLineUrl, testCase.Turns[1].PromptText, conversationId, It.IsAny<string?>(), It.IsAny<CancellationToken>()),
             Times.Once);
 
         // Verify aggregate result was created
@@ -180,7 +180,7 @@ public class MultiTurnExecutionServiceTests
 
         // Turn 1: Success
         _mockCopilotStudioService
-            .Setup(s => s.SendMessageAsync(directLineUrl, testCase.Turns[0].PromptText, null, It.IsAny<CancellationToken>()))
+            .Setup(s => s.SendMessageAsync(directLineUrl, testCase.Turns[0].PromptText, null, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new CopilotDirectLineResponse
             {
                 Success = true,
@@ -195,7 +195,7 @@ public class MultiTurnExecutionServiceTests
 
         // Turn 2: Copilot fails
         _mockCopilotStudioService
-            .Setup(s => s.SendMessageAsync(directLineUrl, testCase.Turns[1].PromptText, conversationId, It.IsAny<CancellationToken>()))
+            .Setup(s => s.SendMessageAsync(directLineUrl, testCase.Turns[1].PromptText, conversationId, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new CopilotDirectLineResponse
             {
                 Success = false,
@@ -205,7 +205,7 @@ public class MultiTurnExecutionServiceTests
 
         // Turn 3: Success (should still execute)
         _mockCopilotStudioService
-            .Setup(s => s.SendMessageAsync(directLineUrl, testCase.Turns[2].PromptText, conversationId, It.IsAny<CancellationToken>()))
+            .Setup(s => s.SendMessageAsync(directLineUrl, testCase.Turns[2].PromptText, conversationId, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new CopilotDirectLineResponse
             {
                 Success = true,
@@ -238,7 +238,7 @@ public class MultiTurnExecutionServiceTests
 
         // Verify all three turns were attempted
         _mockCopilotStudioService.Verify(
-            s => s.SendMessageAsync(directLineUrl, It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            s => s.SendMessageAsync(directLineUrl, It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()),
             Times.Exactly(3));
 
         // Verify all results were saved (3 turn results + 1 aggregate)
@@ -276,7 +276,7 @@ public class MultiTurnExecutionServiceTests
         };
 
         _mockCopilotStudioService
-            .Setup(s => s.SendMessageAsync(directLineUrl, testCase.Turns[0].PromptText, null, It.IsAny<CancellationToken>()))
+            .Setup(s => s.SendMessageAsync(directLineUrl, testCase.Turns[0].PromptText, null, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new CopilotDirectLineResponse
             {
                 Success = true,
@@ -347,7 +347,7 @@ public class MultiTurnExecutionServiceTests
         };
 
         _mockCopilotStudioService
-            .Setup(s => s.SendMessageAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Setup(s => s.SendMessageAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new Exception("Network error"));
 
         _mockDataverseService
@@ -412,7 +412,7 @@ public class MultiTurnExecutionServiceTests
 
         // No Copilot calls should have been made
         _mockCopilotStudioService.Verify(
-            s => s.SendMessageAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            s => s.SendMessageAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 }

@@ -86,6 +86,7 @@ public class MultiTurnDurableActivities
                 input.DirectLineUrl,
                 input.Turn.PromptText,
                 input.ConversationId,
+                input.DirectLineToken,
                 cancellationToken);
 
             if (!copilotResponse.Success)
@@ -151,6 +152,7 @@ public class MultiTurnDurableActivities
             return new TurnExecutionResult
             {
                 ConversationId = copilotResponse.ConversationId,
+                DirectLineToken = copilotResponse.DirectLineToken,
                 Success = true,
                 Score = judgeResponse.Score,
                 Passed = judgeResponse.Score >= input.PassingThreshold,
@@ -228,6 +230,7 @@ public class MultiTurnDurableActivities
         return new TurnExecutionResult
         {
             ConversationId = input.ConversationId ?? string.Empty,
+            DirectLineToken = input.DirectLineToken,
             Success = false,
             Score = 0,
             Passed = false,

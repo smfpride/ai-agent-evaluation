@@ -69,6 +69,7 @@ public class MultiTurnExecutionService : IMultiTurnExecutionService
                     directLineUrl,
                     turn.PromptText ?? string.Empty,
                     context.ConversationId,
+                    null, // directLineToken - not used, this is deprecated code
                     cancellationToken);
                 
                 _logger.LogWarning(

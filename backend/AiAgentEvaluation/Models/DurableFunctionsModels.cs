@@ -39,6 +39,13 @@ public class ExecuteTurnInput
     [JsonPropertyName("conversationId")]
     public string? ConversationId { get; set; }
 
+    /// <summary>
+    /// DirectLine token for the conversation. Required for multi-turn conversations
+    /// as DirectLine binds conversations to the token that created them.
+    /// </summary>
+    [JsonPropertyName("directLineToken")]
+    public string? DirectLineToken { get; set; }
+
     [Required]
     [JsonPropertyName("directLineUrl")]
     public string DirectLineUrl { get; set; } = string.Empty;
@@ -60,6 +67,12 @@ public class TurnExecutionResult
 {
     [JsonPropertyName("conversationId")]
     public string ConversationId { get; set; } = string.Empty;
+
+    /// <summary>
+    /// DirectLine token for the conversation. Must be preserved for multi-turn conversations.
+    /// </summary>
+    [JsonPropertyName("directLineToken")]
+    public string? DirectLineToken { get; set; }
 
     [JsonPropertyName("success")]
     public bool Success { get; set; }

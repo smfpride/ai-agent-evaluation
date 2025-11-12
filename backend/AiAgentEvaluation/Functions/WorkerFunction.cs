@@ -69,6 +69,7 @@ public class WorkerFunction
                 message.DirectLineUrl,
                 message.UserInput, 
                 message.ConversationId,
+                null, // directLineToken - not used in single-turn scenario
                 cancellationToken);
 
             if (!copilotResponse.Success)

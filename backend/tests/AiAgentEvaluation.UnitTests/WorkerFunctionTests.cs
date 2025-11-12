@@ -257,7 +257,7 @@ public class WorkerFunctionTests
         };
 
         _mockCopilotStudioService.Setup(x => x.SendMessageAsync(
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(copilotResponse);
 
         var messageBody = System.Text.Json.JsonSerializer.Serialize(message);
@@ -291,7 +291,7 @@ public class WorkerFunctionTests
         };
 
         _mockCopilotStudioService.Setup(x => x.SendMessageAsync(
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(copilotResponse);
 
         var messageBody = System.Text.Json.JsonSerializer.Serialize(message);
@@ -331,7 +331,7 @@ public class WorkerFunctionTests
         };
 
         _mockCopilotStudioService.Setup(x => x.SendMessageAsync(
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(copilotResponse);
 
         _mockLLMJudgeService.Setup(x => x.EvaluateResponseAsync(
@@ -452,7 +452,7 @@ public class WorkerFunctionTests
         };
 
         _mockCopilotStudioService.Setup(x => x.SendMessageAsync(
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(copilotResponse);
 
         _mockLLMJudgeService.Setup(x => x.EvaluateResponseAsync(
@@ -527,7 +527,7 @@ public class WorkerFunctionTests
         // Assert - Should log error but not throw
         // Verify no service calls were made
         _mockCopilotStudioService.Verify(x => x.SendMessageAsync(
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Never);
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     #endregion
@@ -550,7 +550,7 @@ public class WorkerFunctionTests
         };
 
         _mockCopilotStudioService.Setup(x => x.SendMessageAsync(
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(copilotResponse);
 
         var messageBody = System.Text.Json.JsonSerializer.Serialize(message);
@@ -577,7 +577,7 @@ public class WorkerFunctionTests
         var judgeResponse = CreateSuccessfulJudgeResponse();
 
         _mockCopilotStudioService.Setup(x => x.SendMessageAsync(
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(copilotResponse);
 
         _mockLLMJudgeService.Setup(x => x.EvaluateResponseAsync(
@@ -646,7 +646,7 @@ public class WorkerFunctionTests
         LLMJudgeResponse judgeResponse)
     {
         _mockCopilotStudioService.Setup(x => x.SendMessageAsync(
-            message.DirectLineUrl, message.UserInput, message.ConversationId, It.IsAny<CancellationToken>()))
+            message.DirectLineUrl, message.UserInput, message.ConversationId, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(copilotResponse);
 
         _mockLLMJudgeService.Setup(x => x.EvaluateResponseAsync(
@@ -661,7 +661,7 @@ public class WorkerFunctionTests
     private void VerifySuccessfulProcessing(ProcessTestCaseMessage message)
     {
         _mockCopilotStudioService.Verify(x => x.SendMessageAsync(
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Once);
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Once);
 
         _mockLLMJudgeService.Verify(x => x.EvaluateResponseAsync(
             It.IsAny<LLMJudgeRequest>(), It.IsAny<CancellationToken>()), Times.Once);
