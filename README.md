@@ -34,13 +34,11 @@ Copilot Studio + Azure OpenAI → Dataverse (Results)
 
 ### Key Components
 
-- **Orchestrator Function**: HTTP-triggered function that initiates evaluation runs and queues test cases
-- **Worker Functions**: Service Bus-triggered functions that execute test cases
-  - **Single-Turn Worker**: Processes single prompt/response tests
-  - **Multi-Turn Worker**: Processes conversation-based tests with context
-- **Durable Functions**: Alternative orchestration for very long multi-turn conversations (10+ turns)
+- **Orchestrator Function**: HTTP-triggered function that initiates evaluation runs and routes test cases
+- **Worker Function**: Service Bus-triggered function that executes single-turn test cases
+- **Durable Functions Orchestrator**: Long-running orchestration for all multi-turn conversations
 - **Monitor Function**: Timer-triggered function that tracks progress and updates completion status
-- **Azure Service Bus**: Two message queues for scalable test case distribution
+- **Azure Service Bus**: Message queue for scalable single-turn test case distribution
 - **Azure OpenAI**: GPT-4o model providing LLM-as-a-Judge evaluation (Managed Identity)
 - **Microsoft Dataverse**: Storage for test cases, prompts, results, and run metadata
 - **Copilot Studio**: Target agents accessed via Direct Line API
@@ -56,13 +54,14 @@ Copilot Studio + Azure OpenAI → Dataverse (Results)
   
 - **Multi-Turn Support**: 
   - Execute complex conversation flows with context preservation across turns
-  - Two execution modes: Service Bus workers (standard) and Durable Functions (very long conversations)
+  - Durable Functions orchestration for unlimited execution time (no 5-minute limit)
   - Per-turn evaluation with aggregate results
+  - Supports conversations of any length (1 turn to 100+ turns)
 
 - **Massive Scale**: 
   - Process up to 50,000 test cases per run with automatic scaling
-  - Dual-queue architecture for single-turn and multi-turn separation
-  - Up to 1000 concurrent workers per queue
+  - Hybrid execution: Service Bus for single-turn, Durable Functions for multi-turn
+  - Up to 1000 concurrent single-turn workers plus unlimited multi-turn orchestrations
 
 - **Managed Identity**: 
   - Secure authentication to all Azure services without connection strings
@@ -80,11 +79,14 @@ Copilot Studio + Azure OpenAI → Dataverse (Results)
 - **.NET 8**: Function runtime (isolated process model)
 - **Azure Functions v4**: Serverless compute platform
 - **Azure Durable Functions**: Long-running orchestrations for multi-turn conversations
-- **Azure Service Bus**: Message queues (2 queues: single-turn and multi-turn)
+- **Azure Service Bus**: Message queue for single-turn test case distribution
 - **Azure OpenAI**: GPT-4o model for LLM judge (Managed Identity)
 - **Microsoft Dataverse**: Data storage, prompt templates, and retrieval
 - **Azure Key Vault**: External service secrets (Dataverse OAuth only)
+- **Azure Storage**: Function state and Durable Functions orchestration state
 - **Application Insights**: Monitoring and telemetry
+
+**Note**: Infrastructure provisions a `multi-turn-test-case-processing` queue, but it is not actively used. Multi-turn execution uses Durable Functions orchestration.
 
 ## Getting Started
 
@@ -168,8 +170,8 @@ ai-agent-evaluation/
 │   │   ├── Functions/              # Function implementations
 │   │   │   ├── OrchestratorFunction.cs
 │   │   │   ├── WorkerFunction.cs (single-turn)
-│   │   │   ├── MultiTurnWorkerFunction.cs
-│   │   │   ├── MultiTurnDurableOrchestrator.cs
+│   │   │   ├── MultiTurnWorkerFunction.cs (unused legacy code)
+│   │   │   ├── MultiTurnDurableOrchestrator.cs (primary multi-turn execution)
 │   │   │   ├── MultiTurnDurableActivities.cs
 │   │   │   ├── MonitorFunction.cs
 │   │   │   └── HealthCheckFunction.cs
@@ -190,7 +192,6 @@ ai-agent-evaluation/
 │   └── tests/                     # Test documentation
 └── README.md                      # This file
 ```
-
 ## API Endpoints
 
 ### Orchestrator Endpoint

@@ -19,11 +19,11 @@ The AI Agent Evaluation System is a cloud-native, serverless solution built on A
 ### Key Capabilities
 - **Automated Testing**: Execute test cases against Copilot Studio agents via Direct Line API
 - **LLM-Based Evaluation**: Use Azure OpenAI (GPT-4o) to score responses with human-like judgment
-- **Multi-Turn Conversations**: Support for complex conversation scenarios with context preservation
+- **Multi-Turn Conversations**: Support for complex conversation scenarios with context preservation via Durable Functions
 - **Scalable Processing**: Handle up to 50,000 test cases per evaluation run
 - **Comprehensive Results**: Store detailed results, reasoning, and metrics in Dataverse
 - **Flexible Evaluation Types**: Extensible evaluator type system stored in Dataverse
-- **Dual Execution Paths**: Service Bus workers for standard cases, Durable Functions for very long conversations
+- **Hybrid Execution**: Service Bus workers for single-turn, Durable Functions orchestration for multi-turn
 
 ---
 
@@ -41,10 +41,9 @@ flowchart TB
         HEALTH["Health Check Function"]
     end
     subgraph subGraph2["Service Bus Triggered"]
-        WORKER["Worker Function<br>ProcessTestCase<br>Single-Turn"]
-        MTWORKER["Multi-Turn Worker<br>ProcessMultiTurnCase<br>Sequential Turns"]
+        WORKER["Worker Function<br>ProcessTestCase<br>Single-Turn Only"]
     end
-    subgraph subGraph3["Durable Functions (Alternative)"]
+    subgraph subGraph3["Durable Functions (Multi-Turn)"]
         DORCH["Durable Orchestrator<br>MultiTurnTestCaseOrchestrator<br>Unlimited Runtime"]
         ACT1["Activity:<br>GetTestCaseWithTurns"]
         ACT2["Activity:<br>ExecuteSingleTurn"]
@@ -60,7 +59,7 @@ flowchart TB
         subGraph4
     end
     subgraph subGraph6["Azure Services"]
-        SBUS["Azure Service Bus<br>2 Queues:<br>- test-case-processing<br>- multi-turn-processing"]
+        SBUS["Azure Service Bus<br>1 Queue:<br>- test-case-processing<br>(single-turn only)"]
         AOAI["Azure OpenAI<br>GPT-4o Model<br>LLM Judge"]
         KV["Azure Key Vault<br>Secrets Management"]
         AI["Application Insights<br>Logging &amp; Metrics"]
@@ -78,29 +77,22 @@ flowchart TB
     ORCH -- 2: Fetch Test Cases --> DV
     DV -- 3: Test Cases + Turns --> ORCH
     ORCH -- 4a: Queue Single-Turn --> SBUS
-    ORCH -- 4b: Queue Multi-Turn --> SBUS
-    ORCH -- 4c: Start Durable Orch<br>(Alternative) --> DORCH
+    ORCH -- 4b: Start Durable Orch<br>(Multi-Turn) --> DORCH
     SBUS -- 5a: Single-Turn Messages --> WORKER
-    SBUS -- 5b: Multi-Turn Messages --> MTWORKER
-    DORCH -- 5c: Call Activity --> ACT1
+    DORCH -- 5b: Call Activity --> ACT1
     ACT1 -- Fetch Data --> DV
-    DORCH -- 5d: Call Activity --> ACT2
+    DORCH -- 5c: Call Activity --> ACT2
     ACT2 -- Execute Turn --> CS
     ACT2 -- Evaluate --> AOAI
-    DORCH -- 5e: Call Activity --> ACT3
+    DORCH -- 5d: Call Activity --> ACT3
     ACT3 -- Save Aggregate --> DV
-    WORKER -- 6a: Execute Test --> CS
-    MTWORKER -- 6b: Execute Turns with Context --> CS
+    WORKER -- 6: Execute Test --> CS
     CS -- 7a: Agent Response --> WORKER
-    CS -- 7b: Agent Responses --> MTWORKER
-    CS -- 7c: Turn Responses --> ACT2
-    WORKER -- 8a: Evaluate Response --> AOAI
-    MTWORKER -- 8b: Evaluate Each Turn --> AOAI
+    CS -- 7b: Turn Responses --> ACT2
+    WORKER -- 8: Evaluate Response --> AOAI
     AOAI -- 9a: Score & Reasoning --> WORKER
-    AOAI -- 9b: Scores & Reasoning --> MTWORKER
-    AOAI -- 9c: Turn Scores --> ACT2
-    WORKER -- 10a: Save Result --> DV
-    MTWORKER -- 10b: Save Turn Results + Aggregate --> DV
+    AOAI -- 9b: Turn Scores --> ACT2
+    WORKER -- 10: Save Result --> DV
     MONITOR -- 11: Check Progress --> DV
     MONITOR -- 12: Update Run Status --> DV
     DORCH -.-> STORAGE
@@ -115,7 +107,6 @@ flowchart TB
     ORCH:::function
     HEALTH:::function
     WORKER:::function
-    MTWORKER:::function
     DORCH:::durable
     ACT1:::durable
     ACT2:::durable
@@ -181,49 +172,7 @@ flowchart TB
 - Type-specific evaluation (Similarity, Accuracy, Relevancy)
 - Response time tracking
 
-#### 1.3 Multi-Turn Worker Function
-**Trigger**: Service Bus Queue (`multi-turn-test-case-processing`)  
-**Runtime**: .NET 8 Isolated  
-**Purpose**: Execute multi-turn conversation test cases
-
-**Responsibilities**:
-- Receive multi-turn test case message
-- Fetch all turns for the test case (ordered by sequence)
-- Execute turns sequentially while maintaining conversation context
-- Evaluate each turn independently
-- Create aggregate result for the overall conversation
-- Continue execution even if individual turns fail
-
-**Key Features**:
-- Conversation context preservation via Direct Line conversationId
-- Per-turn evaluation results
-- Aggregate scoring for overall conversation quality
-- Resilient execution with graceful failure handling
-
-**Multi-Turn Flow**:
-```
-Turn 1: Send prompt (conversationId = null)
-  ↓
-  Store conversationId from response
-  ↓
-  Evaluate & save Turn 1 result
-  ↓
-Turn 2: Send prompt (conversationId = from Turn 1)
-  ↓
-  Agent uses conversation history
-  ↓
-  Evaluate & save Turn 2 result
-  ↓
-Turn 3: Send prompt (conversationId = from Turn 1)
-  ↓
-  Agent maintains full context
-  ↓
-  Evaluate & save Turn 3 result
-  ↓
-Create & save aggregate result
-```
-
-#### 1.4 Monitor Function
+#### 1.3 Monitor Function
 **Trigger**: Timer (every 1 minute)  
 **Runtime**: .NET 8 Isolated  
 **Purpose**: Track evaluation run progress and update completion status
@@ -241,7 +190,7 @@ Create & save aggregate result
 - No user intervention required
 - Handles both single-turn and multi-turn result aggregation
 
-#### 1.5 Durable Functions Orchestrator (Alternative Multi-Turn Execution)
+#### 1.4 Durable Functions Orchestrator (Multi-Turn Execution)
 **Trigger**: Started by Orchestrator Function  
 **Runtime**: .NET 8 Isolated (Durable Functions)  
 **Purpose**: Long-running orchestration for multi-turn test cases
@@ -255,29 +204,26 @@ Create & save aggregate result
 
 **Key Features**:
 - No 5-minute timeout limitation
-- Ideal for very long conversations (10+ turns)
+- Supports very long conversations (10+ turns)
 - Fault-tolerant with automatic state management
-- Alternative to Service Bus worker for complex scenarios
+- Primary multi-turn execution path
 
 **Activities**:
 - `GetTestCaseWithTurns`: Fetch test case and turns from Dataverse
 - `ExecuteSingleTurn`: Execute one turn with conversation context
 - `CreateAggregateResult`: Generate final multi-turn evaluation result
 
-**When to Use Durable Functions vs Service Bus Worker**:
+**Flow**:
+1. Orchestrator Function calls `durableClient.ScheduleNewOrchestrationInstanceAsync` for multi-turn cases
+2. Durable Orchestrator retrieves test case with all turns
+3. For each turn sequentially:
+   - Execute turn with conversation context
+   - Update conversation history
+4. After all turns complete, create aggregate result in Dataverse
 
-| Scenario | Use Service Bus Worker | Use Durable Functions |
-|----------|----------------------|---------------------|
-| Conversation Length | 1-5 turns | 10+ turns |
-| Total Execution Time | < 10 minutes | > 10 minutes (hours possible) |
-| Complexity | Standard conversation | Complex branching logic |
-| State Management | Simple (conversationId only) | Complex state tracking |
-| Debugging Needs | Standard logging | Need execution history |
-| Default Choice | ✅ Recommended | Alternative for edge cases |
+**Implementation Note**: This is the PRIMARY execution path for all multi-turn test cases. The orchestrator does NOT use Service Bus queuing for multi-turn execution.
 
-**Implementation Note**: The Orchestrator Function currently uses the Service Bus approach by default. The Durable Functions code exists as an alternative that can be enabled for specific test cases or scenarios requiring longer execution times.
-
-#### 1.6 Health Check Function
+#### 1.5 Health Check Function
 **Trigger**: HTTP GET  
 **Runtime**: .NET 8 Isolated  
 **Purpose**: Provide system health status
@@ -291,7 +237,9 @@ Create & save aggregate result
 
 ### 2. Azure Service Bus (Message Queue)
 
-**Purpose**: Decouple orchestration from execution and enable massive scaling
+**Purpose**: Decouple orchestration from execution and enable massive scaling for single-turn test cases
+
+**Note**: Multi-turn test cases use Durable Functions orchestration instead of Service Bus queuing.
 
 #### Queue Configuration
 
@@ -302,14 +250,16 @@ Create & save aggregate result
 - **Max Delivery Count**: 10
 - **Lock Duration**: 5 minutes
 - **Session Support**: No
+- **Status**: Active - used by Worker Function
 
-##### 2.2 multi-turn-test-case-processing (Multi-Turn Queue)
+##### 2.2 multi-turn-test-case-processing (Legacy Queue)
 - **Max Size**: 5 GB
 - **Message TTL**: 14 days
 - **Dead Letter**: Enabled
 - **Max Delivery Count**: 10
 - **Lock Duration**: 5 minutes
 - **Session Support**: No
+- **Status**: UNUSED - Created by infrastructure but no messages are sent to this queue. Multi-turn execution uses Durable Functions orchestration instead.
 
 #### Message Schema
 
@@ -704,7 +654,8 @@ sequenceDiagram
 
 ### Azure Services
 - **Azure Functions**: Compute (Premium or Consumption Plan)
-- **Azure Service Bus**: Message queues (Standard tier, 2 queues)
+- **Azure Service Bus**: Message queue (Standard tier, 1 active queue for single-turn)
+- **Azure Durable Functions**: Multi-turn orchestration (requires Azure Storage for state)
 - **Azure OpenAI**: LLM Judge (GPT-4o)
 - **Microsoft Dataverse**: Data storage and prompt templates
 - **Azure Key Vault**: Secrets management (Dataverse OAuth only)
@@ -783,18 +734,22 @@ Only non-Azure services require secrets in Key Vault:
 | Function | Trigger | Scaling Strategy | Max Instances |
 |----------|---------|------------------|---------------|
 | Orchestrator | HTTP | On-demand | 200 |
-| Worker | Service Bus | Event-driven (queue depth) | 1000 |
-| Multi-Turn Worker | Service Bus | Event-driven (queue depth) | 1000 |
+| Worker (Single-Turn) | Service Bus | Event-driven (queue depth) | 1000 |
+| Durable Orchestrator (Multi-Turn) | Durable Functions | Automatic (orchestration instances) | Unlimited |
 | Monitor | Timer | Single instance | 1 |
 
 #### Service Bus Scaling
-- **Auto-scaling**: Enabled based on queue depth
-- **Concurrent Workers**: Up to 1000 per queue
+- **Auto-scaling**: Enabled based on queue depth (single-turn only)
+- **Concurrent Workers**: Up to 1000 for single-turn queue
 - **Message Throughput**: 1000+ messages/minute
 - **Queue Capacity**: 5 GB per queue
 
-### Performance Targets
+#### Durable Functions Scaling
+- **Concurrent Orchestrations**: Unlimited multi-turn conversations
+- **State Management**: Automatic via Azure Storage
+- **Long-Running Support**: No timeout limitations
 
+### Performance Targets
 | Metric | Target | Actual |
 |--------|--------|--------|
 | Orchestrator Response | < 30 seconds | ~10-15 seconds |
@@ -905,13 +860,15 @@ graph TB
 **Bicep Template**: `backend/infrastructure/main.bicep`
 
 Provisions:
-- Function App with Premium Plan
-- Service Bus namespace with 2 queues
+- Function App with Premium Plan (supports Durable Functions)
+- Service Bus namespace with 2 queues (only test-case-processing actively used)
 - Azure OpenAI with GPT-4o deployment
 - Key Vault
 - Application Insights
-- Storage Account
+- Storage Account (required for Durable Functions state management)
 - All RBAC role assignments
+
+**Note**: The multi-turn-test-case-processing queue is provisioned but unused. Multi-turn execution uses Durable Functions orchestration.
 
 **Deployment Command**:
 ```bash

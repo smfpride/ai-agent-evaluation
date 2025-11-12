@@ -20,9 +20,9 @@ HTTP Trigger → Orchestrator Function → Service Bus Queue → Worker Function
 
 ### 2.2 Key Components
 1. **Orchestrator Function**: HTTP-triggered coordinator (.NET 8, isolated process model)
-2. **Azure Service Bus**: Message queues for test case distribution and scaling (2 queues: single-turn and multi-turn)
-3. **Worker Functions**: Service Bus-triggered evaluation processors (single-turn and multi-turn)
-4. **Durable Functions**: Long-running orchestrators for multi-turn conversations (alternative to Service Bus worker)
+2. **Azure Service Bus**: Message queue for single-turn test case distribution and scaling
+3. **Worker Function**: Service Bus-triggered evaluation processor for single-turn tests
+4. **Durable Functions**: Long-running orchestrators for multi-turn conversations (PRIMARY multi-turn execution path)
 5. **Dataverse Integration**: Data source and result storage
 6. **Copilot Studio Agent**: Target system under test via Direct Line API
 7. **Azure OpenAI**: LLM Judge for response evaluation (Managed Identity authentication)
@@ -31,8 +31,7 @@ HTTP Trigger → Orchestrator Function → Service Bus Queue → Worker Function
 ### 2.3 Function App Architecture
 - **HTTP Orchestrator Function**: `StartEvaluationRun` - Initiates evaluation runs
 - **Service Bus Worker Function**: `ProcessTestCase` - Executes individual single-turn test evaluations
-- **Multi-Turn Worker Function**: `ProcessMultiTurnTestCase` - Executes multi-turn conversation tests
-- **Durable Functions Orchestrator**: `MultiTurnTestCaseOrchestrator` - Alternative long-running orchestration for multi-turn tests
+- **Durable Functions Orchestrator**: `MultiTurnTestCaseOrchestrator` - Long-running orchestration for multi-turn tests
 - **Durable Functions Activities**: Helper activities for turn execution and result aggregation
 - **Timer Function**: `MonitorEvaluationRuns` - Tracks completion and updates final status
 - **Health Check Function**: `HealthCheck` - Verifies system connectivity and health
@@ -61,20 +60,8 @@ HTTP Trigger → Orchestrator Function → Service Bus Queue → Worker Function
 8. Atomically increment evaluation run progress counter
 9. Handle errors and retry logic with exponential backoff
 
-#### 3.1.3 Multi-Turn Worker Function Workflow (`ProcessMultiTurnTestCase`)
-1. Receive multi-turn test case message from Service Bus queue (`multi-turn-test-case-processing`)
-2. Fetch test case and all associated turns (ordered by sequence) from Dataverse
-3. Execute turns sequentially while maintaining conversation context:
-   - Turn 1: Create new conversation (conversationId = null)
-   - Subsequent turns: Use conversationId from Turn 1 to maintain context
-4. Evaluate each turn independently using Azure OpenAI Judge
-5. Store per-turn evaluation results in Dataverse
-6. Create aggregate result with overall pass rate and metrics
-7. Atomically increment evaluation run progress counter
-8. Continue execution even if individual turns fail (resilient design)
-
-#### 3.1.4 Durable Functions Orchestrator Workflow (`MultiTurnTestCaseOrchestrator` - Alternative)
-1. Started by Orchestrator Function for multi-turn test cases
+#### 3.1.3 Durable Functions Orchestrator Workflow (`MultiTurnTestCaseOrchestrator`)
+1. Started by Orchestrator Function for all multi-turn test cases
 2. Uses Durable Functions for unlimited execution time (no 5-minute limit)
 3. Calls activities sequentially:
    - `GetTestCaseWithTurns`: Retrieve test case and turns from Dataverse
@@ -82,9 +69,20 @@ HTTP Trigger → Orchestrator Function → Service Bus Queue → Worker Function
    - `CreateAggregateResult`: Generate final multi-turn result
 4. Maintains state and conversation context across activities
 5. Supports pause/resume and retry logic
-6. Ideal for very long multi-turn conversations (10+ turns)
+6. Handles conversations of any length (1 turn to 100+ turns)
 
-#### 3.1.5 Monitoring Workflow (`MonitorEvaluationRuns`)
+**Execution Flow**:
+1. Fetch test case and all associated turns (ordered by sequence) from Dataverse
+2. Execute turns sequentially while maintaining conversation context:
+   - Turn 1: Create new conversation (conversationId = null)
+   - Subsequent turns: Use conversationId from Turn 1 to maintain context
+3. Evaluate each turn independently using Azure OpenAI Judge
+4. Store per-turn evaluation results in Dataverse
+5. Create aggregate result with overall pass rate and metrics
+6. Atomically increment evaluation run progress counter
+7. Continue execution even if individual turns fail (resilient design)
+
+#### 3.1.4 Monitoring Workflow (`MonitorEvaluationRuns`)
 1. Timer-triggered function (every 1 minute)
 2. Query evaluation runs with status `778760002` (Running)
 3. Check completion status based on test case count vs results count
@@ -144,30 +142,19 @@ HTTP Trigger → Orchestrator Function → Service Bus Queue → Worker Function
 }
 ```
 
-**Multi-Turn Service Bus Message** (`multi-turn-test-case-processing` queue):
-```json
-{
-  "evaluationRunId": "guid",
-  "testCaseId": "guid",
-  "directLineUrl": "string",
-  "evaluatorTypeId": "guid",
-  "passingThreshold": 0.7,
-  "retryCount": 0,
-  "maxRetries": 3
-}
-```
-
-**Note**: Multi-turn messages reference the test case ID only; individual turns are fetched from Dataverse.
+**Note**: Multi-turn test cases do NOT use Service Bus queuing. They are executed via Durable Functions orchestration, which receives the same parameters directly from the Orchestrator Function.
 
 ### 3.3 API Integrations
 
 #### 3.3.1 Azure Service Bus Integration
-- Message queuing for test case distribution
-- **Two queues**: `test-case-processing` (single-turn) and `multi-turn-test-case-processing` (multi-turn)
+- Message queuing for single-turn test case distribution only
+- **Single active queue**: `test-case-processing` (single-turn)
 - Dead letter queue handling for failed messages
 - Batch processing capabilities
 - Automatic scaling based on queue depth
 - Managed Identity authentication (no connection strings)
+
+**Note**: The `multi-turn-test-case-processing` queue exists in infrastructure but is unused. Multi-turn execution uses Durable Functions orchestration instead.
 
 #### 3.3.2 Copilot Studio Direct Line API
 - Establish conversation sessions
@@ -548,18 +535,20 @@ You are an AI response evaluator focusing on relevancy. Evaluate whether the age
 ## 11. Deployment Requirements
 
 ### 11.1 Infrastructure
-- **Azure Functions Premium Plan**: For extended execution time and VNET integration
-- **Azure Service Bus Standard**: For high-throughput message processing (2 queues)
-- **Azure Storage**: For function app state and configuration
+- **Azure Functions Premium Plan**: For extended execution time, VNET integration, and Durable Functions support
+- **Azure Service Bus Standard**: For high-throughput single-turn message processing (1 active queue)
+- **Azure Storage**: For function app state, configuration, and Durable Functions orchestration state
 - **Application Insights**: For monitoring and telemetry
 - **Key Vault**: For Dataverse OAuth credentials only
 - **Managed Identity**: System-assigned identity for all Azure service authentication
 - **RBAC Assignments**: Properly scoped role assignments for least privilege access
 - **Azure OpenAI**: GPT-4o deployment with Managed Identity access
 
+**Note**: Infrastructure provisions a `multi-turn-test-case-processing` queue, but it is not actively used. Multi-turn execution uses Durable Functions orchestration.
+
 ### 11.2 Scaling Configuration
-- **Function App**: Auto-scale up to 1000 instances
-- **Service Bus**: Premium tier with auto-scaling enabled
+- **Function App**: Auto-scale up to 1000 instances (single-turn workers) plus unlimited Durable Functions orchestrations
+- **Service Bus**: Standard tier with auto-scaling for single-turn queue only
 - **Connection Pools**: Optimized for high-concurrency scenarios
 - **Resource Limits**: Configured for burst processing capabilities
 
