@@ -44,46 +44,70 @@ flowchart TB
         WORKER["Worker Function<br>ProcessTestCase<br>Single-Turn"]
         MTWORKER["Multi-Turn Worker<br>ProcessMultiTurnCase<br>Sequential Turns"]
     end
-    subgraph subGraph3["Timer Triggered"]
+    subgraph subGraph3["Durable Functions (Alternative)"]
+        DORCH["Durable Orchestrator<br>MultiTurnTestCaseOrchestrator<br>Unlimited Runtime"]
+        ACT1["Activity:<br>GetTestCaseWithTurns"]
+        ACT2["Activity:<br>ExecuteSingleTurn"]
+        ACT3["Activity:<br>CreateAggregateResult"]
+    end
+    subgraph subGraph4["Timer Triggered"]
         MONITOR["Monitor Function<br>TrackProgress<br>Update Status"]
     end
-    subgraph subGraph4["Azure Function App"]
+    subgraph subGraph5["Azure Function App"]
         subGraph1
         subGraph2
         subGraph3
+        subGraph4
     end
-    subgraph subGraph5["Azure Services"]
+    subgraph subGraph6["Azure Services"]
         SBUS["Azure Service Bus<br>2 Queues:<br>- test-case-processing<br>- multi-turn-processing"]
         AOAI["Azure OpenAI<br>GPT-4o Model<br>LLM Judge"]
         KV["Azure Key Vault<br>Secrets Management"]
         AI["Application Insights<br>Logging &amp; Metrics"]
-        STORAGE["Azure Storage<br>Function State"]
+        STORAGE["Azure Storage<br>Function State +<br>Durable State"]
     end
-    subgraph subGraph6["Data Models"]
+    subgraph subGraph7["Data Models"]
         TR["Test Run<br>mcicaps_evaluationruns"]
         TC["Test Case<br>mcicaps_testcases"]
         TURN["Test Case Turn<br>mcicaps_testcaseturn"]
         RES["Evaluation Result<br>mcicaps_evaluationresults"]
+        EVAL["Evaluator Type<br>mcicaps_evaluatortypes"]
+        AGENT["Agent To Eval<br>mcicaps_agenttoevals"]
     end
     USER -- 1: POST /api/orchestrator --> ORCH
     ORCH -- 2: Fetch Test Cases --> DV
     DV -- 3: Test Cases + Turns --> ORCH
-    ORCH -- 4: Queue Messages --> SBUS
+    ORCH -- 4a: Queue Single-Turn --> SBUS
+    ORCH -- 4b: Queue Multi-Turn --> SBUS
+    ORCH -- 4c: Start Durable Orch<br>(Alternative) --> DORCH
     SBUS -- 5a: Single-Turn Messages --> WORKER
     SBUS -- 5b: Multi-Turn Messages --> MTWORKER
+    DORCH -- 5c: Call Activity --> ACT1
+    ACT1 -- Fetch Data --> DV
+    DORCH -- 5d: Call Activity --> ACT2
+    ACT2 -- Execute Turn --> CS
+    ACT2 -- Evaluate --> AOAI
+    DORCH -- 5e: Call Activity --> ACT3
+    ACT3 -- Save Aggregate --> DV
     WORKER -- 6a: Execute Test --> CS
     MTWORKER -- 6b: Execute Turns with Context --> CS
     CS -- 7a: Agent Response --> WORKER
     CS -- 7b: Agent Responses --> MTWORKER
+    CS -- 7c: Turn Responses --> ACT2
     WORKER -- 8a: Evaluate Response --> AOAI
     MTWORKER -- 8b: Evaluate Each Turn --> AOAI
     AOAI -- 9a: Score & Reasoning --> WORKER
     AOAI -- 9b: Scores & Reasoning --> MTWORKER
+    AOAI -- 9c: Turn Scores --> ACT2
     WORKER -- 10a: Save Result --> DV
     MTWORKER -- 10b: Save Turn Results + Aggregate --> DV
     MONITOR -- 11: Check Progress --> DV
     MONITOR -- 12: Update Run Status --> DV
+    DORCH -.-> STORAGE
+    STORAGE -.-> DORCH
     TR -- 1:N --> TC
+    TR -- N:1 --> AGENT
+    TC -- N:1 --> EVAL
     TC -- 1:N --> TURN & RES
     TURN -- 1:N --> RES
     CS:::external
@@ -92,6 +116,10 @@ flowchart TB
     HEALTH:::function
     WORKER:::function
     MTWORKER:::function
+    DORCH:::durable
+    ACT1:::durable
+    ACT2:::durable
+    ACT3:::durable
     MONITOR:::function
     SBUS:::azureService
     AOAI:::azureService
@@ -102,8 +130,11 @@ flowchart TB
     TC:::data
     TURN:::data
     RES:::data
+    EVAL:::data
+    AGENT:::data
     classDef azureService fill:#0078D4,stroke:#004578,stroke-width:2px,color:#fff
     classDef function fill:#7FBA00,stroke:#5A8700,stroke-width:2px,color:#000
+    classDef durable fill:#9B59B6,stroke:#6C3483,stroke-width:2px,color:#fff
     classDef external fill:#F25022,stroke:#A73513,stroke-width:2px,color:#fff
     classDef data fill:#FFB900,stroke:#B38500,stroke-width:2px,color:#000
 ```
@@ -232,6 +263,19 @@ Create & save aggregate result
 - `GetTestCaseWithTurns`: Fetch test case and turns from Dataverse
 - `ExecuteSingleTurn`: Execute one turn with conversation context
 - `CreateAggregateResult`: Generate final multi-turn evaluation result
+
+**When to Use Durable Functions vs Service Bus Worker**:
+
+| Scenario | Use Service Bus Worker | Use Durable Functions |
+|----------|----------------------|---------------------|
+| Conversation Length | 1-5 turns | 10+ turns |
+| Total Execution Time | < 10 minutes | > 10 minutes (hours possible) |
+| Complexity | Standard conversation | Complex branching logic |
+| State Management | Simple (conversationId only) | Complex state tracking |
+| Debugging Needs | Standard logging | Need execution history |
+| Default Choice | ✅ Recommended | Alternative for edge cases |
+
+**Implementation Note**: The Orchestrator Function currently uses the Service Bus approach by default. The Durable Functions code exists as an alternative that can be enabled for specific test cases or scenarios requiring longer execution times.
 
 #### 1.6 Health Check Function
 **Trigger**: HTTP GET  
@@ -539,7 +583,7 @@ sequenceDiagram
     Monitor->>Dataverse: Update Status = Completed<br/>Calculate Metrics
 ```
 
-### Multi-Turn Test Case Execution
+### Multi-Turn Test Case Execution (Service Bus Worker)
 <!-- ![](./images/Multi-TurnTestCaseExecution.png) -->
 ```mermaid
 sequenceDiagram
@@ -584,6 +628,70 @@ sequenceDiagram
     MTWorker->>Dataverse: Save Aggregate Result<br/>(IsAggregate = true)
 ```
 
+### Multi-Turn Test Case Execution (Durable Functions - Alternative)
+<!-- ![](./images/DurableFunctionsMultiTurn.png) -->
+```mermaid
+sequenceDiagram
+    participant Orchestrator
+    participant Dataverse
+    participant DurableClient as Durable Client
+    participant DurableOrch as Durable Orchestrator
+    participant GetTurns as Activity: GetTestCaseWithTurns
+    participant ExecTurn as Activity: ExecuteSingleTurn
+    participant CreateAgg as Activity: CreateAggregateResult
+    participant Storage as Azure Storage
+    participant CopilotStudio
+    participant OpenAI
+
+    Orchestrator->>Dataverse: Fetch Test Cases<br/>(IsMultiTurn = true)
+    Dataverse-->>Orchestrator: Multi-Turn Test Cases
+    Orchestrator->>DurableClient: ScheduleNewOrchestrationInstanceAsync<br/>(MultiTurnTestCaseOrchestrator)
+    
+    Note over DurableOrch: Orchestration Started
+    DurableOrch->>Storage: Save Orchestration State
+    
+    DurableOrch->>GetTurns: CallActivityAsync<br/>(GetTestCaseWithTurns)
+    GetTurns->>Dataverse: Fetch Test Case + Turns
+    Dataverse-->>GetTurns: Test Case with Turns
+    GetTurns-->>DurableOrch: TestCase Object
+    
+    DurableOrch->>Storage: Update State
+    
+    Note over DurableOrch: Loop through each turn
+    
+    loop For each turn (1 to N)
+        DurableOrch->>ExecTurn: CallActivityAsync<br/>(ExecuteSingleTurn, turnInput)
+        ExecTurn->>CopilotStudio: Send Turn Prompt<br/>(with conversationId from Turn 1)
+        CopilotStudio-->>ExecTurn: Agent Response
+        ExecTurn->>OpenAI: Evaluate Turn Response
+        OpenAI-->>ExecTurn: Score + Reasoning
+        ExecTurn->>Dataverse: Save Turn Result
+        ExecTurn-->>DurableOrch: TurnExecutionResult
+        DurableOrch->>Storage: Update State with Turn Result
+        
+        Note over DurableOrch: Optional 2-second delay<br/>between turns
+        DurableOrch->>DurableOrch: CreateTimer (2 seconds)
+    end
+    
+    Note over DurableOrch: All turns completed
+    DurableOrch->>CreateAgg: CallActivityAsync<br/>(CreateAggregateResult)
+    CreateAgg->>CreateAgg: Calculate Pass Rate<br/>& Overall Metrics
+    CreateAgg->>Dataverse: Save Aggregate Result<br/>(IsAggregate = true)
+    CreateAgg-->>DurableOrch: Aggregate Created
+    
+    DurableOrch->>Dataverse: Increment Completed Count
+    DurableOrch->>Storage: Save Final State
+    
+    Note over DurableOrch: Orchestration Complete<br/>(Can run for hours)
+```
+
+**Key Advantages of Durable Functions Approach**:
+- **Unlimited Runtime**: No 5-minute Service Bus message lock limitation
+- **State Management**: Automatic checkpointing and replay
+- **Resilience**: Automatic retries and failure handling
+- **Debugging**: Full execution history in Azure Storage
+- **Long Conversations**: Ideal for 10+ turn conversations
+
 ---
 
 ## Technology Stack
@@ -592,15 +700,16 @@ sequenceDiagram
 - **.NET 8**: Function runtime (isolated process model)
 - **C#**: Primary programming language
 - **Azure Functions v4**: Serverless compute platform
+- **Azure Durable Functions**: Long-running orchestrations and stateful workflows
 
 ### Azure Services
-- **Azure Functions**: Compute (Premium Plan)
-- **Azure Service Bus**: Message queue (Standard tier)
+- **Azure Functions**: Compute (Premium or Consumption Plan)
+- **Azure Service Bus**: Message queues (Standard tier, 2 queues)
 - **Azure OpenAI**: LLM Judge (GPT-4o)
-- **Microsoft Dataverse**: Data storage
-- **Azure Key Vault**: Secrets management
-- **Application Insights**: Monitoring
-- **Azure Storage**: Function state
+- **Microsoft Dataverse**: Data storage and prompt templates
+- **Azure Key Vault**: Secrets management (Dataverse OAuth only)
+- **Application Insights**: Monitoring and telemetry
+- **Azure Storage**: Function state and Durable Functions orchestration state
 
 ### External Integrations
 - **Copilot Studio Direct Line API**: Agent communication
@@ -690,8 +799,8 @@ Only non-Azure services require secrets in Key Vault:
 |--------|--------|--------|
 | Orchestrator Response | < 30 seconds | ~10-15 seconds |
 | Single Test Case | < 5 minutes | ~2-3 minutes |
-| Overall Throughput | 1000+ tests/min | 800-1200 tests/min |
-| Evaluation Run (50K tests) | < 60 minutes | ~45-50 minutes |
+| Overall Throughput | 1000+ tests/min | TBD |
+| Evaluation Run (50K tests) | < 10 hours | TBD |
 
 ### Optimization Strategies
 
@@ -825,10 +934,12 @@ az deployment group create \
 6. **Multi-Region Deployment**: Global load distribution
 
 ### Scalability Improvements
-1. **Azure Durable Functions**: Complex orchestration workflows
-2. **Event Grid Integration**: Event-driven notifications
-3. **Cosmos DB**: High-scale result storage alternative
-4. **Azure Container Apps**: Extreme scale scenarios
+1. **Event Grid Integration**: Event-driven notifications
+2. **Cosmos DB**: High-scale result storage alternative
+3. **Azure Container Apps**: Extreme scale scenarios
+4. **Durable Functions Expansion**: Enhanced orchestration patterns for complex workflows
+
+**Note**: Azure Durable Functions is already implemented for multi-turn conversations as an alternative to Service Bus workers.
 
 ---
 
