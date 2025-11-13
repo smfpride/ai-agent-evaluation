@@ -1,4 +1,5 @@
 using AiAgentEvaluation.Functions;
+using AiAgentEvaluation.Models;
 using AiAgentEvaluation.Services;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
@@ -179,13 +180,13 @@ public class MonitorFunctionTests
             StartTime = DateTime.UtcNow.AddMinutes(-5)
         };
 
-        // Setup actual results (3 completed, 1 failed)
+        // Setup actual results (3 completed, 1 failed) - with StatusCode
         var results = new List<AiAgentEvaluation.Models.EvaluationResult>
         {
-            new() { Id = Guid.NewGuid(), Score = 0.8m, ErrorMessage = null },
-            new() { Id = Guid.NewGuid(), Score = 0.9m, ErrorMessage = null },
-            new() { Id = Guid.NewGuid(), Score = 0.7m, ErrorMessage = null },
-            new() { Id = Guid.NewGuid(), Score = null, ErrorMessage = "Test failed" } // Failed
+            new() { Id = Guid.NewGuid(), Score = 0.8m, ErrorMessage = null, StatusCode = 778760002 }, // Completed
+            new() { Id = Guid.NewGuid(), Score = 0.9m, ErrorMessage = null, StatusCode = 778760002 }, // Completed
+            new() { Id = Guid.NewGuid(), Score = 0.7m, ErrorMessage = null, StatusCode = 778760002 }, // Completed
+            new() { Id = Guid.NewGuid(), Score = null, ErrorMessage = "Test failed", StatusCode = 778760003 } // Errored
         };
 
         _mockDataverseService.Setup(x => x.GetRunningEvaluationRunsAsync(It.IsAny<CancellationToken>()))
@@ -198,9 +199,144 @@ public class MonitorFunctionTests
         // Act
         await _monitorFunction.MonitorEvaluationRuns(timerInfo, CancellationToken.None);
 
-        // Assert - Verify progress updated with actual counts (4 completed, 1 failed)
+        // Assert - Verify progress updated with actual counts (3 completed, 1 failed)
         _mockDataverseService.Verify(x => x.UpdateEvaluationRunProgressAsync(
-            evaluationRunId, 4, 1, It.IsAny<CancellationToken>()), Times.Once);
+            evaluationRunId, 3, 1, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    #endregion
+
+    #region StatusCode Tests (Story 08)
+
+    [Fact]
+    public async Task MonitorEvaluationRuns_OnlyCountsCompletedStatusAsCompleted()
+    {
+        // Arrange
+        var evaluationRunId = Guid.NewGuid();
+        var evaluationRun = new AiAgentEvaluation.Models.EvaluationRun
+        {
+            Id = evaluationRunId,
+            Name = "Test Run",
+            StatusCode = EvaluationRunStatus.Running,
+            TotalTestCases = 5,
+            CompletedTestCases = 0,
+            FailedTestCases = 0,
+            StartTime = DateTime.UtcNow.AddMinutes(-10)
+        };
+
+        var results = new List<AiAgentEvaluation.Models.EvaluationResult>
+        {
+            new() { Id = Guid.NewGuid(), TestCaseId = Guid.NewGuid(), IsAggregate = false, StatusCode = 778760002 },  // Completed
+            new() { Id = Guid.NewGuid(), TestCaseId = Guid.NewGuid(), IsAggregate = false, StatusCode = 778760002 },  // Completed
+            new() { Id = Guid.NewGuid(), TestCaseId = Guid.NewGuid(), IsAggregate = false, StatusCode = 1 },          // Pending
+            new() { Id = Guid.NewGuid(), TestCaseId = Guid.NewGuid(), IsAggregate = false, StatusCode = 778760003 },  // Errored
+            new() { Id = Guid.NewGuid(), TestCaseId = Guid.NewGuid(), IsAggregate = true, StatusCode = 1 }            // Pending aggregate
+        };
+
+        _mockDataverseService.Setup(x => x.GetRunningEvaluationRunsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<AiAgentEvaluation.Models.EvaluationRun> { evaluationRun });
+        _mockDataverseService.Setup(x => x.GetEvaluationResultsAsync(evaluationRunId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(results);
+
+        var timerInfo = CreateTimerInfo(isPastDue: false);
+
+        // Act
+        await _monitorFunction.MonitorEvaluationRuns(timerInfo, CancellationToken.None);
+
+        // Assert - Should count only 2 completed (StatusCode=778760002) and 1 failed (StatusCode=778760003)
+        _mockDataverseService.Verify(x => x.UpdateEvaluationRunProgressAsync(
+            evaluationRunId, 2, 1, It.IsAny<CancellationToken>()), Times.Once);
+        
+        // Should NOT mark as completed since only 3 of 5 are done
+        _mockDataverseService.Verify(x => x.UpdateEvaluationRunCompletionAsync(
+            It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<decimal?>(), 
+            It.IsAny<bool?>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task MonitorEvaluationRuns_CompletesWhenAllResultsAreCompletedOrErrored()
+    {
+        // Arrange
+        var evaluationRunId = Guid.NewGuid();
+        var evaluationRun = new AiAgentEvaluation.Models.EvaluationRun
+        {
+            Id = evaluationRunId,
+            Name = "Test Run",
+            StatusCode = EvaluationRunStatus.Running,
+            TotalTestCases = 3,
+            CompletedTestCases = 0,
+            FailedTestCases = 0,
+            StartTime = DateTime.UtcNow.AddMinutes(-10)
+        };
+
+        var results = new List<AiAgentEvaluation.Models.EvaluationResult>
+        {
+            new() { Id = Guid.NewGuid(), TestCaseId = Guid.NewGuid(), IsAggregate = false, StatusCode = 778760002, Score = 0.8m },  // Completed
+            new() { Id = Guid.NewGuid(), TestCaseId = Guid.NewGuid(), IsAggregate = false, StatusCode = 778760002, Score = 0.9m },  // Completed
+            new() { Id = Guid.NewGuid(), TestCaseId = Guid.NewGuid(), IsAggregate = false, StatusCode = 778760003, ErrorMessage = "Error" }  // Errored
+        };
+
+        _mockDataverseService.Setup(x => x.GetRunningEvaluationRunsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<AiAgentEvaluation.Models.EvaluationRun> { evaluationRun });
+        _mockDataverseService.Setup(x => x.GetEvaluationResultsAsync(evaluationRunId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(results);
+
+        var timerInfo = CreateTimerInfo(isPastDue: false);
+
+        // Act
+        await _monitorFunction.MonitorEvaluationRuns(timerInfo, CancellationToken.None);
+
+        // Assert - Should mark as completed since all 3 are done (2 completed + 1 failed)
+        _mockDataverseService.Verify(x => x.UpdateEvaluationRunCompletionAsync(
+            evaluationRunId, 
+            EvaluationRunStatus.Completed, 
+            It.IsAny<decimal?>(), 
+            It.IsAny<bool?>(), 
+            It.IsAny<DateTime>(), 
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task MonitorEvaluationRuns_DoesNotCountPendingResultsAsCompleted()
+    {
+        // Arrange
+        var evaluationRunId = Guid.NewGuid();
+        var evaluationRun = new AiAgentEvaluation.Models.EvaluationRun
+        {
+            Id = evaluationRunId,
+            Name = "Test Run",
+            StatusCode = EvaluationRunStatus.Running,
+            TotalTestCases = 2,
+            CompletedTestCases = 0,
+            FailedTestCases = 0,
+            StartTime = DateTime.UtcNow.AddMinutes(-5)
+        };
+
+        // One completed, one pending
+        var results = new List<AiAgentEvaluation.Models.EvaluationResult>
+        {
+            new() { Id = Guid.NewGuid(), TestCaseId = Guid.NewGuid(), IsAggregate = true, StatusCode = 778760002, Score = 0.75m },  // Completed
+            new() { Id = Guid.NewGuid(), TestCaseId = Guid.NewGuid(), IsAggregate = true, StatusCode = 1 }  // Pending
+        };
+
+        _mockDataverseService.Setup(x => x.GetRunningEvaluationRunsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<AiAgentEvaluation.Models.EvaluationRun> { evaluationRun });
+        _mockDataverseService.Setup(x => x.GetEvaluationResultsAsync(evaluationRunId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(results);
+
+        var timerInfo = CreateTimerInfo(isPastDue: false);
+
+        // Act
+        await _monitorFunction.MonitorEvaluationRuns(timerInfo, CancellationToken.None);
+
+        // Assert - Should only count 1 as completed, 0 as failed
+        _mockDataverseService.Verify(x => x.UpdateEvaluationRunProgressAsync(
+            evaluationRunId, 1, 0, It.IsAny<CancellationToken>()), Times.Once);
+        
+        // Should NOT complete the run
+        _mockDataverseService.Verify(x => x.UpdateEvaluationRunCompletionAsync(
+            It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<decimal?>(), 
+            It.IsAny<bool?>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     #endregion

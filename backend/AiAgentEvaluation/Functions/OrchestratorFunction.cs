@@ -150,17 +150,48 @@ public class OrchestratorFunction
             {
                 foreach (var testCase in multiTurnTestCases)
                 {
+                    // Check if orchestration already started (idempotency)
+                    var existingResult = await _dataverseService.GetAggregateResultForTestCaseAsync(
+                        request.EvaluationRunId, testCase.Id, cancellationToken);
+                    
+                    if (existingResult != null && 
+                        existingResult.StatusCode != 778760003) // Not errored
+                    {
+                        _logger.LogInformation(
+                            "Test case {TestCaseId} already has aggregate result {ResultId} with status {Status}, skipping",
+                            testCase.Id, existingResult.Id, existingResult.StatusCode);
+                        continue; // Idempotent - don't start duplicate
+                    }
+                    
+                    // Generate unique instance ID
+                    string instanceId = Guid.NewGuid().ToString();
+                    
+                    // Create placeholder aggregate result with Pending status
+                    var placeholderRequest = new CreateEvaluationResultRequest
+                    {
+                        EvaluationRunId = request.EvaluationRunId,
+                        TestCaseId = testCase.Id,
+                        IsAggregate = true,
+                        StatusCode = 1, // Pending
+                        // No score, no response yet
+                    };
+                    
+                    var resultId = await _dataverseService.CreateEvaluationResultAsync(
+                        placeholderRequest, cancellationToken);
+                    
+                    _logger.LogInformation(
+                        "Created placeholder aggregate result {ResultId} for test case {TestCaseId}",
+                        resultId, testCase.Id);
+                    
                     var orchestratorInput = new MultiTurnOrchestratorInput
                     {
                         TestCaseId = testCase.Id,
                         TestRunId = request.EvaluationRunId,
                         DirectLineUrl = directLineUrl,
                         EvaluatorTypeId = testCase.EvaluatorTypeId,
-                        PassingThreshold = passingThreshold
+                        PassingThreshold = passingThreshold,
+                        AggregateResultId = resultId // Track which result to update
                     };
-
-                    // Use test case ID as instance ID for idempotency and tracking
-                    string instanceId = $"multiturn-{testCase.Id}";
                     
                     try
                     {
@@ -172,8 +203,8 @@ public class OrchestratorFunction
                                 InstanceId = instanceId 
                             });
 
-                        _logger.LogInformation("Started Durable Functions orchestration {InstanceId} for test case {TestCaseId}",
-                            instanceId, testCase.Id);
+                        _logger.LogInformation("Started Durable Functions orchestration {InstanceId} for test case {TestCaseId} with aggregate result {ResultId}",
+                            instanceId, testCase.Id, resultId);
                     }
                     catch (Exception ex)
                     {

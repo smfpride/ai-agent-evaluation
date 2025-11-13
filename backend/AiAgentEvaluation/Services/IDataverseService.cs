@@ -26,4 +26,26 @@ public interface IDataverseService
     Task<bool> CheckHealthAsync(CancellationToken cancellationToken = default);
     Task<List<TestCaseTurn>> GetTestCaseTurnsAsync(Guid testCaseId, CancellationToken cancellationToken = default);
     Task<Guid> CreateAggregateEvaluationResultAsync(MultiTurnExecutionContext context, CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Gets the aggregate result for a test case in an evaluation run
+    /// Used to check if orchestration already started (idempotency)
+    /// </summary>
+    Task<EvaluationResult?> GetAggregateResultForTestCaseAsync(
+        Guid evaluationRunId, 
+        Guid testCaseId, 
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Updates an existing aggregate result with final scores and status
+    /// Used by CreateAggregateResult activity to update placeholder
+    /// </summary>
+    Task UpdateAggregateResultAsync(
+        Guid resultId,
+        decimal score,
+        bool passed,
+        string reasoning,
+        int executionTimeMs,
+        int statusCode,
+        CancellationToken cancellationToken = default);
 }

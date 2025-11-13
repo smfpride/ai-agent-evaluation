@@ -90,7 +90,8 @@ public class MultiTurnDurableOrchestrator
         var executionContext = new MultiTurnExecutionContext
         {
             TestRunId = input.TestRunId,
-            PassingThreshold = input.PassingThreshold
+            PassingThreshold = input.PassingThreshold,
+            AggregateResultId = input.AggregateResultId
         };
 
         try

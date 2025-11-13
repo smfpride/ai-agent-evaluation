@@ -36,6 +36,11 @@ public class MultiTurnExecutionContext
     public decimal PassingThreshold { get; set; }
 
     /// <summary>
+    /// ID of the placeholder aggregate result to update upon completion
+    /// </summary>
+    public Guid AggregateResultId { get; set; }
+
+    /// <summary>
     /// Total number of turns
     /// </summary>
     public int TotalTurns => Turns.Count;

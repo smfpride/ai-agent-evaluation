@@ -25,6 +25,12 @@ public class MultiTurnOrchestratorInput
 
     [JsonPropertyName("passingThreshold")]
     public decimal PassingThreshold { get; set; } = 0.7m;
+
+    /// <summary>
+    /// ID of the placeholder aggregate result to update upon completion
+    /// </summary>
+    [JsonPropertyName("aggregateResultId")]
+    public Guid AggregateResultId { get; set; }
 }
 
 /// <summary>

@@ -601,6 +601,87 @@ public class WorkerFunctionTests
 
     #endregion
 
+    #region StatusCode Tests (Story 08)
+
+    [Fact]
+    public async Task ProcessTestCase_Success_SetsStatusCodeToCompleted()
+    {
+        // Arrange
+        var message = CreateTestMessage();
+        
+        var copilotResponse = new CopilotDirectLineResponse
+        {
+            Success = true,
+            Response = "Test response",
+            ConversationId = "conv-123",
+            ExecutionTimeMs = 1000
+        };
+
+        var judgeResponse = new LLMJudgeResponse
+        {
+            Success = true,
+            Score = 0.85m,
+            Reasoning = "Good match",
+            ExecutionTimeMs = 500
+        };
+
+        SetupSuccessfulTestCaseProcessing(message, copilotResponse, judgeResponse);
+
+        var messageBody = System.Text.Json.JsonSerializer.Serialize(message);
+
+        // Act
+        await _workerFunction.ProcessTestCase(messageBody, CancellationToken.None);
+
+        // Assert
+        _mockDataverseService.Verify(x => x.CreateEvaluationResultAsync(
+            It.Is<CreateEvaluationResultRequest>(r => 
+                r.StatusCode == 778760002),  // Completed
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ProcessTestCase_CopilotFails_SetsStatusCodeToErrored()
+    {
+        // Arrange
+        var message = CreateTestMessage();
+        message.RetryCount = 3; // At max retries
+        message.MaxRetries = 3;
+        
+        var copilotResponse = new CopilotDirectLineResponse
+        {
+            Success = false,
+            ErrorMessage = "Copilot service unavailable",
+            ExecutionTimeMs = 500
+        };
+
+        _mockCopilotStudioService.Setup(x => x.SendMessageAsync(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), 
+            It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(copilotResponse);
+        
+        _mockDataverseService.Setup(x => x.CreateEvaluationResultAsync(
+            It.IsAny<CreateEvaluationResultRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Guid.NewGuid());
+        
+        _mockDataverseService.Setup(x => x.IncrementCompletedTestCasesAsync(
+            It.IsAny<Guid>(), true, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var messageBody = System.Text.Json.JsonSerializer.Serialize(message);
+
+        // Act
+        await _workerFunction.ProcessTestCase(messageBody, CancellationToken.None);
+
+        // Assert
+        _mockDataverseService.Verify(x => x.CreateEvaluationResultAsync(
+            It.Is<CreateEvaluationResultRequest>(r => 
+                r.StatusCode == 778760003 &&  // Errored
+                r.ErrorMessage != null),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    #endregion
+
     #region Helper Methods
 
     private ProcessTestCaseMessage CreateTestMessage()

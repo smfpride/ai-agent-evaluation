@@ -121,8 +121,15 @@ HTTP Trigger → Orchestrator Function → Service Bus Queue → Worker Function
 
 #### 3.2.2 Output Tables
 - **mcicaps_evaluationresults**: Individual test results
-  - Key Fields: `mcicaps_actualresponse`, `mcicaps_score`, `mcicaps_passed`, `mcicaps_evaluation`, `mcicaps_reasoning`, `mcicaps_testcase`, `mcicaps_testcaseturnid` (for multi-turn results), `mcicaps_conversationid`, `mcicaps_responsetimems`, `mcicaps_isaggregate` (for multi-turn aggregate results), `mcicaps_errormessage`
+  - Primary Key: `mcicaps_evaluationresultsid` (auto-generated GUID)
+  - Key Fields: `mcicaps_actualresponse`, `mcicaps_score`, `mcicaps_passed`, `mcicaps_evaluation`, `mcicaps_reasoning`, `mcicaps_testcase`, `mcicaps_testcaseturnid` (for multi-turn results), `mcicaps_conversationid`, `mcicaps_responsetimems`, `mcicaps_isaggregate` (for multi-turn aggregate results), `mcicaps_errormessage`, `statuscode`
   - Multi-Turn Support: Individual turn results linked via `mcicaps_testcaseturnid`, aggregate results marked with `mcicaps_isaggregate = true`
+  - **Status Code Lifecycle Management** (as of Story 08):
+    - `1` (Pending): Placeholder result created, execution not started (multi-turn orchestrations only)
+    - `778760001` (Running): Reserved for future use (execution in progress tracking)
+    - `778760002` (Completed): Execution completed successfully with score
+    - `778760003` (Errored): Execution completed with error
+  - **Orchestration Idempotency**: The auto-generated `mcicaps_evaluationresultsid` serves as the orchestration tracker for multi-turn tests. Placeholder aggregate results are created with `statuscode = 1` before orchestration starts, then updated to `778760002` or `778760003` upon completion. This prevents duplicate orchestrations and enables Monitor function to count only truly completed results.
 
 #### 3.2.3 Message Queue Schema
 

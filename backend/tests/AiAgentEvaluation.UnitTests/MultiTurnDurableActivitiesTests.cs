@@ -475,12 +475,14 @@ public class MultiTurnDurableActivitiesTests
         // Arrange
         var testRunId = Guid.NewGuid();
         var testCaseId = Guid.NewGuid();
+        var aggregateResultId = Guid.NewGuid();
 
         var context = new MultiTurnExecutionContext
         {
             TestRunId = testRunId,
             PassingThreshold = 0.7m,
             ConversationId = "conv-123",
+            AggregateResultId = aggregateResultId,
             TestCase = new TestCase
             {
                 Id = testCaseId,
@@ -505,10 +507,15 @@ public class MultiTurnDurableActivitiesTests
         };
 
         _mockDataverseService
-            .Setup(x => x.CreateEvaluationResultAsync(
-                It.IsAny<CreateEvaluationResultRequest>(),
+            .Setup(x => x.UpdateAggregateResultAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<decimal>(),
+                It.IsAny<bool>(),
+                It.IsAny<string>(),
+                It.IsAny<int>(),
+                It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Guid.NewGuid());
+            .Returns(Task.CompletedTask);
 
         _mockDataverseService
             .Setup(x => x.IncrementCompletedTestCasesAsync(
@@ -522,15 +529,13 @@ public class MultiTurnDurableActivitiesTests
 
         // Assert
         _mockDataverseService.Verify(
-            x => x.CreateEvaluationResultAsync(
-                It.Is<CreateEvaluationResultRequest>(r =>
-                    r.EvaluationRunId == testRunId &&
-                    r.TestCaseId == testCaseId &&
-                    r.ConversationId == "conv-123" &&
-                    r.Passed == true && // Should pass (100% pass rate >= 0.7 threshold)
-                    r.IsAggregate == true &&
-                    r.ExecutionTimeMs == 2200 && // Sum of turn times
-                    r.Score == 0.875m), // Average score
+            x => x.UpdateAggregateResultAsync(
+                aggregateResultId,
+                0.875m, // Average score
+                true, // Should pass (100% pass rate >= 0.7 threshold)
+                It.IsAny<string>(), // Reasoning
+                2200, // Sum of turn times
+                778760002, // StatusCode = Completed
                 It.IsAny<CancellationToken>()),
             Times.Once);
 
@@ -548,12 +553,14 @@ public class MultiTurnDurableActivitiesTests
         // Arrange
         var testRunId = Guid.NewGuid();
         var testCaseId = Guid.NewGuid();
+        var aggregateResultId = Guid.NewGuid();
 
         var context = new MultiTurnExecutionContext
         {
             TestRunId = testRunId,
             PassingThreshold = 0.7m,
             ConversationId = "conv-456",
+            AggregateResultId = aggregateResultId,
             TestCase = new TestCase
             {
                 Id = testCaseId,
@@ -580,10 +587,15 @@ public class MultiTurnDurableActivitiesTests
         };
 
         _mockDataverseService
-            .Setup(x => x.CreateEvaluationResultAsync(
-                It.IsAny<CreateEvaluationResultRequest>(),
+            .Setup(x => x.UpdateAggregateResultAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<decimal>(),
+                It.IsAny<bool>(),
+                It.IsAny<string>(),
+                It.IsAny<int>(),
+                It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Guid.NewGuid());
+            .Returns(Task.CompletedTask);
 
         _mockDataverseService
             .Setup(x => x.IncrementCompletedTestCasesAsync(
@@ -597,13 +609,13 @@ public class MultiTurnDurableActivitiesTests
 
         // Assert - Pass rate is 66.67% (2/3) which is < 0.7 threshold
         _mockDataverseService.Verify(
-            x => x.CreateEvaluationResultAsync(
-                It.Is<CreateEvaluationResultRequest>(r =>
-                    r.TestCaseId == testCaseId &&
-                    r.Passed == false && // Should fail (66.67% < 0.7 threshold)
-                    r.IsAggregate == true &&
-                    r.ExecutionTimeMs == 3300 && // Sum of all turn times
-                    r.Score.HasValue && Math.Abs((double)(r.Score.Value - 0.733m)) < 0.01), // Average score ~0.733
+            x => x.UpdateAggregateResultAsync(
+                aggregateResultId,
+                It.Is<decimal>(s => Math.Abs((double)(s - 0.733m)) < 0.01), // Average score ~0.733
+                false, // Should fail (66.67% < 0.7 threshold)
+                It.IsAny<string>(), // Reasoning
+                3300, // Sum of all turn times
+                778760002, // StatusCode = Completed (even for failed tests that complete successfully)
                 It.IsAny<CancellationToken>()),
             Times.Once);
 
@@ -619,10 +631,12 @@ public class MultiTurnDurableActivitiesTests
     public async Task CreateAggregateResult_DataverseFailure_PropagatesException()
     {
         // Arrange
+        var aggregateResultId = Guid.NewGuid();
         var context = new MultiTurnExecutionContext
         {
             TestRunId = Guid.NewGuid(),
             PassingThreshold = 0.7m,
+            AggregateResultId = aggregateResultId,
             TestCase = new TestCase { Id = Guid.NewGuid() },
             Turns = new List<TestCaseTurn> { new TestCaseTurn { Sequence = 1 } },
             TurnResults = new Dictionary<int, EvaluationResult>
@@ -638,8 +652,13 @@ public class MultiTurnDurableActivitiesTests
         };
 
         _mockDataverseService
-            .Setup(x => x.CreateEvaluationResultAsync(
-                It.IsAny<CreateEvaluationResultRequest>(),
+            .Setup(x => x.UpdateAggregateResultAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<decimal>(),
+                It.IsAny<bool>(),
+                It.IsAny<string>(),
+                It.IsAny<int>(),
+                It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
             .ThrowsAsync(new Exception("Dataverse error"));
 

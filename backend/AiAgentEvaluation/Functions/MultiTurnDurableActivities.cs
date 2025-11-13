@@ -141,7 +141,8 @@ public class MultiTurnDurableActivities
                 Passed = judgeResponse.Score >= input.PassingThreshold,
                 Reasoning = judgeResponse.Reasoning,
                 ExecutionTimeMs = (int)stopwatch.ElapsedMilliseconds,
-                IsAggregate = false
+                IsAggregate = false,
+                StatusCode = 778760002  // Completed
             };
 
             var resultId = await _dataverseService.CreateEvaluationResultAsync(createResultRequest, cancellationToken);
@@ -171,7 +172,7 @@ public class MultiTurnDurableActivities
     }
 
     /// <summary>
-    /// Creates an aggregate result for the entire multi-turn test case
+    /// Updates the aggregate result placeholder for the entire multi-turn test case
     /// </summary>
     [Function("CreateAggregateResult")]
     public async Task CreateAggregateResult(
@@ -180,32 +181,35 @@ public class MultiTurnDurableActivities
     {
         var context = input.Context;
         
-        _logger.LogInformation("Creating aggregate result for test case {TestCaseId} - Pass Rate: {PassRate:P0}",
-            context.TestCase.Id, context.PassRate);
+        _logger.LogInformation("Updating aggregate result {AggregateResultId} for test case {TestCaseId} - Pass Rate: {PassRate:P0}",
+            context.AggregateResultId, context.TestCase.Id, context.PassRate);
 
         try
         {
             // Calculate aggregate metrics
             var totalExecutionTime = context.TurnResults.Values.Sum(r => r.ExecutionTimeMs ?? 0);
             var averageScore = context.TurnResults.Values.Any()
-                ? context.TurnResults.Values.Average(r => (double)(r.Score ?? 0))
-                : 0.0;
+                ? (decimal)context.TurnResults.Values.Average(r => (double)(r.Score ?? 0))
+                : 0m;
             var overallPassed = context.PassRate >= (double)context.PassingThreshold;
 
-            // Create aggregate result
-            var aggregateRequest = new CreateEvaluationResultRequest
-            {
-                EvaluationRunId = input.TestRunId,
-                TestCaseId = context.TestCase.Id,
-                ConversationId = context.ConversationId,
-                Score = (decimal)averageScore,
-                Passed = overallPassed,
-                Reasoning = $"Multi-turn test case: {context.PassedTurns}/{context.TotalTurns} turns passed ({context.PassRate:P0})",
-                ExecutionTimeMs = totalExecutionTime,
-                IsAggregate = true
-            };
+            // Create reasoning summary
+            var reasoning = $"Multi-turn test case: {context.PassedTurns}/{context.TotalTurns} turns passed ({context.PassRate:P0})";
 
-            await _dataverseService.CreateEvaluationResultAsync(aggregateRequest, cancellationToken);
+            // All successfully completed tests get StatusCode = 778760002 (Completed)
+            // The Passed field indicates whether it met the threshold
+            // StatusCode = 778760003 (Errored) is only for execution failures/exceptions
+            var statusCode = 778760002;  // Completed
+
+            // Update the placeholder aggregate result
+            await _dataverseService.UpdateAggregateResultAsync(
+                context.AggregateResultId,
+                averageScore,
+                overallPassed,
+                reasoning,
+                totalExecutionTime,
+                statusCode,
+                cancellationToken);
 
             // Increment completed test cases counter
             await _dataverseService.IncrementCompletedTestCasesAsync(
@@ -213,11 +217,13 @@ public class MultiTurnDurableActivities
                 failed: !overallPassed,
                 cancellationToken);
 
-            _logger.LogInformation("Aggregate result created for test case {TestCaseId}", context.TestCase.Id);
+            _logger.LogInformation("Aggregate result {AggregateResultId} updated for test case {TestCaseId}", 
+                context.AggregateResultId, context.TestCase.Id);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error creating aggregate result for test case {TestCaseId}", context.TestCase.Id);
+            _logger.LogError(ex, "Error updating aggregate result {AggregateResultId} for test case {TestCaseId}", 
+                context.AggregateResultId, context.TestCase.Id);
             throw;
         }
     }

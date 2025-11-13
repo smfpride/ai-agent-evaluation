@@ -108,4 +108,9 @@ public class CreateEvaluationResultRequest
     public string? ErrorMessage { get; set; }
 
     public string? Metadata { get; set; }
+
+    /// <summary>
+    /// StatusCode for tracking result lifecycle: 1=Pending, 778760002=Completed, 778760003=Errored
+    /// </summary>
+    public int? StatusCode { get; set; }
 }

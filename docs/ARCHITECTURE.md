@@ -430,7 +430,7 @@ Relationship: N:1 with mcicaps_testcases (cascade delete)
 ##### 4.6 mcicaps_evaluationresults (Evaluation Result)
 **Purpose**: Individual test execution results
 ```
-Primary Key: mcicaps_evaluationresultsid (GUID)
+Primary Key: mcicaps_evaluationresultsid (GUID, auto-generated)
 Fields:
   - mcicaps_testcase (Lookup): Test case reference
   - mcicaps_testcaseturnid (Lookup): Specific turn (multi-turn only)
@@ -444,7 +444,19 @@ Fields:
   - mcicaps_isaggregate (Boolean): Aggregate result flag
   - mcicaps_responsetimems (Integer): Response time
   - mcicaps_errormessage (Text): Error details if failed
+  - statuscode (Choice/OptionSet): Result lifecycle status
+    - 1: Pending (placeholder created, not started)
+    - 778760001: Running (reserved for future use)
+    - 778760002: Completed (successfully finished with score)
+    - 778760003: Errored (finished with error)
 ```
+
+**Orchestration Idempotency Pattern** (Story 08):
+- **Multi-Turn:** Before starting Durable Functions orchestration, create placeholder aggregate result with `statuscode = 1` (Pending)
+- **Tracking:** The auto-generated `mcicaps_evaluationresultsid` serves as the orchestration tracker
+- **Idempotency:** Query for existing aggregate result before orchestration start prevents duplicates
+- **Completion:** Orchestration updates placeholder result to `statuscode = 778760002` or `778760003` with final scores
+- **Monitor:** Only counts results with `statuscode = 778760002` as completed, preventing premature run completion
 
 #### Data Relationships
 ```

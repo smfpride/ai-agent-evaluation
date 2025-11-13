@@ -500,6 +500,10 @@ public class DataverseService : IDataverseService, IDisposable
             if (!string.IsNullOrEmpty(request.Metadata))
                 resultEntity["mcicaps_metadata"] = request.Metadata;
 
+            // Set StatusCode if provided (for lifecycle tracking)
+            if (request.StatusCode.HasValue)
+                resultEntity["statuscode"] = new OptionSetValue(request.StatusCode.Value);
+
             var resultId = await Task.Run(() => _serviceClient.Create(resultEntity), ct);
             
             _logger.LogInformation("Successfully created evaluation result {ResultId} for test case {TestCaseId}", 
@@ -1118,6 +1122,117 @@ public class DataverseService : IDataverseService, IDisposable
             
             return resultId;
         }, "CreateAggregateEvaluationResult",
+        exception => exception is FaultException<OrganizationServiceFault>,
+        cancellationToken);
+    }
+
+    public async Task<EvaluationResult?> GetAggregateResultForTestCaseAsync(
+        Guid evaluationRunId, 
+        Guid testCaseId, 
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Getting aggregate result for test case {TestCaseId} in evaluation run {EvaluationRunId}", 
+            testCaseId, evaluationRunId);
+        
+        if (_serviceClient == null || !_serviceClient.IsReady)
+        {
+            throw new InvalidOperationException("Dataverse service client is not ready");
+        }
+
+        return await _resilientService.ExecuteAsync(async ct =>
+        {
+            var query = new QueryExpression("mcicaps_evaluationresults")
+            {
+                ColumnSet = new ColumnSet(
+                    "mcicaps_evaluationresultsid",
+                    "mcicaps_evaluationresultname",
+                    "mcicaps_evaluation",
+                    "mcicaps_testcase",
+                    "mcicaps_isaggregate",
+                    "mcicaps_score",
+                    "mcicaps_passed",
+                    "statuscode",
+                    "statecode",
+                    "createdon"
+                ),
+                Criteria = new FilterExpression
+                {
+                    Conditions =
+                    {
+                        new ConditionExpression("mcicaps_evaluation", ConditionOperator.Equal, evaluationRunId),
+                        new ConditionExpression("mcicaps_testcase", ConditionOperator.Equal, testCaseId),
+                        new ConditionExpression("mcicaps_isaggregate", ConditionOperator.Equal, true)
+                    }
+                },
+                TopCount = 1
+            };
+
+            var result = await Task.Run(() => _serviceClient.RetrieveMultiple(query), ct);
+            
+            if (result.Entities.Count == 0)
+            {
+                _logger.LogInformation("No aggregate result found for test case {TestCaseId} in evaluation run {EvaluationRunId}", 
+                    testCaseId, evaluationRunId);
+                return null;
+            }
+
+            var entity = result.Entities[0];
+            
+            var evaluationResult = new EvaluationResult
+            {
+                Id = entity.Id,
+                Name = entity.GetAttributeValue<string>("mcicaps_evaluationresultname") ?? string.Empty,
+                EvaluationRunId = entity.GetAttributeValue<EntityReference>("mcicaps_evaluation")?.Id ?? Guid.Empty,
+                TestCaseId = entity.GetAttributeValue<EntityReference>("mcicaps_testcase")?.Id ?? Guid.Empty,
+                IsAggregate = entity.GetAttributeValue<bool>("mcicaps_isaggregate"),
+                Score = GetDecimalValue(entity, "mcicaps_score"),
+                Passed = entity.GetAttributeValue<bool?>("mcicaps_passed"),
+                StateCode = GetIntValue(entity, "statecode"),
+                StatusCode = entity.GetAttributeValue<OptionSetValue>("statuscode")?.Value ?? 1,
+                CreatedOn = entity.GetAttributeValue<DateTime>("createdon")
+            };
+            
+            _logger.LogInformation("Found aggregate result {ResultId} with StatusCode {StatusCode} for test case {TestCaseId}", 
+                evaluationResult.Id, evaluationResult.StatusCode, testCaseId);
+            
+            return evaluationResult;
+        }, "GetAggregateResultForTestCase",
+        exception => exception is FaultException<OrganizationServiceFault>,
+        cancellationToken);
+    }
+
+    public async Task UpdateAggregateResultAsync(
+        Guid resultId,
+        decimal score,
+        bool passed,
+        string reasoning,
+        int executionTimeMs,
+        int statusCode,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Updating aggregate result {ResultId} with score={Score}, passed={Passed}, statusCode={StatusCode}", 
+            resultId, score, passed, statusCode);
+        
+        if (_serviceClient == null || !_serviceClient.IsReady)
+        {
+            throw new InvalidOperationException("Dataverse service client is not ready");
+        }
+
+        await _resilientService.ExecuteAsync(async ct =>
+        {
+            var updateEntity = new Entity("mcicaps_evaluationresults", resultId);
+            
+            // Convert decimal to double for Float field in Dataverse
+            updateEntity["mcicaps_score"] = Convert.ToDouble(score);
+            updateEntity["mcicaps_passed"] = passed;
+            updateEntity["mcicaps_reasoning"] = reasoning;
+            updateEntity["mcicaps_executiontime"] = executionTimeMs;
+            updateEntity["statuscode"] = new OptionSetValue(statusCode);
+
+            await Task.Run(() => _serviceClient.Update(updateEntity), ct);
+            
+            _logger.LogInformation("Successfully updated aggregate result {ResultId}", resultId);
+        }, "UpdateAggregateResult",
         exception => exception is FaultException<OrganizationServiceFault>,
         cancellationToken);
     }

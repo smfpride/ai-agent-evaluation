@@ -128,7 +128,8 @@ public class WorkerFunction
                 Reasoning = judgeResponse.Reasoning,
                 ConversationId = copilotResponse.ConversationId,
                 ExecutionTimeMs = (int)stopwatch.ElapsedMilliseconds,
-                Metadata = copilotResponse.RawActivityJson  // Store raw Direct Line activity for debugging
+                Metadata = copilotResponse.RawActivityJson,  // Store raw Direct Line activity for debugging
+                StatusCode = 778760002  // Completed
             };
             
             _logger.LogInformation("WorkerFunction - Score before passing to Dataverse: {Score} (type: {ScoreType})", 
@@ -201,7 +202,8 @@ public class WorkerFunction
                 TestCaseId = message.TestCaseId,
                 Score = null,
                 ErrorMessage = errorMessage,
-                ExecutionTimeMs = (int)stopwatch.ElapsedMilliseconds
+                ExecutionTimeMs = (int)stopwatch.ElapsedMilliseconds,
+                StatusCode = 778760003  // Errored
             };
 
             await _dataverseService.CreateEvaluationResultAsync(createResultRequest, cancellationToken);
