@@ -20,7 +20,7 @@ public class LLMJudgeService : ILLMJudgeService, IDisposable
     private readonly ILogger<LLMJudgeService> _logger;
     private readonly AppSettings _settings;
     private readonly IDataverseService _dataverseService;
-    private readonly ChatClient _chatClient;
+    private readonly AzureOpenAIClient _openAIClient;
     private readonly JsonSerializerOptions _jsonOptions;
     private readonly ResilientService _resilientService;
     private bool _disposed;
@@ -44,8 +44,7 @@ public class LLMJudgeService : ILLMJudgeService, IDisposable
         if (!string.IsNullOrEmpty(_settings.AzureOpenAI.Endpoint))
         {
             var credential = new DefaultAzureCredential();
-            var openAIClient = new AzureOpenAIClient(new Uri(_settings.AzureOpenAI.Endpoint), credential);
-            _chatClient = openAIClient.GetChatClient(_settings.AzureOpenAI.DeploymentName);
+            _openAIClient = new AzureOpenAIClient(new Uri(_settings.AzureOpenAI.Endpoint), credential);
             
             _logger.LogInformation("Initialized Azure OpenAI client with managed identity for endpoint {Endpoint}", 
                 _settings.AzureOpenAI.Endpoint);
@@ -53,8 +52,7 @@ public class LLMJudgeService : ILLMJudgeService, IDisposable
         else if (!string.IsNullOrEmpty(_settings.AzureOpenAI.ApiKey))
         {
             // Fallback to API key for local development
-            var openAIClient = new AzureOpenAIClient(new Uri(_settings.AzureOpenAI.Endpoint), new AzureKeyCredential(_settings.AzureOpenAI.ApiKey));
-            _chatClient = openAIClient.GetChatClient(_settings.AzureOpenAI.DeploymentName);
+            _openAIClient = new AzureOpenAIClient(new Uri(_settings.AzureOpenAI.Endpoint), new AzureKeyCredential(_settings.AzureOpenAI.ApiKey));
             
             _logger.LogWarning("Using API key for Azure OpenAI - this should only be used for local development");
         }
@@ -72,8 +70,14 @@ public class LLMJudgeService : ILLMJudgeService, IDisposable
 
         return await _resilientService.ExecuteAsync(async ct =>
         {
-            // Get the appropriate prompt template
-            var promptTemplate = await GetPromptTemplateAsync(request.EvaluatorTypeId, ct);
+            // Get the appropriate prompt template and deployment name
+            var (promptTemplate, deploymentName) = await GetPromptTemplateAndDeploymentAsync(request.EvaluatorTypeId, ct);
+            
+            // Create ChatClient for the specific deployment
+            var chatClient = _openAIClient.GetChatClient(deploymentName);
+            
+            _logger.LogInformation("Using Azure OpenAI deployment '{DeploymentName}' for evaluator type {EvaluatorTypeId}", 
+                deploymentName, request.EvaluatorTypeId);
             
             // Build the evaluation prompt
             var evaluationPrompt = BuildEvaluationPrompt(promptTemplate, request);
@@ -95,7 +99,7 @@ public class LLMJudgeService : ILLMJudgeService, IDisposable
             };
 
             // Make the API call to Azure OpenAI
-            var response = await _chatClient.CompleteChatAsync(messages, chatCompletionOptions, ct);
+            var response = await chatClient.CompleteChatAsync(messages, chatCompletionOptions, ct);
             stopwatch.Stop();
             
             // Get the response content
@@ -286,36 +290,53 @@ public class LLMJudgeService : ILLMJudgeService, IDisposable
         };
     }
 
-    public async Task<string> GetPromptTemplateAsync(Guid? evaluatorTypeId, CancellationToken cancellationToken = default)
+    public async Task<(string promptTemplate, string deploymentName)> GetPromptTemplateAndDeploymentAsync(
+        Guid? evaluatorTypeId, 
+        CancellationToken cancellationToken = default)
     {
         try
         {
-            // If evaluator type is specified, use it to get the prompt
+            // If evaluator type is specified, use it to get the prompt and deployment name
             if (evaluatorTypeId.HasValue)
             {
                 var evaluatorType = await _dataverseService.GetEvaluatorTypeAsync(evaluatorTypeId.Value, cancellationToken);
                 
                 if (evaluatorType != null && !string.IsNullOrWhiteSpace(evaluatorType.EvaluatorPrompt))
                 {
-                    _logger.LogInformation("Retrieved evaluator prompt '{EvaluatorName}' for evaluator type {EvaluatorTypeId}", 
-                        evaluatorType.Name, evaluatorTypeId);
-                    return evaluatorType.EvaluatorPrompt;
+                    var deploymentName = !string.IsNullOrWhiteSpace(evaluatorType.DeploymentName)
+                        ? evaluatorType.DeploymentName
+                        : _settings.AzureOpenAI.DeploymentName;
+                    
+                    _logger.LogInformation(
+                        "Retrieved evaluator '{EvaluatorName}' (ID: {EvaluatorTypeId}) - Prompt: custom, Deployment: {DeploymentName} {DeploymentSource}", 
+                        evaluatorType.Name, 
+                        evaluatorTypeId, 
+                        deploymentName,
+                        !string.IsNullOrWhiteSpace(evaluatorType.DeploymentName) ? "(from evaluator)" : "(system default)");
+                    
+                    return (evaluatorType.EvaluatorPrompt, deploymentName);
                 }
                 
-                _logger.LogWarning("Evaluator type {EvaluatorTypeId} not found or has no prompt, using default", evaluatorTypeId);
+                _logger.LogWarning("Evaluator type {EvaluatorTypeId} not found or has no prompt, using defaults", evaluatorTypeId);
             }
             else
             {
-                _logger.LogWarning("No evaluator type specified, using default");
+                _logger.LogWarning("No evaluator type specified, using defaults");
             }
             
-            return GetDefaultPromptTemplate();
+            return (GetDefaultPromptTemplate(), _settings.AzureOpenAI.DeploymentName);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to get prompt for evaluator type {EvaluatorTypeId}, using default", evaluatorTypeId);
-            return GetDefaultPromptTemplate();
+            _logger.LogWarning(ex, "Failed to get prompt for evaluator type {EvaluatorTypeId}, using defaults", evaluatorTypeId);
+            return (GetDefaultPromptTemplate(), _settings.AzureOpenAI.DeploymentName);
         }
+    }
+    
+    public async Task<string> GetPromptTemplateAsync(Guid? evaluatorTypeId, CancellationToken cancellationToken = default)
+    {
+        var (promptTemplate, _) = await GetPromptTemplateAndDeploymentAsync(evaluatorTypeId, cancellationToken);
+        return promptTemplate;
     }
 
     private static string GetDefaultPromptTemplate()
@@ -329,11 +350,14 @@ public class LLMJudgeService : ILLMJudgeService, IDisposable
     {
         try
         {
-            if (_chatClient == null)
+            if (_openAIClient == null)
             {
-                _logger.LogWarning("Azure OpenAI chat client is not initialized");
+                _logger.LogWarning("Azure OpenAI client is not initialized");
                 return false;
             }
+
+            // Create a test ChatClient with default deployment
+            var chatClient = _openAIClient.GetChatClient(_settings.AzureOpenAI.DeploymentName);
 
             // Send a minimal test request to verify connectivity
             var testMessages = new List<ChatMessage>
@@ -348,7 +372,7 @@ public class LLMJudgeService : ILLMJudgeService, IDisposable
                 Temperature = 0
             };
 
-            await _chatClient.CompleteChatAsync(testMessages, options, cancellationToken);
+            await chatClient.CompleteChatAsync(testMessages, options, cancellationToken);
             
             _logger.LogDebug("Azure OpenAI health check passed");
             return true;

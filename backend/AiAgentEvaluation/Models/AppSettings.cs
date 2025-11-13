@@ -52,7 +52,14 @@ public class AzureOpenAISettings
 {
     public string Endpoint { get; set; } = string.Empty;
     public string ApiKey { get; set; } = string.Empty; // Legacy - will be removed for managed identity
+    
+    /// <summary>
+    /// Default Azure OpenAI deployment name (e.g., gpt-4o, gpt-4-turbo, gpt-35-turbo)
+    /// Used when evaluator type does not specify a deployment name
+    /// Individual evaluators can override by setting mcicaps_deploymentname in Dataverse
+    /// </summary>
     public string DeploymentName { get; set; } = "gpt-4o";
+    
     public string ApiVersion { get; set; } = "2024-02-01";
     public int MaxTokens { get; set; } = 4000;
     public double Temperature { get; set; } = 0.0;
