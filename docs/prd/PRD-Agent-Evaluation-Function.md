@@ -45,9 +45,13 @@ HTTP Trigger → Orchestrator Function → Service Bus Queue → Worker Function
 2. Retrieve evaluation run from Dataverse
 3. Update evaluation run status to `778760002` (Running)
 4. Fetch all associated test cases from the test set
-5. Create evaluation context and queue messages for each test case
-6. Send test case messages to Azure Service Bus queue
-7. Return HTTP 202 Accepted with operation tracking information
+5. Fetch evaluator types selected for the run (N:N join)
+6. Compute total evaluation units = Σ(single-turn: evaluatorCount) + Σ(multi-turn: (turnCount * evaluatorCount) + evaluatorCount for aggregates)
+7. For each test case × evaluator type:
+  - If evaluator requires expected response and none provided → create Not Applicable result (statuscode 778760004, score 0.0) immediately
+  - Else queue single-turn message or start durable orchestration (multi-turn)
+8. Update run counters (total/completed for NA short-circuits) and enqueue remaining messages
+9. Return HTTP 202 Accepted with operation tracking information
 
 #### 3.1.2 Worker Function Workflow (`ProcessTestCase` - Single-Turn)
 1. Receive test case message from Service Bus queue (`test-case-processing`)
@@ -106,7 +110,8 @@ HTTP Trigger → Orchestrator Function → Service Bus Queue → Worker Function
   
 - **mcicaps_testcases**: Test case definitions
   - Primary Key: `mcicaps_testcasesid`
-  - Key Fields: `mcicaps_prompt` (UserInput), `mcicaps_expectedresponse`, `mcicaps_testset`, `mcicaps_evaluatortypeid` (lookup to EvaluatorType), `mcicaps_ismultiturn`, `mcicaps_conversationid`
+  - Key Fields: `mcicaps_prompt` (UserInput), `mcicaps_expectedresponse`, `mcicaps_testset`, `mcicaps_ismultiturn`, `mcicaps_conversationid`  
+    (Evaluator type moved to run-level selection via join table)
   - Multi-Turn Support: `mcicaps_ismultiturn` flag indicates conversation test cases
 
 - **mcicaps_testcaseturns**: Multi-turn conversation turns (NEW)
@@ -116,19 +121,27 @@ HTTP Trigger → Orchestrator Function → Service Bus Queue → Worker Function
 
 - **mcicaps_evaluatortypes**: Evaluation type definitions (NEW)
   - Primary Key: `mcicaps_evaluatortypeid` (GUID)
-  - Key Fields: `mcicaps_name` (e.g., "Similarity", "Accuracy", "Relevancy"), `mcicaps_description`, `mcicaps_prompttemplate` (LLM Judge prompt text), `mcicaps_systemprompttemplate` (optional system prompt)
+  - Key Fields: 
+    - `mcicaps_name` (e.g., "Similarity", "Accuracy", "Relevancy")
+    - `mcicaps_description`
+    - `mcicaps_prompttemplate` (LLM Judge prompt text)
+    - `mcicaps_systemprompttemplate` (optional system prompt)
+    - `mcicaps_deploymentname` (optional Azure OpenAI deployment name - NEW)
+    - `mcicaps_requiresexpectedresponse` (Boolean)
+  - **Deployment Name Feature**: Evaluators can specify custom Azure OpenAI deployment names (e.g., `gpt-4o`, `gpt-4-turbo`, `gpt-35-turbo`) for cost/performance optimization. If not specified, falls back to system default deployment from configuration.
   - Purpose: Stores evaluation criteria and prompts in Dataverse (replaces Azure Blob Storage approach)
 
 #### 3.2.2 Output Tables
 - **mcicaps_evaluationresults**: Individual test results
   - Primary Key: `mcicaps_evaluationresultsid` (auto-generated GUID)
-  - Key Fields: `mcicaps_actualresponse`, `mcicaps_score`, `mcicaps_passed`, `mcicaps_evaluation`, `mcicaps_reasoning`, `mcicaps_testcase`, `mcicaps_testcaseturnid` (for multi-turn results), `mcicaps_conversationid`, `mcicaps_responsetimems`, `mcicaps_isaggregate` (for multi-turn aggregate results), `mcicaps_errormessage`, `statuscode`
+  - Key Fields: `mcicaps_actualresponse`, `mcicaps_score`, `mcicaps_passed`, `mcicaps_evaluation`, `mcicaps_reasoning`, `mcicaps_testcase`, `mcicaps_testcaseturnid` (for multi-turn results), `mcicaps_conversationid`, `mcicaps_responsetimems`, `mcicaps_isaggregate`, `mcicaps_evaluatortypeid`, `mcicaps_errormessage`, `statuscode`
   - Multi-Turn Support: Individual turn results linked via `mcicaps_testcaseturnid`, aggregate results marked with `mcicaps_isaggregate = true`
   - **Status Code Lifecycle Management** (as of Story 08):
     - `1` (Pending): Placeholder result created, execution not started (multi-turn orchestrations only)
     - `778760001` (Running): Reserved for future use (execution in progress tracking)
     - `778760002` (Completed): Execution completed successfully with score
     - `778760003` (Errored): Execution completed with error
+  - `778760004` (Not Applicable): Skipped because evaluator requires expected response but none provided (score stored as 0.0 and excluded from aggregates)
   - **Orchestration Idempotency**: The auto-generated `mcicaps_evaluationresultsid` serves as the orchestration tracker for multi-turn tests. Placeholder aggregate results are created with `statuscode = 1` before orchestration starts, then updated to `778760002` or `778760003` upon completion. This prevents duplicate orchestrations and enables Monitor function to count only truly completed results.
 
 #### 3.2.3 Message Queue Schema
@@ -141,7 +154,7 @@ HTTP Trigger → Orchestrator Function → Service Bus Queue → Worker Function
   "directLineUrl": "string",
   "userInput": "string", 
   "expectedResponse": "string",
-  "evaluatorTypeId": "guid",
+  "evaluatorTypeId": "guid", // From evaluation run's selected evaluator types (not stored on test case)
   "conversationId": "string (optional)",
   "passingThreshold": 0.7,
   "retryCount": 0,
@@ -171,11 +184,18 @@ HTTP Trigger → Orchestrator Function → Service Bus Queue → Worker Function
 
 #### 3.3.3 Azure OpenAI Judge Integration
 - Evaluation prompts loaded from Dataverse EvaluatorType records (not Azure Blob Storage)
+- **Dynamic Deployment Name Selection**: Each evaluator type can specify its own Azure OpenAI deployment name in Dataverse (`mcicaps_deploymentname` field)
+  - Enables per-evaluator model selection (e.g., GPT-4o for complex reasoning, GPT-3.5-turbo for simple classification)
+  - Falls back to system default deployment (configured in `AppSettings.AzureOpenAI.DeploymentName`) when evaluator doesn't specify
+  - On-demand ChatClient creation per request using resolved deployment name
+  - Logged for observability (deployment source: evaluator-specific vs system default)
 - Structured prompt templates for consistent evaluation
 - Score normalization (0-1 scale) with type-specific criteria
 - Reasoning capture for transparency and debugging
 - Rate limiting and error handling with exponential backoff
 - **Managed Identity authentication** (Cognitive Services OpenAI User role)
+- **Cost Optimization**: Different evaluators can use different models based on task complexity
+- **Performance Tuning**: Match model capabilities to evaluation requirements
 
 #### 3.3.4 Dataverse Prompt Template Integration
 - Centralized storage for evaluation prompt templates in EvaluatorType records
@@ -564,16 +584,18 @@ You are an AI response evaluator focusing on relevancy. Evaluate whether the age
 - Infrastructure as Code (Bicep/ARM)
 - Environment-specific configuration
 
-## 12. Success Criteria
+## 12. Success Criteria (Multi-Evaluator Updated)
 
 ### 12.1 Functional Success
-- ✅ Successfully execute evaluation runs end-to-end for all test types
+- ✅ Successfully execute evaluation runs end-to-end across all selected evaluator types
 - ✅ Support both single-turn and multi-turn conversation evaluations
-- ✅ Apply appropriate evaluation criteria based on EvaluatorType GUID references
-- ✅ Store complete evaluation results in Dataverse with type-specific scoring
+- ✅ Apply appropriate evaluation criteria based on evaluator types selected at run level (N:N join)
+- ✅ Store complete evaluation results in Dataverse with evaluator type lookup and type-specific scoring
 - ✅ Generate consistent scoring using LLM Judge with specialized prompts from Dataverse
+- ✅ **Support per-evaluator Azure OpenAI deployment name configuration for cost/performance optimization**
+- ✅ **Fall back to system default deployment when evaluator doesn't specify custom deployment**
 - ✅ Handle errors gracefully without data loss across all test types
-- ✅ Correctly update evaluation run status using proper Dataverse option set values
+- ✅ Correctly update evaluation run status; Not Applicable results counted toward completion without affecting pass/fail statistics
 - ✅ Maintain conversation context across multi-turn conversations
 - ✅ Provide real-time progress tracking with percentage and timestamps
 
@@ -607,6 +629,6 @@ You are an AI response evaluator focusing on relevancy. Evaluate whether the age
 
 ---
 
-**Document Version**: 2.0  
-**Last Updated**: November 12, 2025  
-**Status**: Current - Reflects Implemented System
+**Document Version**: 2.2  
+**Last Updated**: November 13, 2025  
+**Status**: Current - Reflects Implemented System with Dynamic Deployment Names

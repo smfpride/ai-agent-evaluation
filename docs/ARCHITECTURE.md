@@ -97,11 +97,12 @@ flowchart TB
     MONITOR -- 12: Update Run Status --> DV
     DORCH -.-> STORAGE
     STORAGE -.-> DORCH
-    TR -- 1:N --> TC
-    TR -- N:1 --> AGENT
-    TC -- N:1 --> EVAL
-    TC -- 1:N --> TURN & RES
-    TURN -- 1:N --> RES
+  TR -- 1:N --> TC
+  TR -- N:1 --> AGENT
+  TR -- N:N --> EVAL
+  RES -- N:1 --> EVAL
+  TC -- 1:N --> TURN & RES
+  TURN -- 1:N --> RES
     CS:::external
     DV:::external
     ORCH:::function
@@ -297,9 +298,30 @@ flowchart TB
 **Purpose**: Evaluate agent responses using GPT-4o as an intelligent judge
 
 #### Configuration
-- **Model**: gpt-4o (2024-08-06)
-- **Deployment**: Standard (150 TPM capacity)
+- **Models**: Supports multiple deployments (gpt-4o, gpt-4-turbo, gpt-35-turbo, etc.)
+- **Default Deployment**: gpt-4o (2024-08-06) - Standard (150 TPM capacity)
 - **Authentication**: Managed Identity (Cognitive Services OpenAI User role)
+- **Dynamic Deployment Selection**: Per-evaluator deployment name configuration (see below)
+
+#### Deployment Name Resolution
+
+The service supports **dynamic deployment name selection per evaluator type**:
+
+1. **Per-Evaluator Override**: Each evaluator type can specify `mcicaps_deploymentname` in Dataverse
+2. **System Default Fallback**: If evaluator doesn't specify a deployment, uses `AppSettings.AzureOpenAI.DeploymentName`
+3. **On-Demand Client Creation**: `ChatClient` instances created per request using appropriate deployment
+4. **Observable**: Logs indicate which deployment is used for each evaluation
+
+**Example Configuration**:
+- Similarity evaluator → `gpt-4o` (high accuracy for semantic comparison)
+- Simple classification → `gpt-35-turbo` (cost-effective for basic evaluations)
+- Complex reasoning → `gpt-4-turbo` (balanced performance/cost)
+
+**Benefits**:
+- Cost optimization by using cheaper models for simpler evaluations
+- Performance tuning per evaluator type
+- Model selection based on task complexity
+- Backward compatible (existing evaluators use system default)
 
 #### Evaluation Types
 
@@ -307,6 +329,7 @@ Evaluation types are now stored in Dataverse `mcicaps_evaluatortypes` table with
 - **Name**: Display name (e.g., "Similarity", "Accuracy", "Relevancy")
 - **Prompt Template**: User prompt with placeholders ({UserInput}, {ExpectedResponse}, {ActualResponse}, {ConversationId})
 - **System Prompt Template**: Optional system-level guidance
+- **Deployment Name**: Azure OpenAI deployment name (optional - uses system default if not specified)
 - **GUID Reference**: Used in test cases and messages to identify evaluator type
 
 ##### Built-In Evaluator Types
@@ -396,7 +419,7 @@ Fields:
   - mcicaps_prompt (Text): User prompt (UserInput)
   - mcicaps_expectedresponse (Text): Expected agent response
   - mcicaps_testset (Lookup): Parent test set
-  - mcicaps_evaluatortypeid (Lookup): Evaluator Type (GUID reference)
+  - (Removed) mcicaps_evaluatortypeid (Lookup): Evaluator Type (moved to run-level N:N association)
   - mcicaps_ismultiturn (Boolean): Multi-turn flag
   - mcicaps_conversationid (Text): Conversation identifier
 ```
@@ -409,11 +432,29 @@ Fields:
   - mcicaps_name (Text): Evaluator name (e.g., "Similarity", "Accuracy", "Relevancy")
   - mcicaps_description (Text): Purpose and criteria description
   - mcicaps_prompttemplate (Text): LLM Judge prompt template with placeholders
+  - mcicaps_deploymentname (Text, Optional): Azure OpenAI deployment name (e.g., gpt-4o, gpt-4-turbo, gpt-35-turbo)
+      * If specified, this evaluator uses the custom deployment
+      * If NULL/empty, falls back to system default deployment from AppSettings
+      * Enables per-evaluator model selection for cost/performance optimization
+  - mcicaps_requiresexpectedresponse (Boolean): If true and expected response missing, evaluation result marked Not Applicable
   - mcicaps_systemprompttemplate (Text): Optional system prompt template
-  - mcicaps_isdomain specific (Boolean): Custom domain-specific flag
+  - mcicaps_isdomainspecific (Boolean): Custom domain-specific flag
 ```
 
-##### 4.5 mcicaps_testcaseturn (Test Case Turn) - NEW
+##### 4.5 mcicaps_evaluationrun_evaluatortype (Run ↔ EvaluatorType Join) - NEW
+**Purpose**: Defines evaluator types selected for a specific evaluation run (multi-evaluator support)
+```
+Primary Key: mcicaps_evaluationrun_evaluatortypeid (GUID)
+Fields:
+  - mcicaps_evaluationrunid (Lookup): Evaluation run
+  - mcicaps_evaluatortypeid (Lookup): Evaluator type
+  - createdon (DateTime)
+Notes:
+  - Order is arbitrary (no weighting yet)
+  - Orchestrator enumerates evaluator types from this join when scheduling
+```
+
+##### 4.6 mcicaps_testcaseturn (Test Case Turn)
 **Purpose**: Individual turns within multi-turn test cases
 ```
 Primary Key: mcicaps_testcaseturnid (GUID)
@@ -427,7 +468,7 @@ Fields:
 Relationship: N:1 with mcicaps_testcases (cascade delete)
 ```
 
-##### 4.6 mcicaps_evaluationresults (Evaluation Result)
+##### 4.7 mcicaps_evaluationresults (Evaluation Result)
 **Purpose**: Individual test execution results
 ```
 Primary Key: mcicaps_evaluationresultsid (GUID, auto-generated)
@@ -442,13 +483,15 @@ Fields:
   - mcicaps_reasoning (Text): Detailed judge reasoning
   - mcicaps_conversationid (Text): Direct Line conversation ID
   - mcicaps_isaggregate (Boolean): Aggregate result flag
+  - mcicaps_evaluatortypeid (Lookup): Evaluator type used for this result (required for all results including aggregates)
   - mcicaps_responsetimems (Integer): Response time
   - mcicaps_errormessage (Text): Error details if failed
   - statuscode (Choice/OptionSet): Result lifecycle status
     - 1: Pending (placeholder created, not started)
     - 778760001: Running (reserved for future use)
     - 778760002: Completed (successfully finished with score)
-    - 778760003: Errored (finished with error)
+  - 778760003: Errored (finished with error)
+  - 778760004: Not Applicable (evaluator requires expected response but none provided; evaluation skipped, score set to 0.0)
 ```
 
 **Orchestration Idempotency Pattern** (Story 08):
@@ -463,7 +506,8 @@ Fields:
 mcicaps_evaluationruns (1) ←→ (N) mcicaps_evaluationresults
 mcicaps_evaluationruns (N) ←→ (1) mcicaps_agenttoevals
 mcicaps_testcases (1) ←→ (N) mcicaps_evaluationresults
-mcicaps_testcases (N) ←→ (1) mcicaps_evaluatortypes
+mcicaps_evaluationruns (N) ←→ (N) mcicaps_evaluatortypes (via mcicaps_evaluationrun_evaluatortype)
+mcicaps_evaluationresults (N) ←→ (1) mcicaps_evaluatortypes
 mcicaps_testcases (1) ←→ (N) mcicaps_testcaseturn
 mcicaps_testcaseturn (1) ←→ (N) mcicaps_evaluationresults
 ```
@@ -653,6 +697,56 @@ sequenceDiagram
 - **Resilience**: Automatic retries and failure handling
 - **Debugging**: Full execution history in Azure Storage
 - **Long Conversations**: Ideal for 10+ turn conversations
+
+### Azure OpenAI Deployment Name Resolution
+<!-- ![](./images/DeploymentNameResolution.png) -->
+```mermaid
+sequenceDiagram
+    participant Worker as Worker/Activity
+    participant LLMJudge as LLM Judge Service
+    participant Dataverse
+    participant AppSettings
+    participant OpenAI as Azure OpenAI
+
+    Worker->>LLMJudge: EvaluateResponseAsync<br/>(EvaluatorTypeId)
+    
+    Note over LLMJudge: Retrieve evaluator configuration
+    LLMJudge->>Dataverse: GetEvaluatorTypeAsync<br/>(EvaluatorTypeId)
+    Dataverse-->>LLMJudge: EvaluatorType<br/>(Prompt + DeploymentName)
+    
+    alt Evaluator has custom deployment
+        LLMJudge->>LLMJudge: deploymentName = evaluatorType.DeploymentName<br/>(e.g., "gpt-35-turbo")
+        Note over LLMJudge: Log: "Using gpt-35-turbo (from evaluator)"
+    else Evaluator deployment is NULL/empty
+        LLMJudge->>AppSettings: Get default deployment
+        AppSettings-->>LLMJudge: DeploymentName = "gpt-4o"
+        Note over LLMJudge: Log: "Using gpt-4o (system default)"
+    end
+    
+    LLMJudge->>OpenAI: _openAIClient.GetChatClient<br/>(deploymentName)
+    Note over LLMJudge: Create ChatClient on-demand<br/>for specific deployment
+    
+    LLMJudge->>OpenAI: chatClient.CompleteChatAsync<br/>(evaluation prompt)
+    OpenAI-->>LLMJudge: Score + Reasoning
+    
+    LLMJudge-->>Worker: LLMJudgeResponse<br/>(score, reasoning, success)
+```
+
+**Deployment Resolution Logic**:
+1. Worker/Activity calls `EvaluateResponseAsync` with `EvaluatorTypeId`
+2. Service fetches evaluator configuration from Dataverse
+3. Check if `mcicaps_deploymentname` field has a value:
+   - **If yes**: Use evaluator-specific deployment (e.g., `gpt-35-turbo`)
+   - **If no/NULL**: Fall back to system default from `AppSettings.AzureOpenAI.DeploymentName`
+4. Create `ChatClient` on-demand for the resolved deployment
+5. Log deployment source for observability (evaluator vs system default)
+6. Execute evaluation using appropriate model
+
+**Benefits**:
+- Cost optimization (cheaper models for simple evaluations)
+- Performance tuning (match model to task complexity)
+- Backward compatibility (existing evaluators use system default)
+- Observable (logs show which deployment is used)
 
 ---
 
