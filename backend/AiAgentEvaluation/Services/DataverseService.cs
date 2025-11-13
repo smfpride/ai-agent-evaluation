@@ -878,6 +878,8 @@ public class DataverseService : IDataverseService, IDisposable
                     "mcicaps_evaluatortypeid",
                     "mcicaps_name",
                     "mcicaps_evaluatorprompt",
+                    "_mcicaps_judgeagent_value",
+                    "mcicaps_deploymentname",
                     "statecode",
                     "statuscode",
                     "createdon",
@@ -908,12 +910,85 @@ public class DataverseService : IDataverseService, IDisposable
                 Id = entity.Id,
                 Name = entity.GetAttributeValue<string>("mcicaps_name") ?? string.Empty,
                 EvaluatorPrompt = entity.GetAttributeValue<string>("mcicaps_evaluatorprompt") ?? string.Empty,
+#pragma warning disable CS0618 // Type or member is obsolete
+                DeploymentName = entity.GetAttributeValue<string>("mcicaps_deploymentname"),
+#pragma warning restore CS0618 // Type or member is obsolete
+                JudgeAgentId = entity.Contains("_mcicaps_judgeagent_value") 
+                    ? entity.GetAttributeValue<EntityReference>("_mcicaps_judgeagent_value")?.Id 
+                    : null,
                 StateCode = GetIntValue(entity, "statecode"),
                 StatusCode = entity.GetAttributeValue<OptionSetValue>("statuscode")?.Value ?? 1,
                 CreatedOn = entity.GetAttributeValue<DateTime>("createdon"),
                 ModifiedOn = entity.GetAttributeValue<DateTime>("modifiedon")
             };
         }, "GetEvaluatorType",
+        exception => exception is FaultException<OrganizationServiceFault>,
+        cancellationToken);
+    }
+
+    public async Task<JudgeAgent?> GetJudgeAgentAsync(Guid judgeAgentId, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Getting judge agent {JudgeAgentId}", judgeAgentId);
+        
+        if (_serviceClient == null || !_serviceClient.IsReady)
+        {
+            throw new InvalidOperationException($"Dataverse service client is not ready. Connection error: {_connectionError}");
+        }
+
+        return await _resilientService.ExecuteAsync(async ct =>
+        {
+            var query = new QueryExpression("mcicaps_judgeagent")
+            {
+                ColumnSet = new ColumnSet(
+                    "mcicaps_judgeagentid",
+                    "mcicaps_name",
+                    "mcicaps_judgetype",
+                    "mcicaps_aoaiendpoint",
+                    "mcicaps_aoaideploymentname",
+                    "mcicaps_directlineurl",
+                    "mcicaps_modelname",
+                    "mcicaps_description",
+                    "statecode",
+                    "statuscode",
+                    "createdon",
+                    "modifiedon"
+                ),
+                Criteria = new FilterExpression
+                {
+                    Conditions =
+                    {
+                        new ConditionExpression("mcicaps_judgeagentid", ConditionOperator.Equal, judgeAgentId),
+                        new ConditionExpression("statecode", ConditionOperator.Equal, 0) // Active only
+                    }
+                }
+            };
+
+            var result = await Task.Run(() => _serviceClient.RetrieveMultiple(query), ct);
+            
+            if (result.Entities.Count == 0)
+            {
+                _logger.LogWarning("Judge agent {JudgeAgentId} not found", judgeAgentId);
+                return null;
+            }
+
+            var entity = result.Entities[0];
+            
+            return new JudgeAgent
+            {
+                Id = entity.Id,
+                Name = entity.GetAttributeValue<string>("mcicaps_name") ?? string.Empty,
+                JudgeType = entity.GetAttributeValue<OptionSetValue>("mcicaps_judgetype")?.Value ?? JudgeType.AzureOpenAI,
+                AoaiEndpoint = entity.GetAttributeValue<string>("mcicaps_aoaiendpoint"),
+                AoaiDeploymentName = entity.GetAttributeValue<string>("mcicaps_aoaideploymentname"),
+                DirectLineUrl = entity.GetAttributeValue<string>("mcicaps_directlineurl"),
+                ModelName = entity.GetAttributeValue<string>("mcicaps_modelname"),
+                Description = entity.GetAttributeValue<string>("mcicaps_description"),
+                StateCode = GetIntValue(entity, "statecode"),
+                StatusCode = entity.GetAttributeValue<OptionSetValue>("statuscode")?.Value ?? 1,
+                CreatedOn = entity.GetAttributeValue<DateTime>("createdon"),
+                ModifiedOn = entity.GetAttributeValue<DateTime>("modifiedon")
+            };
+        }, "GetJudgeAgent",
         exception => exception is FaultException<OrganizationServiceFault>,
         cancellationToken);
     }

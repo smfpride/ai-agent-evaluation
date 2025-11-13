@@ -19,7 +19,19 @@ public class EvaluatorType
     [Required]
     public string EvaluatorPrompt { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Lookup to Judge Agent for evaluation backend configuration
+    /// Replaces the deprecated mcicaps_deploymentname field
+    /// </summary>
+    [JsonPropertyName("_mcicaps_judgeagent_value")]
+    public Guid? JudgeAgentId { get; set; }
+
+    /// <summary>
+    /// DEPRECATED: Use JudgeAgentId instead
+    /// Kept for backward compatibility during migration
+    /// </summary>
     [JsonPropertyName("mcicaps_deploymentname")]
+    [Obsolete("Use JudgeAgentId to reference a Judge Agent record instead")]
     public string? DeploymentName { get; set; }
 
     [JsonPropertyName("statecode")]
