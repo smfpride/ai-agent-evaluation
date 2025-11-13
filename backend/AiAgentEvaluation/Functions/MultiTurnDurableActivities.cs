@@ -79,6 +79,58 @@ public class MultiTurnDurableActivities
 
         try
         {
+            // Check if NA scenario: evaluator requires expected response but turn doesn't have one
+            if (input.EvaluatorTypeId.HasValue)
+            {
+                var evaluatorType = await _dataverseService.GetEvaluatorTypeAsync(input.EvaluatorTypeId.Value, cancellationToken);
+                
+                if (evaluatorType != null && evaluatorType.RequiresExpectedResponse && 
+                    string.IsNullOrWhiteSpace(input.Turn.ExpectedResponse))
+                {
+                    _logger.LogInformation("Turn {Sequence} marked NA for evaluator {EvaluatorId} (missing expected response)",
+                        input.Turn.Sequence, input.EvaluatorTypeId.Value);
+                    
+                    stopwatch.Stop();
+                    
+                    // Create NA result immediately
+                    var naResultRequest = new CreateEvaluationResultRequest
+                    {
+                        EvaluationRunId = input.TestRunId,
+                        TestCaseId = input.Turn.TestCaseId,
+                        TestCaseTurnId = input.Turn.Id,
+                        EvaluatorTypeId = input.EvaluatorTypeId,
+                        ConversationId = input.ConversationId,
+                        ActualResponse = null,
+                        Score = 0.0m,
+                        Passed = false,
+                        Reasoning = $"Evaluator '{evaluatorType.Name}' requires expected response but turn {input.Turn.Sequence} has none provided",
+                        ExecutionTimeMs = (int)stopwatch.ElapsedMilliseconds,
+                        IsAggregate = false,
+                        StatusCode = EvaluationResultStatus.NotApplicable
+                    };
+
+                    var naResultId = await _dataverseService.CreateEvaluationResultAsync(naResultRequest, cancellationToken);
+                    
+                    // Increment completion counter
+                    await _dataverseService.IncrementCompletedTestCasesAsync(
+                        input.TestRunId, 
+                        failed: false, 
+                        cancellationToken);
+
+                    return new TurnExecutionResult
+                    {
+                        ConversationId = input.ConversationId ?? string.Empty,
+                        DirectLineToken = input.DirectLineToken,
+                        Success = true,
+                        Score = 0.0m,
+                        Passed = false,
+                        ExecutionTimeMs = (int)stopwatch.ElapsedMilliseconds,
+                        EvaluationResultId = naResultId,
+                        StatusCode = EvaluationResultStatus.NotApplicable
+                    };
+                }
+            }
+            
             // 1. Send message to agent (can take minutes)
             _logger.LogInformation("Sending message to Copilot Studio for turn {Sequence}", input.Turn.Sequence);
             
@@ -135,6 +187,7 @@ public class MultiTurnDurableActivities
                 EvaluationRunId = input.TestRunId,
                 TestCaseId = input.Turn.TestCaseId,
                 TestCaseTurnId = input.Turn.Id,
+                EvaluatorTypeId = input.EvaluatorTypeId,
                 ConversationId = copilotResponse.ConversationId,
                 ActualResponse = copilotResponse.Response,
                 Score = judgeResponse.Score,
@@ -142,7 +195,7 @@ public class MultiTurnDurableActivities
                 Reasoning = judgeResponse.Reasoning,
                 ExecutionTimeMs = (int)stopwatch.ElapsedMilliseconds,
                 IsAggregate = false,
-                StatusCode = 778760002  // Completed
+                StatusCode = EvaluationResultStatus.Completed
             };
 
             var resultId = await _dataverseService.CreateEvaluationResultAsync(createResultRequest, cancellationToken);
@@ -158,7 +211,8 @@ public class MultiTurnDurableActivities
                 Score = judgeResponse.Score,
                 Passed = judgeResponse.Score >= input.PassingThreshold,
                 ExecutionTimeMs = (int)stopwatch.ElapsedMilliseconds,
-                EvaluationResultId = resultId
+                EvaluationResultId = resultId,
+                StatusCode = EvaluationResultStatus.Completed
             };
         }
         catch (Exception ex)
@@ -186,29 +240,76 @@ public class MultiTurnDurableActivities
 
         try
         {
-            // Calculate aggregate metrics
-            var totalExecutionTime = context.TurnResults.Values.Sum(r => r.ExecutionTimeMs ?? 0);
-            var averageScore = context.TurnResults.Values.Any()
-                ? (decimal)context.TurnResults.Values.Average(r => (double)(r.Score ?? 0))
-                : 0m;
-            var overallPassed = context.PassRate >= (double)context.PassingThreshold;
+            // Filter out NA results (statuscode 778760004) from aggregate calculations
+            var validResults = context.TurnResults.Values
+                .Where(r => r.StatusCode != EvaluationResultStatus.NotApplicable)
+                .ToList();
+            
+            var naResults = context.TurnResults.Values
+                .Where(r => r.StatusCode == EvaluationResultStatus.NotApplicable)
+                .ToList();
+
+            int naCount = naResults.Count;
+            int validCount = validResults.Count;
+            int totalTurns = context.TotalTurns;
+
+            _logger.LogInformation("Aggregate calculation: {ValidCount} valid results, {NACount} NA results out of {TotalTurns} total turns",
+                validCount, naCount, totalTurns);
+
+            // Check if all turns are NA
+            if (validCount == 0)
+            {
+                _logger.LogInformation("All turns are Not Applicable for aggregate result {AggregateResultId}",
+                    context.AggregateResultId);
+                
+                // All NA -> Aggregate also NA
+                await _dataverseService.UpdateAggregateResultAsync(
+                    context.AggregateResultId,
+                    0.0m,
+                    false,
+                    EvaluationResultStatus.NotApplicable,
+                    "All turns Not Applicable (missing expected responses)",
+                    0,
+                    cancellationToken);
+
+                // Increment completed test cases counter (NA counts as completed)
+                await _dataverseService.IncrementCompletedTestCasesAsync(
+                    input.TestRunId,
+                    failed: false,
+                    cancellationToken);
+
+                _logger.LogInformation("Aggregate result {AggregateResultId} marked as Not Applicable for test case {TestCaseId}", 
+                    context.AggregateResultId, context.TestCase.Id);
+                return;
+            }
+
+            // Calculate aggregate metrics from valid (non-NA) results only
+            var totalExecutionTime = validResults.Sum(r => r.ExecutionTimeMs ?? 0);
+            var averageScore = (decimal)validResults.Average(r => (double)(r.Score ?? 0));
+            
+            // Calculate pass rate based on valid results
+            var passedCount = validResults.Count(r => r.Passed == true);
+            var passRate = validCount > 0 ? (double)passedCount / validCount : 0.0;
+            var overallPassed = passRate >= (double)context.PassingThreshold;
 
             // Create reasoning summary
-            var reasoning = $"Multi-turn test case: {context.PassedTurns}/{context.TotalTurns} turns passed ({context.PassRate:P0})";
+            var reasoning = naCount > 0
+                ? $"Multi-turn test case: {passedCount}/{validCount} valid turns passed ({passRate:P0}), {naCount} turns excluded as NA"
+                : $"Multi-turn test case: {passedCount}/{validCount} turns passed ({passRate:P0})";
 
             // All successfully completed tests get StatusCode = 778760002 (Completed)
             // The Passed field indicates whether it met the threshold
             // StatusCode = 778760003 (Errored) is only for execution failures/exceptions
-            var statusCode = 778760002;  // Completed
+            var statusCode = EvaluationResultStatus.Completed;
 
             // Update the placeholder aggregate result
             await _dataverseService.UpdateAggregateResultAsync(
                 context.AggregateResultId,
                 averageScore,
                 overallPassed,
+                statusCode,
                 reasoning,
                 totalExecutionTime,
-                statusCode,
                 cancellationToken);
 
             // Increment completed test cases counter
@@ -241,7 +342,8 @@ public class MultiTurnDurableActivities
             Score = 0,
             Passed = false,
             ErrorMessage = errorMessage,
-            ExecutionTimeMs = (int)stopwatch.ElapsedMilliseconds
+            ExecutionTimeMs = (int)stopwatch.ElapsedMilliseconds,
+            StatusCode = EvaluationResultStatus.Errored
         };
     }
 }

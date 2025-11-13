@@ -97,6 +97,12 @@ public class TurnExecutionResult
 
     [JsonPropertyName("evaluationResultId")]
     public Guid? EvaluationResultId { get; set; }
+
+    /// <summary>
+    /// StatusCode for tracking result lifecycle: 1=Pending, 778760002=Completed, 778760003=Errored, 778760004=NotApplicable
+    /// </summary>
+    [JsonPropertyName("statusCode")]
+    public int StatusCode { get; set; }
 }
 
 /// <summary>

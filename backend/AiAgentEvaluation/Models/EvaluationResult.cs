@@ -24,6 +24,12 @@ public class EvaluationResult
     public Guid TestCaseId { get; set; }
 
     /// <summary>
+    /// Lookup to the evaluator type used for this result
+    /// </summary>
+    [JsonPropertyName("_mcicaps_evaluatortype_value")]
+    public Guid? EvaluatorTypeId { get; set; }
+
+    /// <summary>
     /// Lookup to specific turn (for multi-turn tests)
     /// </summary>
     [JsonPropertyName("_mcicaps_testcaseturnid_value")]
@@ -89,6 +95,8 @@ public class CreateEvaluationResultRequest
     [Required]
     public Guid TestCaseId { get; set; }
 
+    public Guid? EvaluatorTypeId { get; set; }
+
     public Guid? TestCaseTurnId { get; set; }
 
     public bool IsAggregate { get; set; }
@@ -113,4 +121,24 @@ public class CreateEvaluationResultRequest
     /// StatusCode for tracking result lifecycle: 1=Pending, 778760002=Completed, 778760003=Errored
     /// </summary>
     public int? StatusCode { get; set; }
+}
+
+/// <summary>
+/// Status codes for evaluation results
+/// </summary>
+public static class EvaluationResultStatus
+{
+    public const int Pending = 1;
+    public const int Completed = 778760002;
+    public const int Errored = 778760003;
+    public const int NotApplicable = 778760004;
+
+    public static string GetName(int statusCode) => statusCode switch
+    {
+        Pending => "Pending",
+        Completed => "Completed",
+        Errored => "Errored",
+        NotApplicable => "Not Applicable",
+        _ => "Unknown"
+    };
 }
