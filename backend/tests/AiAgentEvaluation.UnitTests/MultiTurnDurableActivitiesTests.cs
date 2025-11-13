@@ -511,8 +511,8 @@ public class MultiTurnDurableActivitiesTests
                 It.IsAny<Guid>(),
                 It.IsAny<decimal>(),
                 It.IsAny<bool>(),
-                It.IsAny<string>(),
                 It.IsAny<int>(),
+                It.IsAny<string>(),
                 It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
@@ -533,9 +533,9 @@ public class MultiTurnDurableActivitiesTests
                 aggregateResultId,
                 0.875m, // Average score
                 true, // Should pass (100% pass rate >= 0.7 threshold)
+                778760002, // StatusCode = Completed
                 It.IsAny<string>(), // Reasoning
                 2200, // Sum of turn times
-                778760002, // StatusCode = Completed
                 It.IsAny<CancellationToken>()),
             Times.Once);
 
@@ -591,8 +591,8 @@ public class MultiTurnDurableActivitiesTests
                 It.IsAny<Guid>(),
                 It.IsAny<decimal>(),
                 It.IsAny<bool>(),
-                It.IsAny<string>(),
                 It.IsAny<int>(),
+                It.IsAny<string>(),
                 It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
@@ -613,9 +613,9 @@ public class MultiTurnDurableActivitiesTests
                 aggregateResultId,
                 It.Is<decimal>(s => Math.Abs((double)(s - 0.733m)) < 0.01), // Average score ~0.733
                 false, // Should fail (66.67% < 0.7 threshold)
+                778760002, // StatusCode = Completed (even for failed tests that complete successfully)
                 It.IsAny<string>(), // Reasoning
                 3300, // Sum of all turn times
-                778760002, // StatusCode = Completed (even for failed tests that complete successfully)
                 It.IsAny<CancellationToken>()),
             Times.Once);
 
@@ -656,8 +656,8 @@ public class MultiTurnDurableActivitiesTests
                 It.IsAny<Guid>(),
                 It.IsAny<decimal>(),
                 It.IsAny<bool>(),
-                It.IsAny<string>(),
                 It.IsAny<int>(),
+                It.IsAny<string>(),
                 It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
             .ThrowsAsync(new Exception("Dataverse error"));
