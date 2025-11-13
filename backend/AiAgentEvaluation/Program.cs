@@ -118,6 +118,16 @@ catch (Exception ex)
 
 try
 {
+    // Register factory for configurable judge selection
+    builder.Services.AddScoped<ILLMJudgeServiceFactory, LLMJudgeServiceFactory>();
+}
+catch (Exception ex)
+{
+    Console.WriteLine($"Warning: Failed to register LLMJudgeServiceFactory: {ex.Message}");
+}
+
+try
+{
     builder.Services.AddScoped<IServiceBusService, ServiceBusService>();
 }
 catch (Exception ex)
