@@ -21,6 +21,16 @@ public class DataverseService : IDataverseService, IDisposable
     private readonly string? _connectionError;
     private bool _disposed;
 
+    /// <summary>
+    /// Helper method to get table name with configured schema prefix
+    /// </summary>
+    private string Table(string name) => $"{_settings.Dataverse.SchemaPrefixWithUnderscore}{name}";
+
+    /// <summary>
+    /// Helper method to get field name with configured schema prefix
+    /// </summary>
+    private string Field(string name) => $"{_settings.Dataverse.SchemaPrefixWithUnderscore}{name}";
+
     public DataverseService(ILogger<DataverseService> logger, IOptions<AppSettings> settings)
     {
         _logger = logger;
@@ -33,7 +43,7 @@ public class DataverseService : IDataverseService, IDisposable
         // This prevents SDK from making authentication attempts to cached/default Dataverse instances
         if (string.IsNullOrWhiteSpace(_settings.Dataverse.ConnectionString))
         {
-            _connectionError = "Dataverse ConnectionString is not configured. Dataverse operations will not be available. Please configure DataverseConnectionString with OAuth authentication (AuthenticationType=OAuth).";
+            _connectionError = "Dataverse ConnectionString is not configured. Dataverse operations will not be available. Please configure DataverseConnectionString with ClientSecret authentication (AuthType=ClientSecret).";
             _logger.LogWarning(_connectionError);
             _serviceClient = null;
             return;
@@ -44,7 +54,7 @@ public class DataverseService : IDataverseService, IDisposable
             _logger.LogInformation("Attempting to connect to Dataverse with connection string: {ConnectionString}", 
                 _settings.Dataverse.ConnectionString.Substring(0, Math.Min(50, _settings.Dataverse.ConnectionString.Length)) + "...");
 
-            // Dataverse only supports OAuth, Certificate, ClientSecret, or Office365 authentication
+            // Dataverse supports ClientSecret, Certificate, or Office365 authentication
             // Managed Identity is NOT supported and not on the roadmap
             _serviceClient = new ServiceClient(_settings.Dataverse.ConnectionString);
             
@@ -70,7 +80,7 @@ public class DataverseService : IDataverseService, IDisposable
                 return;
             }
             
-            _logger.LogInformation("Successfully connected to Dataverse using OAuth authentication. Org: {OrgName}, AuthType: {AuthType}", 
+            _logger.LogInformation("Successfully connected to Dataverse using ClientSecret authentication. Org: {OrgName}, AuthType: {AuthType}", 
                 _serviceClient.ConnectedOrgFriendlyName, _serviceClient.ActiveAuthenticationType);
         }
         catch (Exception ex)
@@ -148,22 +158,22 @@ public class DataverseService : IDataverseService, IDisposable
 
         return await _resilientService.ExecuteAsync(async ct =>
         {
-            var query = new QueryExpression("mcicaps_evaluationruns")
+            var query = new QueryExpression(Table("evaluationruns"))
             {
                 ColumnSet = new ColumnSet(
-                    "mcicaps_evaluationrunsid", 
-                    "mcicaps_runname", 
-                    "mcicaps_testset", 
-                    "mcicaps_agenttoeval",
-                    "mcicaps_description",
-                    "mcicaps_passingthreshold",
-                    "mcicaps_overallpass",
-                    "mcicaps_overallscore",
-                    "mcicaps_totaltestcases",
-                    "mcicaps_completedtestcases",
-                    "mcicaps_failedtestcases",
-                    "mcicaps_starttime",
-                    "mcicaps_endtime",
+                    Field("evaluationrunsid"), 
+                    Field("runname"), 
+                    Field("testset"), 
+                    Field("agenttoeval"),
+                    Field("description"),
+                    Field("passingthreshold"),
+                    Field("overallpass"),
+                    Field("overallscore"),
+                    Field("totaltestcases"),
+                    Field("completedtestcases"),
+                    Field("failedtestcases"),
+                    Field("starttime"),
+                    Field("endtime"),
                     "statuscode",
                     "statecode",
                     "createdon"
@@ -172,7 +182,7 @@ public class DataverseService : IDataverseService, IDisposable
                 {
                     Conditions =
                     {
-                        new ConditionExpression("mcicaps_evaluationrunsid", ConditionOperator.Equal, evaluationRunId)
+                        new ConditionExpression(Field("evaluationrunsid"), ConditionOperator.Equal, evaluationRunId)
                     }
                 }
             };
@@ -190,18 +200,18 @@ public class DataverseService : IDataverseService, IDisposable
             return new EvaluationRun
             {
                 Id = entity.Id,
-                Name = entity.GetAttributeValue<string>("mcicaps_runname") ?? string.Empty,
-                Description = entity.GetAttributeValue<string>("mcicaps_description"),
-                TestSetId = entity.GetAttributeValue<EntityReference>("mcicaps_testset")?.Id,
-                AgentToEvalId = entity.GetAttributeValue<EntityReference>("mcicaps_agenttoeval")?.Id,
-                PassingThreshold = GetDecimalValue(entity, "mcicaps_passingthreshold"),
-                OverallScore = GetDecimalValue(entity, "mcicaps_overallscore"),
-                OverallPass = entity.GetAttributeValue<bool?>("mcicaps_overallpass"),
-                TotalTestCases = entity.GetAttributeValue<int>("mcicaps_totaltestcases"),
-                CompletedTestCases = entity.GetAttributeValue<int>("mcicaps_completedtestcases"),
-                FailedTestCases = entity.GetAttributeValue<int>("mcicaps_failedtestcases"),
-                StartTime = entity.GetAttributeValue<DateTime?>("mcicaps_starttime"),
-                EndTime = entity.GetAttributeValue<DateTime?>("mcicaps_endtime"),
+                Name = entity.GetAttributeValue<string>(Field("runname")) ?? string.Empty,
+                Description = entity.GetAttributeValue<string>(Field("description")),
+                TestSetId = entity.GetAttributeValue<EntityReference>(Field("testset"))?.Id,
+                AgentToEvalId = entity.GetAttributeValue<EntityReference>(Field("agenttoeval"))?.Id,
+                PassingThreshold = GetDecimalValue(entity, Field("passingthreshold")),
+                OverallScore = GetDecimalValue(entity, Field("overallscore")),
+                OverallPass = entity.GetAttributeValue<bool?>(Field("overallpass")),
+                TotalTestCases = entity.GetAttributeValue<int>(Field("totaltestcases")),
+                CompletedTestCases = entity.GetAttributeValue<int>(Field("completedtestcases")),
+                FailedTestCases = entity.GetAttributeValue<int>(Field("failedtestcases")),
+                StartTime = entity.GetAttributeValue<DateTime?>(Field("starttime")),
+                EndTime = entity.GetAttributeValue<DateTime?>(Field("endtime")),
                 StateCode = GetIntValue(entity, "statecode"),
                 StatusCode = entity.GetAttributeValue<OptionSetValue>("statuscode")?.Value ?? 1,
                 CreatedOn = entity.GetAttributeValue<DateTime>("createdon")
@@ -223,7 +233,7 @@ public class DataverseService : IDataverseService, IDisposable
         return await _resilientService.ExecuteAsync(async ct =>
         {
             // First, get the evaluation run to retrieve the test set
-            var evaluationRunResult = await Task.Run(() => _serviceClient.Retrieve("mcicaps_evaluationruns", evaluationRunId, new ColumnSet("mcicaps_testset")), ct);
+            var evaluationRunResult = await Task.Run(() => _serviceClient.Retrieve(Table("evaluationruns"), evaluationRunId, new ColumnSet(Field("testset"))), ct);
             
             if (evaluationRunResult == null)
             {
@@ -231,7 +241,7 @@ public class DataverseService : IDataverseService, IDisposable
                 return new List<TestCase>();
             }
 
-            var testSetReference = evaluationRunResult.GetAttributeValue<EntityReference>("mcicaps_testset");
+            var testSetReference = evaluationRunResult.GetAttributeValue<EntityReference>(Field("testset"));
             
             if (testSetReference == null)
             {
@@ -240,22 +250,22 @@ public class DataverseService : IDataverseService, IDisposable
             }
 
             // Now query test cases by test set
-            var query = new QueryExpression("mcicaps_testcases")
+            var query = new QueryExpression(Table("testcases"))
             {
                 ColumnSet = new ColumnSet(
-                    "mcicaps_testcasesid",
-                    "mcicaps_testcasename",
-                    "mcicaps_prompt",
-                    "mcicaps_expectedresponse",
-                    "mcicaps_evaluatortype",
-                    "mcicaps_ismultiturn",
+                    Field("testcasesid"),
+                    Field("testcasename"),
+                    Field("prompt"),
+                    Field("expectedresponse"),
+                    Field("evaluatortype"),
+                    Field("ismultiturn"),
                     "createdon"
                 ),
                 Criteria = new FilterExpression
                 {
                     Conditions =
                     {
-                        new ConditionExpression("mcicaps_testset", ConditionOperator.Equal, testSetReference.Id),
+                        new ConditionExpression(Field("testset"), ConditionOperator.Equal, testSetReference.Id),
                         new ConditionExpression("statecode", ConditionOperator.Equal, 0) // Active only
                     }
                 },
@@ -276,18 +286,18 @@ public class DataverseService : IDataverseService, IDisposable
                 
                 foreach (var entity in result.Entities)
                 {
-                    var evaluatorTypeRef = entity.GetAttributeValue<EntityReference>("mcicaps_evaluatortype");
+                    var evaluatorTypeRef = entity.GetAttributeValue<EntityReference>(Field("evaluatortype"));
                     
                     testCases.Add(new TestCase
                     {
                         Id = entity.Id,
-                        Name = entity.GetAttributeValue<string>("mcicaps_testcasename") ?? string.Empty,
+                        Name = entity.GetAttributeValue<string>(Field("testcasename")) ?? string.Empty,
                         EvaluationRunId = evaluationRunId,
-                        UserInput = entity.GetAttributeValue<string>("mcicaps_prompt") ?? string.Empty,
-                        ExpectedResponse = entity.GetAttributeValue<string>("mcicaps_expectedresponse") ?? string.Empty,
+                        UserInput = entity.GetAttributeValue<string>(Field("prompt")) ?? string.Empty,
+                        ExpectedResponse = entity.GetAttributeValue<string>(Field("expectedresponse")) ?? string.Empty,
                         EvaluatorTypeId = evaluatorTypeRef?.Id,
                         ConversationId = null, // ConversationId is on EvaluationResult, not TestCase
-                        IsMultiTurn = entity.GetAttributeValue<bool>("mcicaps_ismultiturn"),
+                        IsMultiTurn = entity.GetAttributeValue<bool>(Field("ismultiturn")),
                         CreatedOn = entity.GetAttributeValue<DateTime>("createdon")
                     });
                 }
@@ -320,7 +330,7 @@ public class DataverseService : IDataverseService, IDisposable
 
         await _resilientService.ExecuteAsync(async ct =>
         {
-            var updateEntity = new Entity("mcicaps_evaluationruns", evaluationRunId);
+            var updateEntity = new Entity(Table("evaluationruns"), evaluationRunId);
             updateEntity["statuscode"] = new OptionSetValue(statusCode);
             
             // Set state based on status
@@ -354,12 +364,12 @@ public class DataverseService : IDataverseService, IDisposable
 
         await _resilientService.ExecuteAsync(async ct =>
         {
-            var updateEntity = new Entity("mcicaps_evaluationruns", evaluationRunId);
-            updateEntity["mcicaps_totaltestcases"] = totalTestCases;
+            var updateEntity = new Entity(Table("evaluationruns"), evaluationRunId);
+            updateEntity[Field("totaltestcases")] = totalTestCases;
             // Initialize counters to 0
-            updateEntity["mcicaps_completedtestcases"] = 0;
-            updateEntity["mcicaps_failedtestcases"] = 0;
-            updateEntity["mcicaps_progresspercentage"] = 0.00m;
+            updateEntity[Field("completedtestcases")] = 0;
+            updateEntity[Field("failedtestcases")] = 0;
+            updateEntity[Field("progresspercentage")] = 0.00m;
 
             await Task.Run(() => _serviceClient.Update(updateEntity), ct);
             
@@ -382,14 +392,14 @@ public class DataverseService : IDataverseService, IDisposable
         await _resilientService.ExecuteAsync(async ct =>
         {
             // First retrieve the total test cases to calculate percentage
-            var query = new QueryExpression("mcicaps_evaluationruns")
+            var query = new QueryExpression(Table("evaluationruns"))
             {
-                ColumnSet = new ColumnSet("mcicaps_totaltestcases"),
+                ColumnSet = new ColumnSet(Field("totaltestcases")),
                 Criteria = new FilterExpression
                 {
                     Conditions =
                     {
-                        new ConditionExpression("mcicaps_evaluationrunsid", ConditionOperator.Equal, evaluationRunId)
+                        new ConditionExpression(Field("evaluationrunsid"), ConditionOperator.Equal, evaluationRunId)
                     }
                 }
             };
@@ -402,17 +412,17 @@ public class DataverseService : IDataverseService, IDisposable
                 return;
             }
 
-            var totalTestCases = result.Entities[0].GetAttributeValue<int>("mcicaps_totaltestcases");
+            var totalTestCases = result.Entities[0].GetAttributeValue<int>(Field("totaltestcases"));
 
-            var updateEntity = new Entity("mcicaps_evaluationruns", evaluationRunId);
-            updateEntity["mcicaps_completedtestcases"] = completedTestCases;
-            updateEntity["mcicaps_failedtestcases"] = failedTestCases;
+            var updateEntity = new Entity(Table("evaluationruns"), evaluationRunId);
+            updateEntity[Field("completedtestcases")] = completedTestCases;
+            updateEntity[Field("failedtestcases")] = failedTestCases;
 
             // Calculate and update progress percentage
             if (totalTestCases > 0)
             {
                 var progressPercentage = ((decimal)completedTestCases / totalTestCases) * 100;
-                updateEntity["mcicaps_progresspercentage"] = Math.Round(progressPercentage, 2);
+                updateEntity[Field("progresspercentage")] = Math.Round(progressPercentage, 2);
                 
                 _logger.LogInformation("Calculated progress percentage for {EvaluationRunId}: {ProgressPercentage}%", 
                     evaluationRunId, Math.Round(progressPercentage, 2));
@@ -424,7 +434,7 @@ public class DataverseService : IDataverseService, IDisposable
             }
 
             // Update last progress timestamp
-            updateEntity["mcicaps_lastprogressupdate"] = DateTime.UtcNow;
+            updateEntity[Field("lastprogressupdate")] = DateTime.UtcNow;
 
             await Task.Run(() => _serviceClient.Update(updateEntity), ct);
             
@@ -445,11 +455,11 @@ public class DataverseService : IDataverseService, IDisposable
 
         await _resilientService.ExecuteAsync(async ct =>
         {
-            var updateEntity = new Entity("mcicaps_evaluationruns", evaluationRunId);
+            var updateEntity = new Entity(Table("evaluationruns"), evaluationRunId);
             
             // Convert decimal to double for Float fields in Dataverse
             if (overallScore.HasValue)
-                updateEntity["mcicaps_overallscore"] = Convert.ToDouble(overallScore.Value);
+                updateEntity[Field("overallscore")] = Convert.ToDouble(overallScore.Value);
 
             await Task.Run(() => _serviceClient.Update(updateEntity), ct);
             
@@ -470,39 +480,39 @@ public class DataverseService : IDataverseService, IDisposable
 
         return await _resilientService.ExecuteAsync(async ct =>
         {
-            var resultEntity = new Entity("mcicaps_evaluationresults");
-            resultEntity["mcicaps_testcase"] = new EntityReference("mcicaps_testcases", request.TestCaseId);
-            resultEntity["mcicaps_evaluation"] = new EntityReference("mcicaps_evaluationruns", request.EvaluationRunId);
-            resultEntity["mcicaps_actualresponse"] = request.ActualResponse;
+            var resultEntity = new Entity(Table("evaluationresults"));
+            resultEntity[Field("testcase")] = new EntityReference(Table("testcases"), request.TestCaseId);
+            resultEntity[Field("evaluation")] = new EntityReference(Table("evaluationruns"), request.EvaluationRunId);
+            resultEntity[Field("actualresponse")] = request.ActualResponse;
             
             // Handle evaluator type field
             if (request.EvaluatorTypeId.HasValue)
-                resultEntity["mcicaps_evaluatortype"] = new EntityReference("mcicaps_evaluatortype", request.EvaluatorTypeId.Value);
+                resultEntity[Field("evaluatortype")] = new EntityReference(Table("evaluatortype"), request.EvaluatorTypeId.Value);
             
             // Handle multi-turn fields
             if (request.TestCaseTurnId.HasValue)
-                resultEntity["mcicaps_testcaseturnid"] = new EntityReference("mcicaps_testcaseturn", request.TestCaseTurnId.Value);
+                resultEntity[Field("testcaseturnid")] = new EntityReference(Table("testcaseturn"), request.TestCaseTurnId.Value);
             
-            resultEntity["mcicaps_isaggregate"] = request.IsAggregate;
+            resultEntity[Field("isaggregate")] = request.IsAggregate;
             
             // Convert decimal to double for Float field in Dataverse
             var scoreAsDouble = Convert.ToDouble(request.Score);
             _logger.LogInformation("DataverseService - Score conversion: decimal {DecimalScore} -> double {DoubleScore}", 
                 request.Score, scoreAsDouble);
             
-            resultEntity["mcicaps_score"] = scoreAsDouble;
-            resultEntity["mcicaps_passed"] = request.Passed;
-            resultEntity["mcicaps_reasoning"] = request.Reasoning ?? string.Empty;
-            resultEntity["mcicaps_executiontime"] = request.ExecutionTimeMs;
+            resultEntity[Field("score")] = scoreAsDouble;
+            resultEntity[Field("passed")] = request.Passed;
+            resultEntity[Field("reasoning")] = request.Reasoning ?? string.Empty;
+            resultEntity[Field("executiontime")] = request.ExecutionTimeMs;
             
             if (!string.IsNullOrEmpty(request.ConversationId))
-                resultEntity["mcicaps_conversationid"] = request.ConversationId;
+                resultEntity[Field("conversationid")] = request.ConversationId;
             
             if (!string.IsNullOrEmpty(request.ErrorMessage))
-                resultEntity["mcicaps_errormessage"] = request.ErrorMessage;
+                resultEntity[Field("errormessage")] = request.ErrorMessage;
             
             if (!string.IsNullOrEmpty(request.Metadata))
-                resultEntity["mcicaps_metadata"] = request.Metadata;
+                resultEntity[Field("metadata")] = request.Metadata;
 
             // Set StatusCode if provided (for lifecycle tracking)
             if (request.StatusCode.HasValue)
@@ -530,21 +540,21 @@ public class DataverseService : IDataverseService, IDisposable
 
         return await _resilientService.ExecuteAsync(async ct =>
         {
-            var query = new QueryExpression("mcicaps_testcases")
+            var query = new QueryExpression(Table("testcases"))
             {
                 ColumnSet = new ColumnSet(
-                    "mcicaps_testcasesid",
-                    "mcicaps_testcasename",
-                    "mcicaps_prompt",
-                    "mcicaps_expectedresponse",
-                    "mcicaps_evaluatortype",
+                    Field("testcasesid"),
+                    Field("testcasename"),
+                    Field("prompt"),
+                    Field("expectedresponse"),
+                    Field("evaluatortype"),
                     "createdon"
                 ),
                 Criteria = new FilterExpression
                 {
                     Conditions =
                     {
-                        new ConditionExpression("mcicaps_testcasesid", ConditionOperator.Equal, testCaseId)
+                        new ConditionExpression(Field("testcasesid"), ConditionOperator.Equal, testCaseId)
                     }
                 }
             };
@@ -558,15 +568,15 @@ public class DataverseService : IDataverseService, IDisposable
             }
 
             var entity = result.Entities[0];
-            var evaluatorTypeRef = entity.GetAttributeValue<EntityReference>("mcicaps_evaluatortype");
+            var evaluatorTypeRef = entity.GetAttributeValue<EntityReference>(Field("evaluatortype"));
             
             return new TestCase
             {
                 Id = entity.Id,
-                Name = entity.GetAttributeValue<string>("mcicaps_testcasename") ?? string.Empty,
+                Name = entity.GetAttributeValue<string>(Field("testcasename")) ?? string.Empty,
                 EvaluationRunId = Guid.Empty, // TestCase doesn't have direct link to EvaluationRun
-                UserInput = entity.GetAttributeValue<string>("mcicaps_prompt") ?? string.Empty,
-                ExpectedResponse = entity.GetAttributeValue<string>("mcicaps_expectedresponse") ?? string.Empty,
+                UserInput = entity.GetAttributeValue<string>(Field("prompt")) ?? string.Empty,
+                ExpectedResponse = entity.GetAttributeValue<string>(Field("expectedresponse")) ?? string.Empty,
                 EvaluatorTypeId = evaluatorTypeRef?.Id,
                 ConversationId = null, // ConversationId is on EvaluationResult, not TestCase
                 CreatedOn = entity.GetAttributeValue<DateTime>("createdon")
@@ -587,8 +597,8 @@ public class DataverseService : IDataverseService, IDisposable
 
         await _resilientService.ExecuteAsync(async ct =>
         {
-            var updateEntity = new Entity("mcicaps_evaluationruns", evaluationRunId);
-            updateEntity["mcicaps_starttime"] = startTime;
+            var updateEntity = new Entity(Table("evaluationruns"), evaluationRunId);
+            updateEntity[Field("starttime")] = startTime;
 
             await Task.Run(() => _serviceClient.Update(updateEntity), ct);
             
@@ -609,8 +619,8 @@ public class DataverseService : IDataverseService, IDisposable
 
         await _resilientService.ExecuteAsync(async ct =>
         {
-            var updateEntity = new Entity("mcicaps_evaluationruns", evaluationRunId);
-            updateEntity["mcicaps_endtime"] = endTime;
+            var updateEntity = new Entity(Table("evaluationruns"), evaluationRunId);
+            updateEntity[Field("endtime")] = endTime;
 
             await Task.Run(() => _serviceClient.Update(updateEntity), ct);
             
@@ -631,20 +641,20 @@ public class DataverseService : IDataverseService, IDisposable
 
         return await _resilientService.ExecuteAsync(async ct =>
         {
-            var query = new QueryExpression("mcicaps_evaluationruns")
+            var query = new QueryExpression(Table("evaluationruns"))
             {
                 ColumnSet = new ColumnSet(
-                    "mcicaps_evaluationrunsid", 
-                    "mcicaps_runname", 
-                    "mcicaps_passingthreshold",
-                    "mcicaps_overallpass",
-                    "mcicaps_overallscore",
-                    "mcicaps_totaltestcases",
-                    "mcicaps_completedtestcases",
-                    "mcicaps_failedtestcases",
-                    "mcicaps_starttime",
-                    "mcicaps_endtime",
-                    "mcicaps_lastprogressupdate",
+                    Field("evaluationrunsid"), 
+                    Field("runname"), 
+                    Field("passingthreshold"),
+                    Field("overallpass"),
+                    Field("overallscore"),
+                    Field("totaltestcases"),
+                    Field("completedtestcases"),
+                    Field("failedtestcases"),
+                    Field("starttime"),
+                    Field("endtime"),
+                    Field("lastprogressupdate"),
                     "statuscode",
                     "statecode",
                     "createdon"
@@ -667,16 +677,16 @@ public class DataverseService : IDataverseService, IDisposable
                 evaluationRuns.Add(new EvaluationRun
                 {
                     Id = entity.Id,
-                    Name = entity.GetAttributeValue<string>("mcicaps_runname") ?? string.Empty,
-                    PassingThreshold = GetDecimalValue(entity, "mcicaps_passingthreshold"),
-                    OverallScore = GetDecimalValue(entity, "mcicaps_overallscore"),
-                    OverallPass = entity.GetAttributeValue<bool?>("mcicaps_overallpass"),
-                    TotalTestCases = entity.GetAttributeValue<int>("mcicaps_totaltestcases"),
-                    CompletedTestCases = entity.GetAttributeValue<int>("mcicaps_completedtestcases"),
-                    FailedTestCases = entity.GetAttributeValue<int>("mcicaps_failedtestcases"),
-                    StartTime = entity.GetAttributeValue<DateTime?>("mcicaps_starttime"),
-                    EndTime = entity.GetAttributeValue<DateTime?>("mcicaps_endtime"),
-                    LastProgressUpdate = entity.GetAttributeValue<DateTime?>("mcicaps_lastprogressupdate"),
+                    Name = entity.GetAttributeValue<string>(Field("runname")) ?? string.Empty,
+                    PassingThreshold = GetDecimalValue(entity, Field("passingthreshold")),
+                    OverallScore = GetDecimalValue(entity, Field("overallscore")),
+                    OverallPass = entity.GetAttributeValue<bool?>(Field("overallpass")),
+                    TotalTestCases = entity.GetAttributeValue<int>(Field("totaltestcases")),
+                    CompletedTestCases = entity.GetAttributeValue<int>(Field("completedtestcases")),
+                    FailedTestCases = entity.GetAttributeValue<int>(Field("failedtestcases")),
+                    StartTime = entity.GetAttributeValue<DateTime?>(Field("starttime")),
+                    EndTime = entity.GetAttributeValue<DateTime?>(Field("endtime")),
+                    LastProgressUpdate = entity.GetAttributeValue<DateTime?>(Field("lastprogressupdate")),
                     StateCode = GetIntValue(entity, "statecode"),
                     StatusCode = entity.GetAttributeValue<OptionSetValue>("statuscode")?.Value ?? 1,
                     CreatedOn = entity.GetAttributeValue<DateTime>("createdon")
@@ -702,22 +712,22 @@ public class DataverseService : IDataverseService, IDisposable
 
         return await _resilientService.ExecuteAsync(async ct =>
         {
-            var query = new QueryExpression("mcicaps_evaluationresults")
+            var query = new QueryExpression(Table("evaluationresults"))
             {
                 ColumnSet = new ColumnSet(
-                    "mcicaps_evaluationresultsid",
-                    "mcicaps_evaluationresultname",
-                    "mcicaps_evaluation",
-                    "mcicaps_testcase",
-                    "mcicaps_testcaseturnid",
-                    "mcicaps_isaggregate",
-                    "mcicaps_actualresponse",
-                    "mcicaps_score",
-                    "mcicaps_reasoning",
-                    "mcicaps_conversationid",
-                    "mcicaps_executiontime",
-                    "mcicaps_errormessage",
-                    "mcicaps_metadata",
+                    Field("evaluationresultsid"),
+                    Field("evaluationresultname"),
+                    Field("evaluation"),
+                    Field("testcase"),
+                    Field("testcaseturnid"),
+                    Field("isaggregate"),
+                    Field("actualresponse"),
+                    Field("score"),
+                    Field("reasoning"),
+                    Field("conversationid"),
+                    Field("executiontime"),
+                    Field("errormessage"),
+                    Field("metadata"),
                     "statecode",
                     "statuscode",
                     "createdon"
@@ -726,7 +736,7 @@ public class DataverseService : IDataverseService, IDisposable
                 {
                     Conditions =
                     {
-                        new ConditionExpression("mcicaps_evaluation", ConditionOperator.Equal, evaluationRunId)
+                        new ConditionExpression(Field("evaluation"), ConditionOperator.Equal, evaluationRunId)
                     }
                 }
             };
@@ -740,18 +750,18 @@ public class DataverseService : IDataverseService, IDisposable
                 evaluationResults.Add(new EvaluationResult
                 {
                     Id = entity.Id,
-                    Name = entity.GetAttributeValue<string>("mcicaps_evaluationresultname") ?? string.Empty,
-                    EvaluationRunId = entity.GetAttributeValue<EntityReference>("mcicaps_evaluation")?.Id ?? Guid.Empty,
-                    TestCaseId = entity.GetAttributeValue<EntityReference>("mcicaps_testcase")?.Id ?? Guid.Empty,
-                    TestCaseTurnId = entity.GetAttributeValue<EntityReference>("mcicaps_testcaseturnid")?.Id,
-                    IsAggregate = entity.GetAttributeValue<bool>("mcicaps_isaggregate"),
-                    ActualResponse = entity.GetAttributeValue<string>("mcicaps_actualresponse"),
-                    Score = GetDecimalValue(entity, "mcicaps_score"),
-                    Reasoning = entity.GetAttributeValue<string>("mcicaps_reasoning"),
-                    ConversationId = entity.GetAttributeValue<string>("mcicaps_conversationid"),
-                    ExecutionTimeMs = entity.GetAttributeValue<int?>("mcicaps_executiontime"),
-                    ErrorMessage = entity.GetAttributeValue<string>("mcicaps_errormessage"),
-                    Metadata = entity.GetAttributeValue<string>("mcicaps_metadata"),
+                    Name = entity.GetAttributeValue<string>(Field("evaluationresultname")) ?? string.Empty,
+                    EvaluationRunId = entity.GetAttributeValue<EntityReference>(Field("evaluation"))?.Id ?? Guid.Empty,
+                    TestCaseId = entity.GetAttributeValue<EntityReference>(Field("testcase"))?.Id ?? Guid.Empty,
+                    TestCaseTurnId = entity.GetAttributeValue<EntityReference>(Field("testcaseturnid"))?.Id,
+                    IsAggregate = entity.GetAttributeValue<bool>(Field("isaggregate")),
+                    ActualResponse = entity.GetAttributeValue<string>(Field("actualresponse")),
+                    Score = GetDecimalValue(entity, Field("score")),
+                    Reasoning = entity.GetAttributeValue<string>(Field("reasoning")),
+                    ConversationId = entity.GetAttributeValue<string>(Field("conversationid")),
+                    ExecutionTimeMs = entity.GetAttributeValue<int?>(Field("executiontime")),
+                    ErrorMessage = entity.GetAttributeValue<string>(Field("errormessage")),
+                    Metadata = entity.GetAttributeValue<string>(Field("metadata")),
                     StateCode = GetIntValue(entity, "statecode"),
                     StatusCode = entity.GetAttributeValue<OptionSetValue>("statuscode")?.Value ?? 1,
                     CreatedOn = entity.GetAttributeValue<DateTime>("createdon")
@@ -779,16 +789,16 @@ public class DataverseService : IDataverseService, IDisposable
 
         await _resilientService.ExecuteAsync(async ct =>
         {
-            var updateEntity = new Entity("mcicaps_evaluationruns", evaluationRunId);
+            var updateEntity = new Entity(Table("evaluationruns"), evaluationRunId);
             updateEntity["statuscode"] = new OptionSetValue(statusCode);
-            updateEntity["mcicaps_endtime"] = endTime;
+            updateEntity[Field("endtime")] = endTime;
             
             // Convert decimal to double for Float field in Dataverse
             if (overallScore.HasValue)
-                updateEntity["mcicaps_overallscore"] = Convert.ToDouble(overallScore.Value);
+                updateEntity[Field("overallscore")] = Convert.ToDouble(overallScore.Value);
                 
             if (overallPass.HasValue)
-                updateEntity["mcicaps_overallpass"] = overallPass.Value;
+                updateEntity[Field("overallpass")] = overallPass.Value;
 
             await Task.Run(() => _serviceClient.Update(updateEntity), ct);
             
@@ -811,14 +821,14 @@ public class DataverseService : IDataverseService, IDisposable
         await _resilientService.ExecuteAsync(async ct =>
         {
             // Retrieve current values
-            var query = new QueryExpression("mcicaps_evaluationruns")
+            var query = new QueryExpression(Table("evaluationruns"))
             {
-                ColumnSet = new ColumnSet("mcicaps_completedtestcases", "mcicaps_failedtestcases", "mcicaps_totaltestcases"),
+                ColumnSet = new ColumnSet(Field("completedtestcases"), Field("failedtestcases"), Field("totaltestcases")),
                 Criteria = new FilterExpression
                 {
                     Conditions =
                     {
-                        new ConditionExpression("mcicaps_evaluationrunsid", ConditionOperator.Equal, evaluationRunId)
+                        new ConditionExpression(Field("evaluationrunsid"), ConditionOperator.Equal, evaluationRunId)
                     }
                 }
             };
@@ -832,29 +842,29 @@ public class DataverseService : IDataverseService, IDisposable
             }
 
             var entity = result.Entities[0];
-            var completedTestCases = entity.GetAttributeValue<int>("mcicaps_completedtestcases");
-            var failedTestCases = entity.GetAttributeValue<int>("mcicaps_failedtestcases");
-            var totalTestCases = entity.GetAttributeValue<int>("mcicaps_totaltestcases");
+            var completedTestCases = entity.GetAttributeValue<int>(Field("completedtestcases"));
+            var failedTestCases = entity.GetAttributeValue<int>(Field("failedtestcases"));
+            var totalTestCases = entity.GetAttributeValue<int>(Field("totaltestcases"));
 
             // Increment counters
             var newCompletedCount = completedTestCases + 1;
-            var updateEntity = new Entity("mcicaps_evaluationruns", evaluationRunId);
-            updateEntity["mcicaps_completedtestcases"] = newCompletedCount;
+            var updateEntity = new Entity(Table("evaluationruns"), evaluationRunId);
+            updateEntity[Field("completedtestcases")] = newCompletedCount;
             
             if (failed)
             {
-                updateEntity["mcicaps_failedtestcases"] = failedTestCases + 1;
+                updateEntity[Field("failedtestcases")] = failedTestCases + 1;
             }
 
             // Calculate and update progress percentage
             if (totalTestCases > 0)
             {
                 var progressPercentage = ((decimal)newCompletedCount / totalTestCases) * 100;
-                updateEntity["mcicaps_progresspercentage"] = Math.Round(progressPercentage, 2);
+                updateEntity[Field("progresspercentage")] = Math.Round(progressPercentage, 2);
             }
 
             // Update last progress timestamp
-            updateEntity["mcicaps_lastprogressupdate"] = DateTime.UtcNow;
+            updateEntity[Field("lastprogressupdate")] = DateTime.UtcNow;
 
             await Task.Run(() => _serviceClient.Update(updateEntity), ct);
             
@@ -876,14 +886,14 @@ public class DataverseService : IDataverseService, IDisposable
 
         return await _resilientService.ExecuteAsync(async ct =>
         {
-            var query = new QueryExpression("mcicaps_evaluatortype")
+            var query = new QueryExpression(Table("evaluatortype"))
             {
                 ColumnSet = new ColumnSet(
-                    "mcicaps_evaluatortypeid",
-                    "mcicaps_name",
-                    "mcicaps_evaluatorprompt",
-                    "mcicaps_requiresexpectedresponse",
-                    "mcicaps_judgeagentid",
+                    Field("evaluatortypeid"),
+                    Field("name"),
+                    Field("evaluatorprompt"),
+                    Field("requiresexpectedresponse"),
+                    Field("judgeagentid"),
                     "statecode",
                     "statuscode",
                     "createdon",
@@ -893,7 +903,7 @@ public class DataverseService : IDataverseService, IDisposable
                 {
                     Conditions =
                     {
-                        new ConditionExpression("mcicaps_evaluatortypeid", ConditionOperator.Equal, evaluatorTypeId),
+                        new ConditionExpression(Field("evaluatortypeid"), ConditionOperator.Equal, evaluatorTypeId),
                         new ConditionExpression("statecode", ConditionOperator.Equal, 0) // Active only
                     }
                 }
@@ -912,11 +922,11 @@ public class DataverseService : IDataverseService, IDisposable
             return new EvaluatorType
             {
                 Id = entity.Id,
-                Name = entity.GetAttributeValue<string>("mcicaps_name") ?? string.Empty,
-                EvaluatorPrompt = entity.GetAttributeValue<string>("mcicaps_evaluatorprompt") ?? string.Empty,
-                RequiresExpectedResponse = entity.GetAttributeValue<bool>("mcicaps_requiresexpectedresponse"),
-                JudgeAgentId = entity.Contains("mcicaps_judgeagentid") 
-                    ? entity.GetAttributeValue<EntityReference>("mcicaps_judgeagentid")?.Id 
+                Name = entity.GetAttributeValue<string>(Field("name")) ?? string.Empty,
+                EvaluatorPrompt = entity.GetAttributeValue<string>(Field("evaluatorprompt")) ?? string.Empty,
+                RequiresExpectedResponse = entity.GetAttributeValue<bool>(Field("requiresexpectedresponse")),
+                JudgeAgentId = entity.Contains(Field("judgeagentid")) 
+                    ? entity.GetAttributeValue<EntityReference>(Field("judgeagentid"))?.Id 
                     : null,
                 StateCode = GetIntValue(entity, "statecode"),
                 StatusCode = entity.GetAttributeValue<OptionSetValue>("statuscode")?.Value ?? 1,
@@ -940,14 +950,14 @@ public class DataverseService : IDataverseService, IDisposable
         return await _resilientService.ExecuteAsync(async ct =>
         {
             // Query the N:N join table to get evaluator types associated with this run
-            var query = new QueryExpression("mcicaps_evaluatortype")
+            var query = new QueryExpression(Table("evaluatortype"))
             {
                 ColumnSet = new ColumnSet(
-                    "mcicaps_evaluatortypeid",
-                    "mcicaps_name",
-                    "mcicaps_evaluatorprompt",
-                    "mcicaps_requiresexpectedresponse",
-                    "mcicaps_judgeagentid",
+                    Field("evaluatortypeid"),
+                    Field("name"),
+                    Field("evaluatorprompt"),
+                    Field("requiresexpectedresponse"),
+                    Field("judgeagentid"),
                     "statecode",
                     "statuscode",
                     "createdon",
@@ -964,16 +974,16 @@ public class DataverseService : IDataverseService, IDisposable
                 {
                     new LinkEntity
                     {
-                        LinkFromEntityName = "mcicaps_evaluatortype",
-                        LinkFromAttributeName = "mcicaps_evaluatortypeid",
-                        LinkToEntityName = "mcicaps_evaluationrun_evaluatortype",
-                        LinkToAttributeName = "mcicaps_evaluatortypeid",
+                        LinkFromEntityName = Field("evaluatortype"),
+                        LinkFromAttributeName = Field("evaluatortypeid"),
+                        LinkToEntityName = Field("evaluationrun_evaluatortype"),
+                        LinkToAttributeName = Field("evaluatortypeid"),
                         JoinOperator = JoinOperator.Inner,
                         LinkCriteria = new FilterExpression
                         {
                             Conditions =
                             {
-                                new ConditionExpression("mcicaps_evaluationrunid", ConditionOperator.Equal, evaluationRunId)
+                                new ConditionExpression(Field("evaluationrunid"), ConditionOperator.Equal, evaluationRunId)
                             }
                         }
                     }
@@ -988,11 +998,11 @@ public class DataverseService : IDataverseService, IDisposable
             return result.Entities.Select(entity => new EvaluatorType
             {
                 Id = entity.Id,
-                Name = entity.GetAttributeValue<string>("mcicaps_name") ?? string.Empty,
-                EvaluatorPrompt = entity.GetAttributeValue<string>("mcicaps_evaluatorprompt") ?? string.Empty,
-                RequiresExpectedResponse = entity.GetAttributeValue<bool>("mcicaps_requiresexpectedresponse"),
-                JudgeAgentId = entity.Contains("mcicaps_judgeagentid") 
-                    ? entity.GetAttributeValue<EntityReference>("mcicaps_judgeagentid")?.Id 
+                Name = entity.GetAttributeValue<string>(Field("name")) ?? string.Empty,
+                EvaluatorPrompt = entity.GetAttributeValue<string>(Field("evaluatorprompt")) ?? string.Empty,
+                RequiresExpectedResponse = entity.GetAttributeValue<bool>(Field("requiresexpectedresponse")),
+                JudgeAgentId = entity.Contains(Field("judgeagentid")) 
+                    ? entity.GetAttributeValue<EntityReference>(Field("judgeagentid"))?.Id 
                     : null,
                 StateCode = GetIntValue(entity, "statecode"),
                 StatusCode = entity.GetAttributeValue<OptionSetValue>("statuscode")?.Value ?? 1,
@@ -1015,17 +1025,17 @@ public class DataverseService : IDataverseService, IDisposable
 
         return await _resilientService.ExecuteAsync(async ct =>
         {
-            var query = new QueryExpression("mcicaps_judgeagent")
+            var query = new QueryExpression(Table("judgeagent"))
             {
                 ColumnSet = new ColumnSet(
-                    "mcicaps_judgeagentid",
-                    "mcicaps_name",
-                    "mcicaps_judgetype",
-                    "mcicaps_aoaiendpoint",
-                    "mcicaps_aoaideploymentname",
-                    "mcicaps_directlineurl",
-                    "mcicaps_modelname",
-                    "mcicaps_description",
+                    Field("judgeagentid"),
+                    Field("name"),
+                    Field("judgetype"),
+                    Field("aoaiendpoint"),
+                    Field("aoaideploymentname"),
+                    Field("directlineurl"),
+                    Field("modelname"),
+                    Field("description"),
                     "statecode",
                     "statuscode",
                     "createdon",
@@ -1035,7 +1045,7 @@ public class DataverseService : IDataverseService, IDisposable
                 {
                     Conditions =
                     {
-                        new ConditionExpression("mcicaps_judgeagentid", ConditionOperator.Equal, judgeAgentId),
+                        new ConditionExpression(Field("judgeagentid"), ConditionOperator.Equal, judgeAgentId),
                         new ConditionExpression("statecode", ConditionOperator.Equal, 0) // Active only
                     }
                 }
@@ -1054,13 +1064,13 @@ public class DataverseService : IDataverseService, IDisposable
             return new JudgeAgent
             {
                 Id = entity.Id,
-                Name = entity.GetAttributeValue<string>("mcicaps_name") ?? string.Empty,
-                JudgeType = entity.GetAttributeValue<OptionSetValue>("mcicaps_judgetype")?.Value ?? JudgeType.AzureOpenAI,
-                AoaiEndpoint = entity.GetAttributeValue<string>("mcicaps_aoaiendpoint"),
-                AoaiDeploymentName = entity.GetAttributeValue<string>("mcicaps_aoaideploymentname"),
-                DirectLineUrl = entity.GetAttributeValue<string>("mcicaps_directlineurl"),
-                ModelName = entity.GetAttributeValue<string>("mcicaps_modelname"),
-                Description = entity.GetAttributeValue<string>("mcicaps_description"),
+                Name = entity.GetAttributeValue<string>(Field("name")) ?? string.Empty,
+                JudgeType = entity.GetAttributeValue<OptionSetValue>(Field("judgetype"))?.Value ?? JudgeType.AzureOpenAI,
+                AoaiEndpoint = entity.GetAttributeValue<string>(Field("aoaiendpoint")),
+                AoaiDeploymentName = entity.GetAttributeValue<string>(Field("aoaideploymentname")),
+                DirectLineUrl = entity.GetAttributeValue<string>(Field("directlineurl")),
+                ModelName = entity.GetAttributeValue<string>(Field("modelname")),
+                Description = entity.GetAttributeValue<string>(Field("description")),
                 StateCode = GetIntValue(entity, "statecode"),
                 StatusCode = entity.GetAttributeValue<OptionSetValue>("statuscode")?.Value ?? 1,
                 CreatedOn = entity.GetAttributeValue<DateTime>("createdon"),
@@ -1082,12 +1092,12 @@ public class DataverseService : IDataverseService, IDisposable
 
         return await _resilientService.ExecuteAsync(async ct =>
         {
-            var query = new QueryExpression("mcicaps_agenttoeval")
+            var query = new QueryExpression(Table("agenttoeval"))
             {
                 ColumnSet = new ColumnSet(
-                    "mcicaps_agenttoevalid",
-                    "mcicaps_name",
-                    "mcicaps_directlinespeechurl",
+                    Field("agenttoevalid"),
+                    Field("name"),
+                    Field("directlinespeechurl"),
                     "statecode",
                     "statuscode",
                     "createdon",
@@ -1097,7 +1107,7 @@ public class DataverseService : IDataverseService, IDisposable
                 {
                     Conditions =
                     {
-                        new ConditionExpression("mcicaps_agenttoevalid", ConditionOperator.Equal, agentToEvalId),
+                        new ConditionExpression(Field("agenttoevalid"), ConditionOperator.Equal, agentToEvalId),
                         new ConditionExpression("statecode", ConditionOperator.Equal, 0) // Active only
                     }
                 }
@@ -1116,8 +1126,8 @@ public class DataverseService : IDataverseService, IDisposable
             return new AgentToEval
             {
                 Id = entity.Id,
-                Name = entity.GetAttributeValue<string>("mcicaps_name") ?? string.Empty,
-                DirectLineSpeechUrl = entity.GetAttributeValue<string>("mcicaps_directlinespeechurl") ?? string.Empty,
+                Name = entity.GetAttributeValue<string>(Field("name")) ?? string.Empty,
+                DirectLineSpeechUrl = entity.GetAttributeValue<string>(Field("directlinespeechurl")) ?? string.Empty,
                 StateCode = GetIntValue(entity, "statecode"),
                 StatusCode = entity.GetAttributeValue<OptionSetValue>("statuscode")?.Value ?? 1,
                 CreatedOn = entity.GetAttributeValue<DateTime>("createdon"),
@@ -1162,15 +1172,15 @@ public class DataverseService : IDataverseService, IDisposable
 
         return await _resilientService.ExecuteAsync(async ct =>
         {
-            var query = new QueryExpression("mcicaps_testcaseturn")
+            var query = new QueryExpression(Table("testcaseturn"))
             {
                 ColumnSet = new ColumnSet(
-                    "mcicaps_testcaseturnid",
-                    "mcicaps_name",
-                    "mcicaps_testcaseid",
-                    "mcicaps_sequence",
-                    "mcicaps_prompttext",
-                    "mcicaps_expectedresponse",
+                    Field("testcaseturnid"),
+                    Field("name"),
+                    Field("testcaseid"),
+                    Field("sequence"),
+                    Field("prompttext"),
+                    Field("expectedresponse"),
                     "createdon",
                     "modifiedon"
                 ),
@@ -1178,13 +1188,13 @@ public class DataverseService : IDataverseService, IDisposable
                 {
                     Conditions =
                     {
-                        new ConditionExpression("mcicaps_testcaseid", ConditionOperator.Equal, testCaseId),
+                        new ConditionExpression(Field("testcaseid"), ConditionOperator.Equal, testCaseId),
                         new ConditionExpression("statecode", ConditionOperator.Equal, 0) // Active only
                     }
                 },
                 Orders =
                 {
-                    new OrderExpression("mcicaps_sequence", OrderType.Ascending)
+                    new OrderExpression(Field("sequence"), OrderType.Ascending)
                 }
             };
 
@@ -1194,16 +1204,16 @@ public class DataverseService : IDataverseService, IDisposable
             
             foreach (var entity in result.Entities)
             {
-                var testCaseRef = entity.GetAttributeValue<EntityReference>("mcicaps_testcaseid");
+                var testCaseRef = entity.GetAttributeValue<EntityReference>(Field("testcaseid"));
                 
                 turns.Add(new TestCaseTurn
                 {
                     Id = entity.Id,
-                    Name = entity.GetAttributeValue<string>("mcicaps_name") ?? string.Empty,
+                    Name = entity.GetAttributeValue<string>(Field("name")) ?? string.Empty,
                     TestCaseId = testCaseRef?.Id ?? testCaseId,
-                    Sequence = entity.GetAttributeValue<int>("mcicaps_sequence"),
-                    PromptText = entity.GetAttributeValue<string>("mcicaps_prompttext") ?? string.Empty,
-                    ExpectedResponse = entity.GetAttributeValue<string>("mcicaps_expectedresponse"),
+                    Sequence = entity.GetAttributeValue<int>(Field("sequence")),
+                    PromptText = entity.GetAttributeValue<string>(Field("prompttext")) ?? string.Empty,
+                    ExpectedResponse = entity.GetAttributeValue<string>(Field("expectedresponse")),
                     CreatedOn = entity.GetAttributeValue<DateTime>("createdon"),
                     ModifiedOn = entity.GetAttributeValue<DateTime>("modifiedon")
                 });
@@ -1229,13 +1239,13 @@ public class DataverseService : IDataverseService, IDisposable
 
         return await _resilientService.ExecuteAsync(async ct =>
         {
-            var resultEntity = new Entity("mcicaps_evaluationresults");
-            resultEntity["mcicaps_testcase"] = new EntityReference("mcicaps_testcases", context.TestCase.Id);
-            resultEntity["mcicaps_evaluation"] = new EntityReference("mcicaps_evaluationruns", context.TestRunId);
-            resultEntity["mcicaps_isaggregate"] = true;
+            var resultEntity = new Entity(Table("evaluationresults"));
+            resultEntity[Field("testcase")] = new EntityReference(Table("testcases"), context.TestCase.Id);
+            resultEntity[Field("evaluation")] = new EntityReference(Table("evaluationruns"), context.TestRunId);
+            resultEntity[Field("isaggregate")] = true;
             
             if (!string.IsNullOrEmpty(context.ConversationId))
-                resultEntity["mcicaps_conversationid"] = context.ConversationId;
+                resultEntity[Field("conversationid")] = context.ConversationId;
 
             // Calculate aggregate metrics
             var passRate = context.PassRate;
@@ -1253,12 +1263,12 @@ public class DataverseService : IDataverseService, IDisposable
             // Check if average score meets the passing threshold
             var passedOverall = averageScore >= Convert.ToDouble(context.PassingThreshold);
             
-            resultEntity["mcicaps_score"] = averageScore;
-            resultEntity["mcicaps_passed"] = passedOverall;
+            resultEntity[Field("score")] = averageScore;
+            resultEntity[Field("passed")] = passedOverall;
 
             // Create summary reasoning
             var summary = $"Multi-turn test case completed: {context.PassedTurns}/{context.TotalTurns} turns passed ({passRate:P0} pass rate), average score: {averageScore:F2}, threshold: {context.PassingThreshold:F2}, overall: {(passedOverall ? "PASSED" : "FAILED")}";
-            resultEntity["mcicaps_reasoning"] = summary;
+            resultEntity[Field("reasoning")] = summary;
 
             // Calculate average execution time
             var avgExecutionTime = context.TurnResults.Values
@@ -1266,7 +1276,7 @@ public class DataverseService : IDataverseService, IDisposable
                 .Select(r => r.ExecutionTimeMs!.Value)
                 .DefaultIfEmpty(0)
                 .Average();
-            resultEntity["mcicaps_executiontime"] = (int)avgExecutionTime;
+            resultEntity[Field("executiontime")] = (int)avgExecutionTime;
 
             var resultId = await Task.Run(() => _serviceClient.Create(resultEntity), ct);
             
@@ -1294,16 +1304,16 @@ public class DataverseService : IDataverseService, IDisposable
 
         return await _resilientService.ExecuteAsync(async ct =>
         {
-            var query = new QueryExpression("mcicaps_evaluationresults")
+            var query = new QueryExpression(Table("evaluationresults"))
             {
                 ColumnSet = new ColumnSet(
-                    "mcicaps_evaluationresultsid",
-                    "mcicaps_evaluationresultname",
-                    "mcicaps_evaluation",
-                    "mcicaps_testcase",
-                    "mcicaps_isaggregate",
-                    "mcicaps_score",
-                    "mcicaps_passed",
+                    Field("evaluationresultsid"),
+                    Field("evaluationresultname"),
+                    Field("evaluation"),
+                    Field("testcase"),
+                    Field("isaggregate"),
+                    Field("score"),
+                    Field("passed"),
                     "statuscode",
                     "statecode",
                     "createdon"
@@ -1312,9 +1322,9 @@ public class DataverseService : IDataverseService, IDisposable
                 {
                     Conditions =
                     {
-                        new ConditionExpression("mcicaps_evaluation", ConditionOperator.Equal, evaluationRunId),
-                        new ConditionExpression("mcicaps_testcase", ConditionOperator.Equal, testCaseId),
-                        new ConditionExpression("mcicaps_isaggregate", ConditionOperator.Equal, true)
+                        new ConditionExpression(Field("evaluation"), ConditionOperator.Equal, evaluationRunId),
+                        new ConditionExpression(Field("testcase"), ConditionOperator.Equal, testCaseId),
+                        new ConditionExpression(Field("isaggregate"), ConditionOperator.Equal, true)
                     }
                 },
                 TopCount = 1
@@ -1334,12 +1344,12 @@ public class DataverseService : IDataverseService, IDisposable
             var evaluationResult = new EvaluationResult
             {
                 Id = entity.Id,
-                Name = entity.GetAttributeValue<string>("mcicaps_evaluationresultname") ?? string.Empty,
-                EvaluationRunId = entity.GetAttributeValue<EntityReference>("mcicaps_evaluation")?.Id ?? Guid.Empty,
-                TestCaseId = entity.GetAttributeValue<EntityReference>("mcicaps_testcase")?.Id ?? Guid.Empty,
-                IsAggregate = entity.GetAttributeValue<bool>("mcicaps_isaggregate"),
-                Score = GetDecimalValue(entity, "mcicaps_score"),
-                Passed = entity.GetAttributeValue<bool?>("mcicaps_passed"),
+                Name = entity.GetAttributeValue<string>(Field("evaluationresultname")) ?? string.Empty,
+                EvaluationRunId = entity.GetAttributeValue<EntityReference>(Field("evaluation"))?.Id ?? Guid.Empty,
+                TestCaseId = entity.GetAttributeValue<EntityReference>(Field("testcase"))?.Id ?? Guid.Empty,
+                IsAggregate = entity.GetAttributeValue<bool>(Field("isaggregate")),
+                Score = GetDecimalValue(entity, Field("score")),
+                Passed = entity.GetAttributeValue<bool?>(Field("passed")),
                 StateCode = GetIntValue(entity, "statecode"),
                 StatusCode = entity.GetAttributeValue<OptionSetValue>("statuscode")?.Value ?? 1,
                 CreatedOn = entity.GetAttributeValue<DateTime>("createdon")
@@ -1373,13 +1383,13 @@ public class DataverseService : IDataverseService, IDisposable
 
         await _resilientService.ExecuteAsync(async ct =>
         {
-            var updateEntity = new Entity("mcicaps_evaluationresults", resultId);
+            var updateEntity = new Entity(Table("evaluationresults"), resultId);
             
             // Convert decimal to double for Float field in Dataverse
-            updateEntity["mcicaps_score"] = Convert.ToDouble(score);
-            updateEntity["mcicaps_passed"] = passed;
-            updateEntity["mcicaps_reasoning"] = reasoning;
-            updateEntity["mcicaps_executiontime"] = executionTimeMs;
+            updateEntity[Field("score")] = Convert.ToDouble(score);
+            updateEntity[Field("passed")] = passed;
+            updateEntity[Field("reasoning")] = reasoning;
+            updateEntity[Field("executiontime")] = executionTimeMs;
             updateEntity["statuscode"] = new OptionSetValue(statusCode);
 
             await Task.Run(() => _serviceClient.Update(updateEntity), ct);

@@ -40,6 +40,7 @@ As a system administrator, I want to configure and secure the evaluation system 
 - ✅ Performance settings (timeouts, concurrency)
 - ✅ Service Bus queue names and settings
 - ✅ Blob Storage container configurations
+- ✅ Dataverse schema prefix configuration (customizable table/field prefix with automatic underscore handling)
 - [ ] Monitoring and alerting thresholds (Application Insights integrated, alerts pending)
 
 ### Story 3: Monitoring and Alerting

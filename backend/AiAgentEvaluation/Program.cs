@@ -50,8 +50,9 @@ catch (Exception ex)
 // Map flat environment variables to nested configuration structure - CRITICAL FIX
 builder.Services.Configure<AppSettings>(options =>
 {
-    // Dataverse settings (OAuth connection string only - Managed Identity not supported)
+    // Dataverse settings (ClientSecret connection string only - Managed Identity not supported)
     options.Dataverse.ConnectionString = builder.Configuration["DataverseConnectionString"] ?? options.Dataverse.ConnectionString;
+    options.Dataverse.SchemaPrefix = builder.Configuration["DataverseSchemaPrefix"] ?? options.Dataverse.SchemaPrefix;
     
     // Azure OpenAI settings
     options.AzureOpenAI.Endpoint = builder.Configuration["AzureOpenAIEndpoint"] ?? options.AzureOpenAI.Endpoint;

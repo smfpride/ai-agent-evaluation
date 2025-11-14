@@ -300,17 +300,18 @@ HTTP Trigger → Orchestrator Function → Service Bus Queue → Worker Function
 
 ### 4.2 Authentication & Security
 - **Managed Identity**: Primary authentication method for ALL Azure services (no connection strings or API keys)
-- **Dataverse**: OAuth connection string with ClientId + ClientSecret (Managed Identity not supported by Dataverse SDK)
+- **Dataverse**: ClientSecret connection string with ClientId + ClientSecret (Managed Identity not supported by Dataverse SDK)
 - **Azure OpenAI**: Managed identity with Cognitive Services OpenAI User role
 - **Service Bus**: Managed identity with Service Bus Data Owner role
 - **Azure Blob Storage**: Managed identity with Storage Blob Data Contributor role (if used)
-- **Key Vault**: Managed identity with Key Vault Secrets User role (for Dataverse OAuth credentials only)
+- **Key Vault**: Managed identity with Key Vault Secrets User role (for Dataverse ClientSecret credentials only)
 - **Application Insights**: Managed identity with Monitoring Metrics Publisher role
 
 ### 4.3 Configuration Management
 ```json
 {
   "DataverseConnectionString": "@Microsoft.KeyVault(VaultName=kv-name;SecretName=DataverseConnectionString)",
+  "DataverseSchemaPrefix": "mcicaps",
   "AzureOpenAIEndpoint": "https://your-openai.openai.azure.com/",
   "ServiceBus__Namespace": "yournamespace.servicebus.windows.net",
   "ServiceBus__QueueName": "test-case-processing",
@@ -326,7 +327,9 @@ HTTP Trigger → Orchestrator Function → Service Bus Queue → Worker Function
 }
 ```
 
-**Note**: All Azure service connections use managed identity. Only Dataverse requires OAuth connection string stored in Key Vault as it does not support Managed Identity authentication.
+**Note**: All Azure service connections use managed identity. Only Dataverse requires ClientSecret connection string stored in Key Vault as it does not support Managed Identity authentication.
+
+**Dataverse Schema Prefix**: The `DataverseSchemaPrefix` setting (default: `mcicaps`) allows customization of table and field prefixes. The system automatically appends an underscore if not present. For example, setting `DataverseSchemaPrefix=custom` will use `custom_` for all table and field names in Dataverse operations.
 
 ### 4.4 Managed Identity RBAC Requirements
 
@@ -352,10 +355,10 @@ The Function App's managed identity must be assigned the following roles:
 #### 4.4.4 Key Vault
 - **Role**: `Key Vault Secrets User`
 - **Scope**: Key Vault instance
-- **Purpose**: Read Dataverse OAuth connection string (only external service credential)
+- **Purpose**: Read Dataverse ClientSecret connection string (only external service credential)
 
 #### 4.4.5 Dataverse
-- **Setup**: OAuth Application User with ClientId and ClientSecret
+- **Setup**: ClientSecret Application User with ClientId and ClientSecret
 - **Authentication**: Connection string stored in Key Vault
 - **Roles**: 
   - Read access to `mcicaps_evaluationruns`, `mcicaps_testcases`, `mcicaps_testcaseturns`, `mcicaps_evaluatortypes`, `mcicaps_agenttoevals`
@@ -807,7 +810,7 @@ Aggregate Score: (0.8 + 0.9 + 1.0) / 3 = 0.9
 - **Azure Service Bus Standard**: For high-throughput single-turn message processing (1 active queue)
 - **Azure Storage**: For function app state, configuration, and Durable Functions orchestration state
 - **Application Insights**: For monitoring and telemetry
-- **Key Vault**: For Dataverse OAuth credentials only
+- **Key Vault**: For Dataverse ClientSecret credentials only
 - **Managed Identity**: System-assigned identity for all Azure service authentication
 - **RBAC Assignments**: Properly scoped role assignments for least privilege access
 - **Azure OpenAI**: GPT-4o deployment with Managed Identity access
