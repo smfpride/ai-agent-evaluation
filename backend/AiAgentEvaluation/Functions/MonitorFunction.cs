@@ -13,7 +13,6 @@ public class MonitorFunction
     private readonly ILogger<MonitorFunction> _logger;
     private readonly IDataverseService _dataverseService;
     private readonly IServiceBusService _serviceBusService;
-    private readonly ILLMJudgeService _llmJudgeService;
     private const int MaxRunningTimeMinutes = 120; // 2 hours max runtime
     private const int MaxNoProgressMinutes = 30; // 30 minutes with no progress = stalled
     private const decimal DefaultPassingThreshold = 0.7m; // 70% default threshold
@@ -21,13 +20,11 @@ public class MonitorFunction
     public MonitorFunction(
         ILogger<MonitorFunction> logger,
         IDataverseService dataverseService,
-        IServiceBusService serviceBusService,
-        ILLMJudgeService llmJudgeService)
+        IServiceBusService serviceBusService)
     {
         _logger = logger;
         _dataverseService = dataverseService;
         _serviceBusService = serviceBusService;
-        _llmJudgeService = llmJudgeService;
     }
 
     [Function("MonitorEvaluationRuns")]
