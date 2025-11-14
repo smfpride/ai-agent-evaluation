@@ -366,13 +366,14 @@ public class MultiEvaluatorSupportTests
             It.IsAny<CancellationToken>()), 
             Times.Once);
 
-        // Verify 2 messages queued (for Similarity and Relevancy)
+        // Verify 1 message queued with 2 evaluator IDs (for Similarity and Relevancy)
         _mockServiceBusService.Verify(x => x.SendTestCaseMessageAsync(
             It.Is<ProcessTestCaseMessage>(m => 
-                m.EvaluatorTypeId == similarityEvaluatorId || 
-                m.EvaluatorTypeId == relevancyEvaluatorId), 
+                m.EvaluatorTypeIds.Contains(similarityEvaluatorId) && 
+                m.EvaluatorTypeIds.Contains(relevancyEvaluatorId) &&
+                m.EvaluatorTypeIds.Count == 2), 
             It.IsAny<CancellationToken>()), 
-            Times.Exactly(2));
+            Times.Once);
     }
 
     [Fact]

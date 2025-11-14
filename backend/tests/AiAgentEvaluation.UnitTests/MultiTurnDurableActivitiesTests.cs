@@ -141,7 +141,7 @@ public class MultiTurnDurableActivitiesTests
             },
             ConversationId = null,
             DirectLineUrl = "https://test.example.com",
-            EvaluatorTypeId = Guid.NewGuid(),
+            EvaluatorTypeIds = new List<Guid> { Guid.NewGuid() },
             PassingThreshold = 0.7m,
             TestRunId = testRunId
         };
@@ -170,6 +170,12 @@ public class MultiTurnDurableActivitiesTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(copilotResponse);
 
+        _mockLLMJudgeServiceFactory
+            .Setup(x => x.CreateJudgeServiceAsync(
+                It.IsAny<Guid?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(_mockLLMJudgeService.Object);
+
         _mockLLMJudgeService
             .Setup(x => x.EvaluateResponseAsync(
                 It.IsAny<LLMJudgeRequest>(),
@@ -183,10 +189,12 @@ public class MultiTurnDurableActivitiesTests
             .ReturnsAsync(resultId);
 
         // Act
-        var result = await _activities.ExecuteSingleTurn(input, CancellationToken.None);
+        var results = await _activities.ExecuteSingleTurn(input, CancellationToken.None);
 
         // Assert
-        Assert.NotNull(result);
+        Assert.NotNull(results);
+        Assert.Single(results);
+        var result = results[0];
         Assert.True(result.Success);
         Assert.Equal("conv-123", result.ConversationId);
         Assert.Equal(0.85m, result.Score);
@@ -201,6 +209,12 @@ public class MultiTurnDurableActivitiesTests
                 input.Turn.PromptText,
                 input.ConversationId,
                 It.IsAny<string?>(),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        _mockLLMJudgeServiceFactory.Verify(
+            x => x.CreateJudgeServiceAsync(
+                It.IsAny<Guid?>(),
                 It.IsAny<CancellationToken>()),
             Times.Once);
 
@@ -231,6 +245,7 @@ public class MultiTurnDurableActivitiesTests
     public async Task ExecuteSingleTurn_CopilotStudioFailure_ReturnsFailureResult()
     {
         // Arrange
+        var evaluatorId = Guid.NewGuid();
         var input = new ExecuteTurnInput
         {
             Turn = new TestCaseTurn
@@ -242,7 +257,7 @@ public class MultiTurnDurableActivitiesTests
                 ExpectedResponse = "Expected response"
             },
             DirectLineUrl = "https://test.example.com",
-            EvaluatorTypeId = Guid.NewGuid(),
+            EvaluatorTypeIds = new List<Guid> { evaluatorId },
             PassingThreshold = 0.7m,
             TestRunId = Guid.NewGuid()
         };
@@ -263,16 +278,23 @@ public class MultiTurnDurableActivitiesTests
             .ReturnsAsync(copilotResponse);
 
         // Act
-        var result = await _activities.ExecuteSingleTurn(input, CancellationToken.None);
+        var results = await _activities.ExecuteSingleTurn(input, CancellationToken.None);
 
         // Assert
-        Assert.NotNull(result);
+        Assert.NotNull(results);
+        Assert.Single(results);
+        var result = results[0];
         Assert.False(result.Success);
         Assert.Equal(0, result.Score);
         Assert.False(result.Passed);
         Assert.Contains("Copilot timeout", result.ErrorMessage);
 
         // Verify LLM Judge was NOT called
+        _mockLLMJudgeServiceFactory.Verify(
+            x => x.CreateJudgeServiceAsync(
+                It.IsAny<Guid?>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
         _mockLLMJudgeService.Verify(
             x => x.EvaluateResponseAsync(
                 It.IsAny<LLMJudgeRequest>(),
@@ -291,6 +313,7 @@ public class MultiTurnDurableActivitiesTests
     public async Task ExecuteSingleTurn_LLMJudgeFailure_ReturnsFailureResult()
     {
         // Arrange
+        var evaluatorId = Guid.NewGuid();
         var input = new ExecuteTurnInput
         {
             Turn = new TestCaseTurn
@@ -302,7 +325,7 @@ public class MultiTurnDurableActivitiesTests
                 ExpectedResponse = "Expected response"
             },
             DirectLineUrl = "https://test.example.com",
-            EvaluatorTypeId = Guid.NewGuid(),
+            EvaluatorTypeIds = new List<Guid> { evaluatorId },
             PassingThreshold = 0.7m,
             TestRunId = Guid.NewGuid()
         };
@@ -330,6 +353,12 @@ public class MultiTurnDurableActivitiesTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(copilotResponse);
 
+        _mockLLMJudgeServiceFactory
+            .Setup(x => x.CreateJudgeServiceAsync(
+                It.IsAny<Guid?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(_mockLLMJudgeService.Object);
+
         _mockLLMJudgeService
             .Setup(x => x.EvaluateResponseAsync(
                 It.IsAny<LLMJudgeRequest>(),
@@ -343,10 +372,12 @@ public class MultiTurnDurableActivitiesTests
             .ReturnsAsync(Guid.NewGuid());
 
         // Act
-        var result = await _activities.ExecuteSingleTurn(input, CancellationToken.None);
+        var results = await _activities.ExecuteSingleTurn(input, CancellationToken.None);
 
         // Assert
-        Assert.NotNull(result);
+        Assert.NotNull(results);
+        Assert.Single(results);
+        var result = results[0];
         Assert.False(result.Success);
         Assert.Equal(0, result.Score);
         Assert.False(result.Passed);
@@ -364,6 +395,7 @@ public class MultiTurnDurableActivitiesTests
     public async Task ExecuteSingleTurn_ScoreBelowThreshold_ReturnsFailedResult()
     {
         // Arrange
+        var evaluatorId = Guid.NewGuid();
         var input = new ExecuteTurnInput
         {
             Turn = new TestCaseTurn
@@ -375,7 +407,7 @@ public class MultiTurnDurableActivitiesTests
                 ExpectedResponse = "Expected response"
             },
             DirectLineUrl = "https://test.example.com",
-            EvaluatorTypeId = Guid.NewGuid(),
+            EvaluatorTypeIds = new List<Guid> { evaluatorId },
             PassingThreshold = 0.7m,
             TestRunId = Guid.NewGuid()
         };
@@ -404,6 +436,12 @@ public class MultiTurnDurableActivitiesTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(copilotResponse);
 
+        _mockLLMJudgeServiceFactory
+            .Setup(x => x.CreateJudgeServiceAsync(
+                It.IsAny<Guid?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(_mockLLMJudgeService.Object);
+
         _mockLLMJudgeService
             .Setup(x => x.EvaluateResponseAsync(
                 It.IsAny<LLMJudgeRequest>(),
@@ -417,10 +455,12 @@ public class MultiTurnDurableActivitiesTests
             .ReturnsAsync(Guid.NewGuid());
 
         // Act
-        var result = await _activities.ExecuteSingleTurn(input, CancellationToken.None);
+        var results = await _activities.ExecuteSingleTurn(input, CancellationToken.None);
 
         // Assert
-        Assert.NotNull(result);
+        Assert.NotNull(results);
+        Assert.Single(results);
+        var result = results[0];
         Assert.True(result.Success); // Execution succeeded
         Assert.Equal(0.5m, result.Score);
         Assert.False(result.Passed); // But test failed due to low score
@@ -438,6 +478,7 @@ public class MultiTurnDurableActivitiesTests
     public async Task ExecuteSingleTurn_UnexpectedException_ReturnsFailureResult()
     {
         // Arrange
+        var evaluatorId = Guid.NewGuid();
         var input = new ExecuteTurnInput
         {
             Turn = new TestCaseTurn
@@ -449,7 +490,7 @@ public class MultiTurnDurableActivitiesTests
                 ExpectedResponse = "Expected response"
             },
             DirectLineUrl = "https://test.example.com",
-            EvaluatorTypeId = Guid.NewGuid(),
+            EvaluatorTypeIds = new List<Guid> { evaluatorId },
             PassingThreshold = 0.7m,
             TestRunId = Guid.NewGuid()
         };
@@ -464,10 +505,12 @@ public class MultiTurnDurableActivitiesTests
             .ThrowsAsync(new InvalidOperationException("Unexpected error"));
 
         // Act
-        var result = await _activities.ExecuteSingleTurn(input, CancellationToken.None);
+        var results = await _activities.ExecuteSingleTurn(input, CancellationToken.None);
 
         // Assert
-        Assert.NotNull(result);
+        Assert.NotNull(results);
+        Assert.Single(results);
+        var result = results[0];
         Assert.False(result.Success);
         Assert.Contains("Unexpected error", result.ErrorMessage);
     }

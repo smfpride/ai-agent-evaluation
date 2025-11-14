@@ -41,12 +41,16 @@ public class MultiTurnDurableOrchestratorTests
         var testCaseId = Guid.NewGuid();
         var testRunId = Guid.NewGuid();
 
+        var evaluatorId = Guid.NewGuid();
+        var aggregateId = Guid.NewGuid();
+        
         var input = new MultiTurnOrchestratorInput
         {
             TestCaseId = testCaseId,
             TestRunId = testRunId,
             DirectLineUrl = "https://test.example.com",
-            EvaluatorTypeId = Guid.NewGuid(),
+            EvaluatorTypeIds = new List<Guid> { evaluatorId },
+            AggregateResultIds = new Dictionary<Guid, Guid> { { evaluatorId, aggregateId } },
             PassingThreshold = 0.7m
         };
 

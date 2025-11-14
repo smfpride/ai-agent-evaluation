@@ -534,7 +534,7 @@ public class OrchestratorFunctionTests
             "MultiTurnTestCaseOrchestrator",
             It.Is<MultiTurnOrchestratorInput>(i => 
                 i.TestCaseId == testCaseId &&
-                i.AggregateResultId != Guid.Empty),
+                i.AggregateResultIds.Any()),
             It.IsAny<StartOrchestrationOptions>(),
             It.IsAny<CancellationToken>()), Times.Once);
     }
