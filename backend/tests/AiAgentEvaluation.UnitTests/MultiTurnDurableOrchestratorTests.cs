@@ -41,12 +41,16 @@ public class MultiTurnDurableOrchestratorTests
         var testCaseId = Guid.NewGuid();
         var testRunId = Guid.NewGuid();
 
+        var evaluatorId = Guid.NewGuid();
+        var aggregateId = Guid.NewGuid();
+        
         var input = new MultiTurnOrchestratorInput
         {
             TestCaseId = testCaseId,
             TestRunId = testRunId,
             DirectLineUrl = "https://test.example.com",
-            EvaluatorTypeId = Guid.NewGuid(),
+            EvaluatorTypeIds = new List<Guid> { evaluatorId },
+            AggregateResultIds = new Dictionary<Guid, Guid> { { evaluatorId, aggregateId } },
             PassingThreshold = 0.7m
         };
 
@@ -76,42 +80,45 @@ public class MultiTurnDurableOrchestratorTests
                 It.IsAny<TaskOptions>()))
             .ReturnsAsync(testCase);
 
-        // Mock ExecuteSingleTurn activity for turn 1
-        mockContext.Setup(x => x.CallActivityAsync<TurnExecutionResult>(
+        // Mock ExecuteSingleTurn activity for turn 1 - returns list of results (one per evaluator)
+        mockContext.Setup(x => x.CallActivityAsync<List<TurnExecutionResult>>(
                 "ExecuteSingleTurn",
                 It.Is<ExecuteTurnInput>(i => i.Turn.Sequence == 1),
                 It.IsAny<TaskOptions>()))
-            .ReturnsAsync(new TurnExecutionResult
+            .ReturnsAsync(new List<TurnExecutionResult>
             {
-                ConversationId = "conv-123",
-                Success = true,
-                Score = 0.85m,
-                Passed = true,
-                EvaluationResultId = Guid.NewGuid()
+                new TurnExecutionResult
+                {
+                    ConversationId = "conv-123",
+                    Success = true,
+                    Score = 0.85m,
+                    Passed = true,
+                    EvaluationResultId = Guid.NewGuid()
+                }
             });
 
-        // Mock ExecuteSingleTurn activity for turn 2
-        mockContext.Setup(x => x.CallActivityAsync<TurnExecutionResult>(
+        // Mock ExecuteSingleTurn activity for turn 2 - returns list of results (one per evaluator)
+        mockContext.Setup(x => x.CallActivityAsync<List<TurnExecutionResult>>(
                 "ExecuteSingleTurn",
                 It.Is<ExecuteTurnInput>(i => i.Turn.Sequence == 2),
                 It.IsAny<TaskOptions>()))
-            .ReturnsAsync(new TurnExecutionResult
+            .ReturnsAsync(new List<TurnExecutionResult>
             {
-                ConversationId = "conv-123",
-                Success = true,
-                Score = 0.90m,
-                Passed = true,
-                EvaluationResultId = Guid.NewGuid()
+                new TurnExecutionResult
+                {
+                    ConversationId = "conv-123",
+                    Success = true,
+                    Score = 0.90m,
+                    Passed = true,
+                    EvaluationResultId = Guid.NewGuid()
+                }
             });
 
         // Mock CreateAggregateResult activity
         mockContext.Setup(x => x.CallActivityAsync("CreateAggregateResult", It.IsAny<CreateAggregateResultInput>(), It.IsAny<TaskOptions>())).Returns(Task.CompletedTask);
 
-        // Mock CreateTimer for delay between turns
-        mockContext.Setup(x => x.CurrentUtcDateTime)
-            .Returns(DateTime.UtcNow);
-
-        mockContext.Setup(x => x.CreateTimer(It.IsAny<DateTime>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        // Mock CreateTurnDelay activity for delay between turns
+        mockContext.Setup(x => x.CallActivityAsync("CreateTurnDelay", It.IsAny<int>(), It.IsAny<TaskOptions>())).Returns(Task.CompletedTask);
 
         // Act
         var result = await _orchestrator.RunOrchestrator(mockContext.Object);
@@ -133,7 +140,7 @@ public class MultiTurnDurableOrchestratorTests
             Times.Once);
 
         mockContext.Verify(
-            x => x.CallActivityAsync<TurnExecutionResult>(
+            x => x.CallActivityAsync<List<TurnExecutionResult>>(
                 "ExecuteSingleTurn",
                 It.IsAny<ExecuteTurnInput>(),
                 It.IsAny<TaskOptions>()),
@@ -146,11 +153,12 @@ public class MultiTurnDurableOrchestratorTests
                 It.IsAny<TaskOptions>()),
             Times.Once);
 
-        // Verify timer for delay between turns (called once after turn 1)
+        // Verify CreateTurnDelay activity for delay between turns (called once after turn 1)
         mockContext.Verify(
-            x => x.CreateTimer(
-                It.IsAny<DateTime>(),
-                It.IsAny<CancellationToken>()),
+            x => x.CallActivityAsync(
+                "CreateTurnDelay",
+                It.IsAny<int>(),
+                It.IsAny<TaskOptions>()),
             Times.Once);
     }
 
@@ -158,11 +166,16 @@ public class MultiTurnDurableOrchestratorTests
     public async Task RunOrchestrator_TestCaseNotFound_ReturnsEmptyContext()
     {
         // Arrange
+        var evaluatorId = Guid.NewGuid();
+        var aggregateId = Guid.NewGuid();
+        
         var input = new MultiTurnOrchestratorInput
         {
             TestCaseId = Guid.NewGuid(),
             TestRunId = Guid.NewGuid(),
             DirectLineUrl = "https://test.example.com",
+            EvaluatorTypeIds = new List<Guid> { evaluatorId },
+            AggregateResultIds = new Dictionary<Guid, Guid> { { evaluatorId, aggregateId } },
             PassingThreshold = 0.7m
         };
 
@@ -190,7 +203,7 @@ public class MultiTurnDurableOrchestratorTests
 
         // Verify no turn execution happened
         mockContext.Verify(
-            x => x.CallActivityAsync<TurnExecutionResult>(
+            x => x.CallActivityAsync<List<TurnExecutionResult>>(
                 "ExecuteSingleTurn",
                 It.IsAny<ExecuteTurnInput>(),
                 It.IsAny<TaskOptions>()),
@@ -211,11 +224,16 @@ public class MultiTurnDurableOrchestratorTests
         var testCaseId = Guid.NewGuid();
         var testRunId = Guid.NewGuid();
 
+        var evaluatorId = Guid.NewGuid();
+        var aggregateId = Guid.NewGuid();
+        
         var input = new MultiTurnOrchestratorInput
         {
             TestCaseId = testCaseId,
             TestRunId = testRunId,
             DirectLineUrl = "https://test.example.com",
+            EvaluatorTypeIds = new List<Guid> { evaluatorId },
+            AggregateResultIds = new Dictionary<Guid, Guid> { { evaluatorId, aggregateId } },
             PassingThreshold = 0.7m
         };
 
@@ -245,46 +263,43 @@ public class MultiTurnDurableOrchestratorTests
             .ReturnsAsync(testCase);
 
         // Turn 1 passes
-        mockContext.Setup(x => x.CallActivityAsync<TurnExecutionResult>(
+        mockContext.Setup(x => x.CallActivityAsync<List<TurnExecutionResult>>(
                 "ExecuteSingleTurn",
                 It.Is<ExecuteTurnInput>(i => i.Turn.Sequence == 1),
                 It.IsAny<TaskOptions>()))
-            .ReturnsAsync(new TurnExecutionResult
-            {
+            .ReturnsAsync(new List<TurnExecutionResult> { new TurnExecutionResult {
                 ConversationId = "conv-123",
                 Success = true,
                 Score = 0.85m,
                 Passed = true,
                 EvaluationResultId = Guid.NewGuid()
-            });
+            } });
 
         // Turn 2 fails
-        mockContext.Setup(x => x.CallActivityAsync<TurnExecutionResult>(
+        mockContext.Setup(x => x.CallActivityAsync<List<TurnExecutionResult>>(
                 "ExecuteSingleTurn",
                 It.Is<ExecuteTurnInput>(i => i.Turn.Sequence == 2),
                 It.IsAny<TaskOptions>()))
-            .ReturnsAsync(new TurnExecutionResult
-            {
+            .ReturnsAsync(new List<TurnExecutionResult> { new TurnExecutionResult {
                 ConversationId = "conv-123",
                 Success = true,
                 Score = 0.45m,
                 Passed = false, // Below threshold
                 EvaluationResultId = Guid.NewGuid()
-            });
+            } });
 
         // Turn 3 passes
-        mockContext.Setup(x => x.CallActivityAsync<TurnExecutionResult>(
+        mockContext.Setup(x => x.CallActivityAsync<List<TurnExecutionResult>>(
                 "ExecuteSingleTurn",
                 It.Is<ExecuteTurnInput>(i => i.Turn.Sequence == 3),
                 It.IsAny<TaskOptions>()))
-            .ReturnsAsync(new TurnExecutionResult
-            {
+            .ReturnsAsync(new List<TurnExecutionResult> { new TurnExecutionResult {
                 ConversationId = "conv-123",
                 Success = true,
                 Score = 0.90m,
                 Passed = true,
                 EvaluationResultId = Guid.NewGuid()
-            });
+            } });
 
         mockContext.Setup(x => x.CallActivityAsync("CreateAggregateResult", It.IsAny<CreateAggregateResultInput>(), It.IsAny<TaskOptions>())).Returns(Task.CompletedTask);
 
@@ -305,7 +320,7 @@ public class MultiTurnDurableOrchestratorTests
 
         // Verify all 3 turns were executed
         mockContext.Verify(
-            x => x.CallActivityAsync<TurnExecutionResult>(
+            x => x.CallActivityAsync<List<TurnExecutionResult>>(
                 "ExecuteSingleTurn",
                 It.IsAny<ExecuteTurnInput>(),
                 It.IsAny<TaskOptions>()),
@@ -335,11 +350,16 @@ public class MultiTurnDurableOrchestratorTests
             }
         };
 
+        var evaluatorId = Guid.NewGuid();
+        var aggregateId = Guid.NewGuid();
+        
         var input = new MultiTurnOrchestratorInput
         {
             TestCaseId = testCaseId,
             TestRunId = Guid.NewGuid(),
             DirectLineUrl = "https://test.example.com",
+            EvaluatorTypeIds = new List<Guid> { evaluatorId },
+            AggregateResultIds = new Dictionary<Guid, Guid> { { evaluatorId, aggregateId } },
             PassingThreshold = 0.7m
         };
 
@@ -358,32 +378,30 @@ public class MultiTurnDurableOrchestratorTests
             .ReturnsAsync(testCase);
 
         // Turn 1 - should have null conversation ID input
-        mockContext.Setup(x => x.CallActivityAsync<TurnExecutionResult>(
+        mockContext.Setup(x => x.CallActivityAsync<List<TurnExecutionResult>>(
                 "ExecuteSingleTurn",
                 It.Is<ExecuteTurnInput>(i => i.Turn.Sequence == 1 && i.ConversationId == null),
                 It.IsAny<TaskOptions>()))
-            .ReturnsAsync(new TurnExecutionResult
-            {
+            .ReturnsAsync(new List<TurnExecutionResult> { new TurnExecutionResult {
                 ConversationId = "conv-123",
                 Success = true,
                 Score = 0.85m,
                 Passed = true,
                 EvaluationResultId = Guid.NewGuid()
-            });
+            } });
 
         // Turn 2 - should have conversation ID from turn 1
-        mockContext.Setup(x => x.CallActivityAsync<TurnExecutionResult>(
+        mockContext.Setup(x => x.CallActivityAsync<List<TurnExecutionResult>>(
                 "ExecuteSingleTurn",
                 It.Is<ExecuteTurnInput>(i => i.Turn.Sequence == 2 && i.ConversationId == "conv-123"),
                 It.IsAny<TaskOptions>()))
-            .ReturnsAsync(new TurnExecutionResult
-            {
+            .ReturnsAsync(new List<TurnExecutionResult> { new TurnExecutionResult {
                 ConversationId = "conv-123",
                 Success = true,
                 Score = 0.85m,
                 Passed = true,
                 EvaluationResultId = Guid.NewGuid()
-            });
+            } });
 
         mockContext.Setup(x => x.CallActivityAsync("CreateAggregateResult", It.IsAny<CreateAggregateResultInput>(), It.IsAny<TaskOptions>())).Returns(Task.CompletedTask);
 
@@ -398,7 +416,7 @@ public class MultiTurnDurableOrchestratorTests
         // Assert
         // Verify turn 1 was called with null conversation ID
         mockContext.Verify(
-            x => x.CallActivityAsync<TurnExecutionResult>(
+            x => x.CallActivityAsync<List<TurnExecutionResult>>(
                 "ExecuteSingleTurn",
                 It.Is<ExecuteTurnInput>(i => i.Turn.Sequence == 1 && i.ConversationId == null),
                 It.IsAny<TaskOptions>()),
@@ -406,7 +424,7 @@ public class MultiTurnDurableOrchestratorTests
         
         // Verify turn 2 was called with conversation ID from turn 1
         mockContext.Verify(
-            x => x.CallActivityAsync<TurnExecutionResult>(
+            x => x.CallActivityAsync<List<TurnExecutionResult>>(
                 "ExecuteSingleTurn",
                 It.Is<ExecuteTurnInput>(i => i.Turn.Sequence == 2 && i.ConversationId == "conv-123"),
                 It.IsAny<TaskOptions>()),

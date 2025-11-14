@@ -22,6 +22,7 @@ public interface IDataverseService
     Task UpdateEvaluationRunCompletionAsync(Guid evaluationRunId, int statusCode, decimal? overallScore, bool? overallPass, DateTime endTime, CancellationToken cancellationToken = default);
     Task IncrementCompletedTestCasesAsync(Guid evaluationRunId, bool failed, CancellationToken cancellationToken = default);
     Task<EvaluatorType?> GetEvaluatorTypeAsync(Guid evaluatorTypeId, CancellationToken cancellationToken = default);
+    Task<List<EvaluatorType>> GetEvaluatorTypesForRunAsync(Guid evaluationRunId, CancellationToken cancellationToken = default);
     Task<JudgeAgent?> GetJudgeAgentAsync(Guid judgeAgentId, CancellationToken cancellationToken = default);
     Task<AgentToEval?> GetAgentToEvalAsync(Guid agentToEvalId, CancellationToken cancellationToken = default);
     Task<bool> CheckHealthAsync(CancellationToken cancellationToken = default);
@@ -45,8 +46,8 @@ public interface IDataverseService
         Guid resultId,
         decimal score,
         bool passed,
+        int statusCode,
         string reasoning,
         int executionTimeMs,
-        int statusCode,
         CancellationToken cancellationToken = default);
 }

@@ -475,6 +475,10 @@ public class DataverseService : IDataverseService, IDisposable
             resultEntity["mcicaps_evaluation"] = new EntityReference("mcicaps_evaluationruns", request.EvaluationRunId);
             resultEntity["mcicaps_actualresponse"] = request.ActualResponse;
             
+            // Handle evaluator type field
+            if (request.EvaluatorTypeId.HasValue)
+                resultEntity["mcicaps_evaluatortype"] = new EntityReference("mcicaps_evaluatortype", request.EvaluatorTypeId.Value);
+            
             // Handle multi-turn fields
             if (request.TestCaseTurnId.HasValue)
                 resultEntity["mcicaps_testcaseturnid"] = new EntityReference("mcicaps_testcaseturn", request.TestCaseTurnId.Value);
@@ -878,6 +882,7 @@ public class DataverseService : IDataverseService, IDisposable
                     "mcicaps_evaluatortypeid",
                     "mcicaps_name",
                     "mcicaps_evaluatorprompt",
+                    "mcicaps_requiresexpectedresponse",
                     "mcicaps_judgeagentid",
                     "statecode",
                     "statuscode",
@@ -909,6 +914,7 @@ public class DataverseService : IDataverseService, IDisposable
                 Id = entity.Id,
                 Name = entity.GetAttributeValue<string>("mcicaps_name") ?? string.Empty,
                 EvaluatorPrompt = entity.GetAttributeValue<string>("mcicaps_evaluatorprompt") ?? string.Empty,
+                RequiresExpectedResponse = entity.GetAttributeValue<bool>("mcicaps_requiresexpectedresponse"),
                 JudgeAgentId = entity.Contains("mcicaps_judgeagentid") 
                     ? entity.GetAttributeValue<EntityReference>("mcicaps_judgeagentid")?.Id 
                     : null,
@@ -918,6 +924,82 @@ public class DataverseService : IDataverseService, IDisposable
                 ModifiedOn = entity.GetAttributeValue<DateTime>("modifiedon")
             };
         }, "GetEvaluatorType",
+        exception => exception is FaultException<OrganizationServiceFault>,
+        cancellationToken);
+    }
+
+    public async Task<List<EvaluatorType>> GetEvaluatorTypesForRunAsync(Guid evaluationRunId, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Getting evaluator types for evaluation run {EvaluationRunId}", evaluationRunId);
+        
+        if (_serviceClient == null || !_serviceClient.IsReady)
+        {
+            throw new InvalidOperationException($"Dataverse service client is not ready. Connection error: {_connectionError}");
+        }
+
+        return await _resilientService.ExecuteAsync(async ct =>
+        {
+            // Query the N:N join table to get evaluator types associated with this run
+            var query = new QueryExpression("mcicaps_evaluatortype")
+            {
+                ColumnSet = new ColumnSet(
+                    "mcicaps_evaluatortypeid",
+                    "mcicaps_name",
+                    "mcicaps_evaluatorprompt",
+                    "mcicaps_requiresexpectedresponse",
+                    "mcicaps_judgeagentid",
+                    "statecode",
+                    "statuscode",
+                    "createdon",
+                    "modifiedon"
+                ),
+                Criteria = new FilterExpression
+                {
+                    Conditions =
+                    {
+                        new ConditionExpression("statecode", ConditionOperator.Equal, 0) // Active only
+                    }
+                },
+                LinkEntities =
+                {
+                    new LinkEntity
+                    {
+                        LinkFromEntityName = "mcicaps_evaluatortype",
+                        LinkFromAttributeName = "mcicaps_evaluatortypeid",
+                        LinkToEntityName = "mcicaps_evaluationrun_evaluatortype",
+                        LinkToAttributeName = "mcicaps_evaluatortypeid",
+                        JoinOperator = JoinOperator.Inner,
+                        LinkCriteria = new FilterExpression
+                        {
+                            Conditions =
+                            {
+                                new ConditionExpression("mcicaps_evaluationrunid", ConditionOperator.Equal, evaluationRunId)
+                            }
+                        }
+                    }
+                }
+            };
+
+            var result = await Task.Run(() => _serviceClient.RetrieveMultiple(query), ct);
+            
+            _logger.LogInformation("Found {Count} evaluator types for evaluation run {EvaluationRunId}", 
+                result.Entities.Count, evaluationRunId);
+
+            return result.Entities.Select(entity => new EvaluatorType
+            {
+                Id = entity.Id,
+                Name = entity.GetAttributeValue<string>("mcicaps_name") ?? string.Empty,
+                EvaluatorPrompt = entity.GetAttributeValue<string>("mcicaps_evaluatorprompt") ?? string.Empty,
+                RequiresExpectedResponse = entity.GetAttributeValue<bool>("mcicaps_requiresexpectedresponse"),
+                JudgeAgentId = entity.Contains("mcicaps_judgeagentid") 
+                    ? entity.GetAttributeValue<EntityReference>("mcicaps_judgeagentid")?.Id 
+                    : null,
+                StateCode = GetIntValue(entity, "statecode"),
+                StatusCode = entity.GetAttributeValue<OptionSetValue>("statuscode")?.Value ?? 1,
+                CreatedOn = entity.GetAttributeValue<DateTime>("createdon"),
+                ModifiedOn = entity.GetAttributeValue<DateTime>("modifiedon")
+            }).ToList();
+        }, "GetEvaluatorTypesForRun",
         exception => exception is FaultException<OrganizationServiceFault>,
         cancellationToken);
     }
@@ -1276,9 +1358,9 @@ public class DataverseService : IDataverseService, IDisposable
         Guid resultId,
         decimal score,
         bool passed,
+        int statusCode,
         string reasoning,
         int executionTimeMs,
-        int statusCode,
         CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Updating aggregate result {ResultId} with score={Score}, passed={Passed}, statusCode={StatusCode}", 

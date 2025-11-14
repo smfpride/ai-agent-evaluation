@@ -53,38 +53,48 @@ HTTP Trigger → Orchestrator Function → Service Bus Queue → Worker Function
 8. Update run counters (total/completed for NA short-circuits) and enqueue remaining messages
 9. Return HTTP 202 Accepted with operation tracking information
 
-#### 3.1.2 Worker Function Workflow (`ProcessTestCase` - Single-Turn)
+#### 3.1.2 Worker Function Workflow (`ProcessTestCase` - Single-Turn with Multi-Evaluator & Concurrent Evaluation)
 1. Receive test case message from Service Bus queue (`test-case-processing`)
-2. Parse test case including EvaluatorType GUID reference
-3. Load appropriate LLM Judge prompt template from Dataverse EvaluatorType record
-4. Execute test case against Copilot Studio agent via Direct Line API
-5. Evaluate agent response using Azure OpenAI Judge (Managed Identity) with type-specific criteria
-6. Calculate pass/fail based on passing threshold
-7. Store individual evaluation result in Dataverse
-8. Atomically increment evaluation run progress counter
-9. Handle errors and retry logic with exponential backoff
+2. Parse test case including **List<Guid> EvaluatorTypeIds** (multiple evaluators per message)
+3. Execute test case against Copilot Studio agent **ONCE** via Direct Line API
+4. **Concurrently evaluate** agent response with all evaluators using `Task.WhenAll`:
+   - For each evaluator type:
+     - Load LLM Judge prompt template from Dataverse EvaluatorType record
+     - Evaluate using Azure OpenAI Judge (Managed Identity) with type-specific criteria
+     - Calculate pass/fail based on passing threshold
+     - Store individual evaluation result in Dataverse with evaluatorTypeId
+     - Atomically increment evaluation run progress counter
+5. Handle errors per evaluator with exponential backoff
+6. All evaluations complete in parallel (2s for 3 evaluators instead of 6s sequential)
 
-#### 3.1.3 Durable Functions Orchestrator Workflow (`MultiTurnTestCaseOrchestrator`)
-1. Started by Orchestrator Function for all multi-turn test cases
+#### 3.1.3 Durable Functions Orchestrator Workflow (`MultiTurnTestCaseOrchestrator` with Multi-Evaluator & Concurrent Evaluation)
+1. Started by Orchestrator Function for all multi-turn test cases (1 orchestration per test case)
 2. Uses Durable Functions for unlimited execution time (no 5-minute limit)
-3. Calls activities sequentially:
+3. Receives **List<Guid> EvaluatorTypeIds** and **Dictionary<Guid, Guid> AggregateResultIds** as input
+4. Calls activities sequentially:
    - `GetTestCaseWithTurns`: Retrieve test case and turns from Dataverse
-   - `ExecuteSingleTurn`: Execute each turn and evaluate (with conversation context)
-   - `CreateAggregateResult`: Generate final multi-turn result
-4. Maintains state and conversation context across activities
-5. Supports pause/resume and retry logic
-6. Handles conversations of any length (1 turn to 100+ turns)
+   - `ExecuteSingleTurn`: Execute each turn **ONCE** and **concurrently evaluate** with all evaluators
+   - `CreateAggregateResult`: Generate final multi-turn result **for each evaluator**
+5. Maintains state and conversation context across activities
+6. Supports pause/resume and retry logic
+7. Handles conversations of any length (1 turn to 100+ turns)
 
 **Execution Flow**:
 1. Fetch test case and all associated turns (ordered by sequence) from Dataverse
 2. Execute turns sequentially while maintaining conversation context:
    - Turn 1: Create new conversation (conversationId = null)
    - Subsequent turns: Use conversationId from Turn 1 to maintain context
-3. Evaluate each turn independently using Azure OpenAI Judge
-4. Store per-turn evaluation results in Dataverse
-5. Create aggregate result with overall pass rate and metrics
-6. Atomically increment evaluation run progress counter
-7. Continue execution even if individual turns fail (resilient design)
+   - **Per turn**: Call Copilot Studio **ONCE**, then **concurrently evaluate** with all evaluators using `Task.WhenAll`
+3. Store per-turn evaluation results in Dataverse (N results per turn for N evaluators)
+4. Create **separate aggregate results** for each evaluator type
+5. Filter Not Applicable (NA) results from aggregate calculations
+6. Atomically increment evaluation run progress counter (by evaluator count)
+7. Continue execution even if individual turns or evaluators fail (resilient design)
+
+**Efficiency Gains**:
+- **Copilot Studio calls**: 1 per turn (was: N per turn for N evaluators)
+- **Evaluation time**: Concurrent (2s for 3 evaluators vs 6s sequential)
+- **Example**: 5-turn test with 3 evaluators: 5 Copilot calls (was: 15)
 
 #### 3.1.4 Monitoring Workflow (`MonitorEvaluationRuns`)
 1. Timer-triggered function (every 1 minute)
@@ -168,7 +178,7 @@ HTTP Trigger → Orchestrator Function → Service Bus Queue → Worker Function
   "directLineUrl": "string",
   "userInput": "string", 
   "expectedResponse": "string",
-  "evaluatorTypeId": "guid", // From evaluation run's selected evaluator types (not stored on test case)
+  "evaluatorTypeIds": ["guid1", "guid2", "guid3"], // Multiple evaluators per message (N:N relationship)
   "conversationId": "string (optional)",
   "passingThreshold": 0.7,
   "retryCount": 0,
@@ -176,7 +186,23 @@ HTTP Trigger → Orchestrator Function → Service Bus Queue → Worker Function
 }
 ```
 
-**Note**: Multi-turn test cases do NOT use Service Bus queuing. They are executed via Durable Functions orchestration, which receives the same parameters directly from the Orchestrator Function.
+**Multi-Turn Durable Functions Input**:
+```json
+{
+  "evaluationRunId": "guid",
+  "testCaseId": "guid",
+  "directLineUrl": "string",
+  "evaluatorTypeIds": ["guid1", "guid2", "guid3"], // Multiple evaluators per orchestration
+  "aggregateResultIds": {  // Pre-created aggregate result IDs mapped to evaluators
+    "guid1": "aggregateGuid1",
+    "guid2": "aggregateGuid2",
+    "guid3": "aggregateGuid3"
+  },
+  "passingThreshold": 0.7
+}
+```
+
+**Note**: Multi-turn test cases do NOT use Service Bus queuing. They are executed via Durable Functions orchestration, which receives the parameters above directly from the Orchestrator Function. One orchestration handles all evaluators for a test case via concurrent evaluation.
 
 ### 3.3 API Integrations
 
@@ -509,6 +535,184 @@ You are an AI response evaluator focusing on relevancy. Evaluate whether the age
 {
   "score": 0.0-1.0,
   "reasoning": "detailed explanation of relevancy assessment"
+}
+```
+
+### 5.4 Multi-Evaluator Efficiency Architecture (Story 09 - Implemented)
+
+**Status**: ✅ IMPLEMENTED (2025-11-14)
+
+#### 5.4.1 Architecture Overview
+
+The system implements N:N relationships between evaluation runs and evaluator types with two critical optimizations:
+1. **Single Copilot Studio API call** per test case/turn (not N calls for N evaluators)
+2. **Concurrent evaluation** using `Task.WhenAll` for all evaluators in parallel
+
+**Before (Inefficient)**:
+```
+For 1 test case with 3 evaluators:
+- Create 3 separate Service Bus messages
+- Each message calls Copilot Studio independently
+- Each message evaluates sequentially
+Result: 3 Copilot calls + 6 seconds evaluation time (2s × 3)
+```
+
+**After (Optimized)**:
+```
+For 1 test case with 3 evaluators:
+- Create 1 Service Bus message with all evaluator IDs
+- Message calls Copilot Studio once
+- Message evaluates concurrently with all evaluators (Task.WhenAll)
+Result: 1 Copilot call + 2 seconds evaluation time (parallel)
+```
+
+#### 5.4.2 Cost Savings
+
+**Copilot Studio API Calls Reduction**:
+| Evaluators | Calls Before | Calls After | Savings |
+|------------|--------------|-------------|---------|
+| 3          | 3            | 1           | 67%     |
+| 5          | 5            | 1           | 80%     |
+| 10         | 10           | 1           | 90%     |
+
+**Formula**: Savings = ((N-1)/N × 100)%
+
+#### 5.4.3 Performance Improvements
+
+**Evaluation Time Reduction** (concurrent vs sequential):
+| Evaluators | Time Before (sequential) | Time After (concurrent) | Speedup |
+|------------|-------------------------|------------------------|---------|
+| 3 @ 2s each| 6 seconds              | 2 seconds              | 3x      |
+| 5 @ 2s each| 10 seconds             | 2 seconds              | 5x      |
+| 10 @ 2s each| 20 seconds            | 2 seconds              | 10x     |
+
+#### 5.4.4 Implementation Details
+
+**Single-Turn Worker Function**:
+```csharp
+// 1. Call Copilot Studio ONCE
+var actualResponse = await _copilotService.SendMessageAsync(prompt, conversationId);
+
+// 2. Evaluate concurrently with all evaluators
+var evaluationTasks = evaluatorTypeIds.Select(async evaluatorTypeId =>
+{
+    var evaluatorType = await _dataverseService.GetEvaluatorTypeAsync(evaluatorTypeId);
+    var judgeService = await _judgeFactory.CreateJudgeAsync(evaluatorTypeId);
+    var result = await judgeService.EvaluateResponseAsync(actualResponse, expectedResponse, ...);
+    await _dataverseService.CreateEvaluationResultAsync(...);
+    await _dataverseService.IncrementCompletedTestCasesAsync(...);
+}).ToList();
+
+// 3. Wait for all evaluations to complete
+await Task.WhenAll(evaluationTasks);
+```
+
+**Multi-Turn Durable Activity**:
+```csharp
+// ExecuteSingleTurn activity
+// 1. Call Copilot Studio ONCE per turn
+var actualResponse = await _copilotService.SendMessageAsync(turn.PromptText, conversationId);
+
+// 2. Evaluate concurrently with all evaluators
+var turnResults = await Task.WhenAll(
+    evaluatorTypeIds.Select(async evaluatorTypeId =>
+    {
+        // Same concurrent pattern as single-turn
+        var evaluatorType = await _dataverseService.GetEvaluatorTypeAsync(evaluatorTypeId);
+        var judgeService = await _judgeFactory.CreateJudgeAsync(evaluatorTypeId);
+        var result = await judgeService.EvaluateResponseAsync(...);
+        await _dataverseService.CreateEvaluationResultAsync(...);
+        return new TurnExecutionResult { ... };
+    })
+);
+
+return turnResults.ToList(); // List<TurnExecutionResult>
+```
+
+#### 5.4.5 Progress Tracking Formula
+
+**Total Evaluation Units Calculation**:
+```
+totalUnits = Σ(single-turn tests: testCount × evaluatorCount)
+           + Σ(multi-turn tests: (turnCount × evaluatorCount) + evaluatorCount)
+```
+
+**Example**:
+- 100 single-turn tests × 3 evaluators = 300 units
+- 10 multi-turn tests (5 turns each) × 3 evaluators = 10 × [(5 × 3) + 3] = 180 units
+- **Total**: 480 evaluation units
+
+#### 5.4.6 Not Applicable (NA) Handling
+
+**Purpose**: Skip evaluation when evaluator requires expected response but none provided.
+
+**Configuration**: `mcicaps_requiresexpectedresponse` field on EvaluatorType
+- **Accuracy**: `true` (requires ground truth)
+- **Similarity**: `false` (can compare to conversation history)
+- **Relevancy**: `false` (judges contextual fit)
+
+**Short-Circuit Logic**:
+```csharp
+if (evaluator.RequiresExpectedResponse && string.IsNullOrWhiteSpace(expectedResponse))
+{
+    // Create NA result immediately (statuscode 778760004, score 0.0)
+    // No Copilot Studio or LLM Judge API calls
+    // Counts as "completed" for progress tracking
+    // Excluded from aggregate score calculations
+}
+```
+
+**Benefits**:
+- Saves LLM tokens (no judge API calls for NA)
+- Faster completion (no waiting for unnecessary evaluations)
+- Clear distinction from failures (statuscode 778760004 vs 778760003)
+
+#### 5.4.7 Aggregate Calculation with NA Filtering
+
+**Multi-Turn Aggregate Logic**:
+1. Collect all turn results for an evaluator
+2. Filter out NA results (statuscode 778760004)
+3. Calculate average of remaining scored turns
+4. If all turns are NA → mark aggregate as NA
+
+**Example**:
+```
+Turn 1: Score 0.8 (Completed)
+Turn 2: Score 0.0, StatusCode 778760004 (NA) - EXCLUDED
+Turn 3: Score 0.9 (Completed)
+Turn 4: Score 0.0, StatusCode 778760004 (NA) - EXCLUDED  
+Turn 5: Score 1.0 (Completed)
+
+Aggregate Score: (0.8 + 0.9 + 1.0) / 3 = 0.9
+(NA turns excluded from average)
+```
+
+#### 5.4.8 Data Model Changes
+
+**Message Schema Update**:
+```json
+{
+  "evaluatorTypeIds": ["guid1", "guid2", "guid3"]  // Was: single evaluatorTypeId
+}
+```
+
+**Orchestrator Input Update**:
+```json
+{
+  "evaluatorTypeIds": ["guid1", "guid2", "guid3"],
+  "aggregateResultIds": {
+    "guid1": "aggGuid1",
+    "guid2": "aggGuid2",
+    "guid3": "aggGuid3"
+  }
+}
+```
+
+**Result Schema Addition**:
+```json
+{
+  "evaluatorTypeId": "guid",  // NEW: Links result to specific evaluator
+  "statusCode": 778760004     // NEW: 778760004 = Not Applicable
 }
 ```
 

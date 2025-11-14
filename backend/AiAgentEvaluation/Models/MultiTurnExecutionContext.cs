@@ -36,6 +36,11 @@ public class MultiTurnExecutionContext
     public decimal PassingThreshold { get; set; }
 
     /// <summary>
+    /// Evaluator type ID to use for this multi-turn execution
+    /// </summary>
+    public Guid? EvaluatorTypeId { get; set; }
+
+    /// <summary>
     /// ID of the placeholder aggregate result to update upon completion
     /// </summary>
     public Guid AggregateResultId { get; set; }

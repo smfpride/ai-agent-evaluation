@@ -88,70 +88,130 @@ public class WorkerFunction
             _logger.LogInformation("Copilot Response Details - TestCaseId: {TestCaseId}, UserInput: '{UserInput}', ActualResponse: '{ActualResponse}', ConversationId: {ConversationId}", 
                 message.TestCaseId, message.UserInput, copilotResponse.Response, copilotResponse.ConversationId);
 
-            // Step 2: Evaluate the response using LLM Judge
-            // Use factory to get the appropriate judge service based on evaluator configuration
-            var llmJudgeService = await _llmJudgeServiceFactory.CreateJudgeServiceAsync(
-                message.EvaluatorTypeId, cancellationToken);
-            
-            var judgeRequest = new LLMJudgeRequest
+            // Step 2: Evaluate the response with ALL evaluators CONCURRENTLY
+            // The Copilot Studio agent was called once, now we fan out to multiple evaluators in parallel
+            _logger.LogInformation("Evaluating test case {TestCaseId} with {EvaluatorCount} evaluators (concurrent)", 
+                message.TestCaseId, message.EvaluatorTypeIds.Count);
+
+            // Create evaluation tasks for all evaluators
+            var evaluationTasks = message.EvaluatorTypeIds.Select(async evaluatorTypeId =>
             {
-                EvaluatorTypeId = message.EvaluatorTypeId,
-                UserInput = message.UserInput,
-                ExpectedResponse = message.ExpectedResponse,
-                ActualResponse = copilotResponse.Response,
-                ConversationId = copilotResponse.ConversationId
-            };
+                try
+                {
+                    var evaluatorStopwatch = System.Diagnostics.Stopwatch.StartNew();
+                    
+                    // Use factory to get the appropriate judge service based on evaluator configuration
+                    var llmJudgeService = await _llmJudgeServiceFactory.CreateJudgeServiceAsync(
+                        evaluatorTypeId, cancellationToken);
+                    
+                    var judgeRequest = new LLMJudgeRequest
+                    {
+                        EvaluatorTypeId = evaluatorTypeId,
+                        UserInput = message.UserInput,
+                        ExpectedResponse = message.ExpectedResponse,
+                        ActualResponse = copilotResponse.Response,
+                        ConversationId = copilotResponse.ConversationId
+                    };
 
-            var judgeResponse = await llmJudgeService.EvaluateResponseAsync(judgeRequest, cancellationToken);
+                    var judgeResponse = await llmJudgeService.EvaluateResponseAsync(judgeRequest, cancellationToken);
 
-            if (!judgeResponse.Success)
-            {
-                _logger.LogWarning("LLM Judge evaluation failed for test case {TestCaseId}: {ErrorMessage}", 
-                    message.TestCaseId, judgeResponse.ErrorMessage);
-                
-                await HandleTestCaseError(message, judgeResponse.ErrorMessage ?? "LLM Judge evaluation failed", stopwatch, cancellationToken);
-                return;
-            }
+                    if (!judgeResponse.Success)
+                    {
+                        _logger.LogWarning("LLM Judge evaluation failed for test case {TestCaseId} with evaluator {EvaluatorTypeId}: {ErrorMessage}", 
+                            message.TestCaseId, evaluatorTypeId, judgeResponse.ErrorMessage);
+                        
+                        // Create error result for this specific evaluator
+                        await _dataverseService.CreateEvaluationResultAsync(
+                            new CreateEvaluationResultRequest
+                            {
+                                EvaluationRunId = message.EvaluationRunId,
+                                TestCaseId = message.TestCaseId,
+                                EvaluatorTypeId = evaluatorTypeId,
+                                Score = null,
+                                ErrorMessage = judgeResponse.ErrorMessage ?? "LLM Judge evaluation failed",
+                                ExecutionTimeMs = (int)evaluatorStopwatch.ElapsedMilliseconds,
+                                StatusCode = EvaluationResultStatus.Errored
+                            }, 
+                            cancellationToken);
 
-            _logger.LogInformation("LLM Judge evaluation completed for test case {TestCaseId} with score {Score} in {ExecutionTime}ms", 
-                message.TestCaseId, judgeResponse.Score, judgeResponse.ExecutionTimeMs);
+                        // Increment failed counter
+                        await _dataverseService.IncrementCompletedTestCasesAsync(
+                            message.EvaluationRunId, 
+                            failed: true, 
+                            cancellationToken);
+                        
+                        return; // Exit this evaluator's task
+                    }
 
-            // Step 3: Save the evaluation result to Dataverse
+                    evaluatorStopwatch.Stop();
+                    
+                    _logger.LogInformation("LLM Judge evaluation completed for test case {TestCaseId} with evaluator {EvaluatorTypeId}: Score={Score} in {ExecutionTime}ms", 
+                        message.TestCaseId, evaluatorTypeId, judgeResponse.Score, judgeResponse.ExecutionTimeMs);
+
+                    // Step 3: Save the evaluation result to Dataverse
+                    var passed = judgeResponse.Score >= message.PassingThreshold;
+
+                    var createResultRequest = new CreateEvaluationResultRequest
+                    {
+                        EvaluationRunId = message.EvaluationRunId,
+                        TestCaseId = message.TestCaseId,
+                        EvaluatorTypeId = evaluatorTypeId,
+                        ActualResponse = copilotResponse.Response,
+                        Score = judgeResponse.Score,
+                        Passed = passed,
+                        Reasoning = judgeResponse.Reasoning,
+                        ConversationId = copilotResponse.ConversationId,
+                        ExecutionTimeMs = (int)evaluatorStopwatch.ElapsedMilliseconds,
+                        Metadata = copilotResponse.RawActivityJson,  // Store raw Direct Line activity for debugging
+                        StatusCode = EvaluationResultStatus.Completed
+                    };
+                    
+                    _logger.LogInformation("Saving evaluation result - TestCaseId: {TestCaseId}, EvaluatorTypeId: {EvaluatorTypeId}, Score: {Score}", 
+                        message.TestCaseId, evaluatorTypeId, judgeResponse.Score);
+
+                    var resultId = await _dataverseService.CreateEvaluationResultAsync(createResultRequest, cancellationToken);
+
+                    // Increment the completed test cases counter for immediate progress feedback
+                    await _dataverseService.IncrementCompletedTestCasesAsync(
+                        message.EvaluationRunId, 
+                        failed: false, 
+                        cancellationToken);
+
+                    _logger.LogInformation("Successfully processed test case {TestCaseId} with evaluator {EvaluatorTypeId} - Result ID: {ResultId}, Score: {Score}, Passed: {Passed}", 
+                        message.TestCaseId, evaluatorTypeId, resultId, judgeResponse.Score, passed);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error evaluating test case {TestCaseId} with evaluator {EvaluatorTypeId}", 
+                        message.TestCaseId, evaluatorTypeId);
+                    
+                    // Create error result for this evaluator
+                    await _dataverseService.CreateEvaluationResultAsync(
+                        new CreateEvaluationResultRequest
+                        {
+                            EvaluationRunId = message.EvaluationRunId,
+                            TestCaseId = message.TestCaseId,
+                            EvaluatorTypeId = evaluatorTypeId,
+                            Score = null,
+                            ErrorMessage = $"Unexpected error: {ex.Message}",
+                            StatusCode = EvaluationResultStatus.Errored
+                        }, 
+                        cancellationToken);
+
+                    // Increment failed counter
+                    await _dataverseService.IncrementCompletedTestCasesAsync(
+                        message.EvaluationRunId, 
+                        failed: true, 
+                        cancellationToken);
+                }
+            }).ToList();
+
+            // Wait for all evaluations to complete
+            await Task.WhenAll(evaluationTasks);
+
             stopwatch.Stop();
-
-            // Calculate passed status based on threshold
-            var passed = judgeResponse.Score >= message.PassingThreshold;
-
-            var createResultRequest = new CreateEvaluationResultRequest
-            {
-                EvaluationRunId = message.EvaluationRunId,
-                TestCaseId = message.TestCaseId,
-                ActualResponse = copilotResponse.Response,
-                Score = judgeResponse.Score,
-                Passed = passed,
-                Reasoning = judgeResponse.Reasoning,
-                ConversationId = copilotResponse.ConversationId,
-                ExecutionTimeMs = (int)stopwatch.ElapsedMilliseconds,
-                Metadata = copilotResponse.RawActivityJson,  // Store raw Direct Line activity for debugging
-                StatusCode = 778760002  // Completed
-            };
-            
-            _logger.LogInformation("WorkerFunction - Score before passing to Dataverse: {Score} (type: {ScoreType})", 
-                createResultRequest.Score, createResultRequest.Score?.GetType().Name ?? "null");
-
-            _logger.LogInformation("Saving evaluation result - TestCaseId: {TestCaseId}, ActualResponse: '{Response}', Metadata length: {MetadataLength}", 
-                message.TestCaseId, copilotResponse.Response, copilotResponse.RawActivityJson?.Length ?? 0);
-
-            var resultId = await _dataverseService.CreateEvaluationResultAsync(createResultRequest, cancellationToken);
-
-            // Increment the completed test cases counter for immediate progress feedback
-            await _dataverseService.IncrementCompletedTestCasesAsync(
-                message.EvaluationRunId, 
-                failed: false, 
-                cancellationToken);
-
-            _logger.LogInformation("Successfully processed test case {TestCaseId} - Result ID: {ResultId}, Score: {Score}, Passed: {Passed}, Total time: {TotalTime}ms", 
-                message.TestCaseId, resultId, judgeResponse.Score, passed, stopwatch.ElapsedMilliseconds);
+            _logger.LogInformation("Completed processing test case {TestCaseId} with {EvaluatorCount} evaluators in {TotalTime}ms", 
+                message.TestCaseId, message.EvaluatorTypeIds.Count, stopwatch.ElapsedMilliseconds);
         }
         catch (Exception ex)
         {
@@ -175,7 +235,7 @@ public class WorkerFunction
                 _logger.LogWarning("Retrying test case {TestCaseId} (attempt {RetryCount}/{MaxRetries})", 
                     message.TestCaseId, message.RetryCount + 1, message.MaxRetries);
 
-                // Create retry message
+                // Create retry message with all evaluator IDs
                 var retryMessage = new ProcessTestCaseMessage
                 {
                     EvaluationRunId = message.EvaluationRunId,
@@ -183,7 +243,7 @@ public class WorkerFunction
                     DirectLineUrl = message.DirectLineUrl,
                     UserInput = message.UserInput,
                     ExpectedResponse = message.ExpectedResponse,
-                    EvaluatorTypeId = message.EvaluatorTypeId,
+                    EvaluatorTypeIds = message.EvaluatorTypeIds,
                     ConversationId = message.ConversationId,
                     PassingThreshold = message.PassingThreshold,
                     RetryCount = message.RetryCount + 1,
@@ -197,29 +257,33 @@ public class WorkerFunction
                 return;
             }
 
-            // Max retries reached, save error result
+            // Max retries reached, save error result for ALL evaluators
             stopwatch.Stop();
 
-            var createResultRequest = new CreateEvaluationResultRequest
+            foreach (var evaluatorTypeId in message.EvaluatorTypeIds)
             {
-                EvaluationRunId = message.EvaluationRunId,
-                TestCaseId = message.TestCaseId,
-                Score = null,
-                ErrorMessage = errorMessage,
-                ExecutionTimeMs = (int)stopwatch.ElapsedMilliseconds,
-                StatusCode = 778760003  // Errored
-            };
+                var createResultRequest = new CreateEvaluationResultRequest
+                {
+                    EvaluationRunId = message.EvaluationRunId,
+                    TestCaseId = message.TestCaseId,
+                    EvaluatorTypeId = evaluatorTypeId,
+                    Score = null,
+                    ErrorMessage = errorMessage,
+                    ExecutionTimeMs = (int)stopwatch.ElapsedMilliseconds,
+                    StatusCode = EvaluationResultStatus.Errored
+                };
 
-            await _dataverseService.CreateEvaluationResultAsync(createResultRequest, cancellationToken);
+                await _dataverseService.CreateEvaluationResultAsync(createResultRequest, cancellationToken);
 
-            // Increment the completed test cases counter (as failed) for immediate progress feedback
-            await _dataverseService.IncrementCompletedTestCasesAsync(
-                message.EvaluationRunId, 
-                failed: true, 
-                cancellationToken);
+                // Increment the completed test cases counter (as failed) for immediate progress feedback
+                await _dataverseService.IncrementCompletedTestCasesAsync(
+                    message.EvaluationRunId, 
+                    failed: true, 
+                    cancellationToken);
+            }
 
-            _logger.LogError("Failed to process test case {TestCaseId} after {MaxRetries} retries. Error: {ErrorMessage}", 
-                message.TestCaseId, message.MaxRetries, errorMessage);
+            _logger.LogError("Failed to process test case {TestCaseId} after {MaxRetries} retries for {EvaluatorCount} evaluators. Error: {ErrorMessage}", 
+                message.TestCaseId, message.MaxRetries, message.EvaluatorTypeIds.Count, errorMessage);
         }
         catch (Exception ex)
         {

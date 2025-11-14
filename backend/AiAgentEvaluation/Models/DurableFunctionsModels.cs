@@ -20,17 +20,22 @@ public class MultiTurnOrchestratorInput
     [JsonPropertyName("directLineUrl")]
     public string DirectLineUrl { get; set; } = string.Empty;
 
-    [JsonPropertyName("evaluatorTypeId")]
-    public Guid? EvaluatorTypeId { get; set; }
+    /// <summary>
+    /// List of evaluator type IDs to use for evaluation.
+    /// The Copilot Studio agent will be called once per turn, and each turn's response will be evaluated by all evaluators.
+    /// </summary>
+    [JsonPropertyName("evaluatorTypeIds")]
+    public List<Guid> EvaluatorTypeIds { get; set; } = new();
 
     [JsonPropertyName("passingThreshold")]
     public decimal PassingThreshold { get; set; } = 0.7m;
 
     /// <summary>
-    /// ID of the placeholder aggregate result to update upon completion
+    /// Map of evaluator type ID to its placeholder aggregate result ID
+    /// Key: EvaluatorTypeId, Value: AggregateResultId
     /// </summary>
-    [JsonPropertyName("aggregateResultId")]
-    public Guid AggregateResultId { get; set; }
+    [JsonPropertyName("aggregateResultIds")]
+    public Dictionary<Guid, Guid> AggregateResultIds { get; set; } = new();
 }
 
 /// <summary>
@@ -56,8 +61,12 @@ public class ExecuteTurnInput
     [JsonPropertyName("directLineUrl")]
     public string DirectLineUrl { get; set; } = string.Empty;
 
-    [JsonPropertyName("evaluatorTypeId")]
-    public Guid? EvaluatorTypeId { get; set; }
+    /// <summary>
+    /// List of evaluator type IDs to use for this turn.
+    /// The Copilot Studio agent will be called once, and the response will be evaluated by all evaluators.
+    /// </summary>
+    [JsonPropertyName("evaluatorTypeIds")]
+    public List<Guid> EvaluatorTypeIds { get; set; } = new();
 
     [JsonPropertyName("passingThreshold")]
     public decimal PassingThreshold { get; set; } = 0.7m;
@@ -97,6 +106,12 @@ public class TurnExecutionResult
 
     [JsonPropertyName("evaluationResultId")]
     public Guid? EvaluationResultId { get; set; }
+
+    /// <summary>
+    /// StatusCode for tracking result lifecycle: 1=Pending, 778760002=Completed, 778760003=Errored, 778760004=NotApplicable
+    /// </summary>
+    [JsonPropertyName("statusCode")]
+    public int StatusCode { get; set; }
 }
 
 /// <summary>
