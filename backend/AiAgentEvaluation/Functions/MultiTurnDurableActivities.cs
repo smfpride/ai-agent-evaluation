@@ -164,11 +164,12 @@ public class MultiTurnDurableActivities
             _logger.LogInformation("Received response from Copilot Studio for turn {Sequence} in {Ms}ms",
                 input.Turn.Sequence, copilotResponse.ExecutionTimeMs);
 
-            // 2. Evaluate with ALL evaluators using the same Copilot response
-            _logger.LogInformation("Evaluating turn {Sequence} response with {EvaluatorCount} evaluators", 
+            // 2. Evaluate with ALL evaluators using the same Copilot response CONCURRENTLY
+            _logger.LogInformation("Evaluating turn {Sequence} response with {EvaluatorCount} evaluators (concurrent)", 
                 input.Turn.Sequence, applicableEvaluators.Count);
             
-            foreach (var evaluatorTypeId in applicableEvaluators)
+            // Create evaluation tasks for all applicable evaluators
+            var evaluationTasks = applicableEvaluators.Select(async evaluatorTypeId =>
             {
                 try
                 {
@@ -217,7 +218,7 @@ public class MultiTurnDurableActivities
                             failed: true, 
                             cancellationToken);
 
-                        results.Add(new TurnExecutionResult
+                        return new TurnExecutionResult
                         {
                             ConversationId = copilotResponse.ConversationId,
                             DirectLineToken = copilotResponse.DirectLineToken,
@@ -228,9 +229,7 @@ public class MultiTurnDurableActivities
                             ExecutionTimeMs = (int)evaluatorStopwatch.ElapsedMilliseconds,
                             EvaluationResultId = errorResultId,
                             StatusCode = EvaluationResultStatus.Errored
-                        });
-                        
-                        continue; // Continue with next evaluator
+                        };
                     }
 
                     evaluatorStopwatch.Stop();
@@ -263,7 +262,7 @@ public class MultiTurnDurableActivities
                         failed: false, 
                         cancellationToken);
 
-                    results.Add(new TurnExecutionResult
+                    return new TurnExecutionResult
                     {
                         ConversationId = copilotResponse.ConversationId,
                         DirectLineToken = copilotResponse.DirectLineToken,
@@ -273,7 +272,7 @@ public class MultiTurnDurableActivities
                         ExecutionTimeMs = (int)evaluatorStopwatch.ElapsedMilliseconds,
                         EvaluationResultId = resultId,
                         StatusCode = EvaluationResultStatus.Completed
-                    });
+                    };
                 }
                 catch (Exception ex)
                 {
@@ -303,7 +302,7 @@ public class MultiTurnDurableActivities
                         failed: true, 
                         cancellationToken);
 
-                    results.Add(new TurnExecutionResult
+                    return new TurnExecutionResult
                     {
                         ConversationId = copilotResponse.ConversationId,
                         DirectLineToken = copilotResponse.DirectLineToken,
@@ -314,9 +313,13 @@ public class MultiTurnDurableActivities
                         ExecutionTimeMs = (int)stopwatch.ElapsedMilliseconds,
                         EvaluationResultId = errorResultId,
                         StatusCode = EvaluationResultStatus.Errored
-                    });
+                    };
                 }
-            }
+            }).ToList();
+
+            // Wait for all evaluations to complete and collect results
+            var evaluationResults = await Task.WhenAll(evaluationTasks);
+            results.AddRange(evaluationResults);
 
             stopwatch.Stop();
             _logger.LogInformation("Successfully executed turn {Sequence} for test case {TestCaseId} with {EvaluatorCount} evaluators",

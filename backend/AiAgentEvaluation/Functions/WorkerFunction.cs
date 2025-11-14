@@ -88,12 +88,13 @@ public class WorkerFunction
             _logger.LogInformation("Copilot Response Details - TestCaseId: {TestCaseId}, UserInput: '{UserInput}', ActualResponse: '{ActualResponse}', ConversationId: {ConversationId}", 
                 message.TestCaseId, message.UserInput, copilotResponse.Response, copilotResponse.ConversationId);
 
-            // Step 2: Evaluate the response with ALL evaluators
-            // The Copilot Studio agent was called once, now we fan out to multiple evaluators
-            _logger.LogInformation("Evaluating test case {TestCaseId} with {EvaluatorCount} evaluators", 
+            // Step 2: Evaluate the response with ALL evaluators CONCURRENTLY
+            // The Copilot Studio agent was called once, now we fan out to multiple evaluators in parallel
+            _logger.LogInformation("Evaluating test case {TestCaseId} with {EvaluatorCount} evaluators (concurrent)", 
                 message.TestCaseId, message.EvaluatorTypeIds.Count);
 
-            foreach (var evaluatorTypeId in message.EvaluatorTypeIds)
+            // Create evaluation tasks for all evaluators
+            var evaluationTasks = message.EvaluatorTypeIds.Select(async evaluatorTypeId =>
             {
                 try
                 {
@@ -139,7 +140,7 @@ public class WorkerFunction
                             failed: true, 
                             cancellationToken);
                         
-                        continue; // Continue with next evaluator
+                        return; // Exit this evaluator's task
                     }
 
                     evaluatorStopwatch.Stop();
@@ -203,7 +204,10 @@ public class WorkerFunction
                         failed: true, 
                         cancellationToken);
                 }
-            }
+            }).ToList();
+
+            // Wait for all evaluations to complete
+            await Task.WhenAll(evaluationTasks);
 
             stopwatch.Stop();
             _logger.LogInformation("Completed processing test case {TestCaseId} with {EvaluatorCount} evaluators in {TotalTime}ms", 
