@@ -91,9 +91,6 @@ public class OrchestratorFunction
             _logger.LogInformation("Found {TestCaseCount} test cases for evaluation run {EvaluationRunId}", 
                 testCases.Count, request.EvaluationRunId);
 
-            // Set the total test cases count in Dataverse to initialize counters
-            await _dataverseService.SetEvaluationRunTotalTestCasesAsync(request.EvaluationRunId, testCases.Count, cancellationToken);
-
             // Get the Direct Line URL from the AgentToEval lookup
             string directLineUrl;
             if (evaluationRun.AgentToEvalId.HasValue)

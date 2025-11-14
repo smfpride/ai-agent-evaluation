@@ -324,7 +324,7 @@ public class WorkerFunctionTests
     #region TC-WRK-007: Azure OpenAI Rate Limiting
 
     [Fact]
-    public async Task ProcessTestCase_WhenLLMJudgeFails_RetriesMessage()
+    public async Task ProcessTestCase_WhenLLMJudgeFails_CreatesErrorResult()
     {
         // Arrange
         var message = CreateTestMessage();
@@ -353,10 +353,12 @@ public class WorkerFunctionTests
         // Act
         await _workerFunction.ProcessTestCase(messageBody, CancellationToken.None);
 
-        // Assert - Should retry
-        _mockServiceBusService.Verify(x => x.SendTestCaseMessageAsync(
-            It.Is<ProcessTestCaseMessage>(m => m.RetryCount == 1), 
-            It.IsAny<CancellationToken>()), Times.Once);
+        // Assert - Should create error result for failed evaluator (1 per evaluator in message)
+        _mockDataverseService.Verify(x => x.CreateEvaluationResultAsync(
+            It.Is<CreateEvaluationResultRequest>(r => 
+                r.StatusCode == EvaluationResultStatus.Errored &&
+                r.ErrorMessage!.Contains("Rate limit exceeded")), 
+            It.IsAny<CancellationToken>()), Times.Exactly(message.EvaluatorTypeIds.Count));
     }
 
     #endregion
@@ -604,9 +606,9 @@ public class WorkerFunctionTests
         // Act - Should not throw exception
         await _workerFunction.ProcessTestCase(messageBody, CancellationToken.None);
 
-        // Assert - Should attempt to handle error
+        // Assert - Should attempt twice per evaluator (once for normal, once for error handling)
         _mockDataverseService.Verify(x => x.CreateEvaluationResultAsync(
-            It.IsAny<CreateEvaluationResultRequest>(), It.IsAny<CancellationToken>()), Times.Once);
+            It.IsAny<CreateEvaluationResultRequest>(), It.IsAny<CancellationToken>()), Times.Exactly(message.EvaluatorTypeIds.Count * 2));
     }
 
     #endregion
