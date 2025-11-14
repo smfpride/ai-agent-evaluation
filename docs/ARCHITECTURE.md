@@ -625,7 +625,7 @@ totalUnits = Σ(single-turn: testCount × evaluatorCount)
 **Purpose**: Secure storage for external service credentials
 
 **Stored Secrets**:
-- `DataverseConnectionString`: OAuth connection string for Dataverse (AuthType=OAuth;Url=...;ClientId=...;ClientSecret=...)
+- `DataverseConnectionString`: ClientSecret connection string for Dataverse (AuthType=ClientSecret;Url=...;ClientId=...;ClientSecret=...)
 
 **Note**: All Azure service connections use Managed Identity (no secrets needed). Only Dataverse requires a connection string as it does not support Managed Identity authentication.
 
@@ -900,7 +900,7 @@ sequenceDiagram
 - **Azure Durable Functions**: Multi-turn orchestration (requires Azure Storage for state)
 - **Azure OpenAI**: LLM Judge (GPT-4o)
 - **Microsoft Dataverse**: Data storage and prompt templates
-- **Azure Key Vault**: Secrets management (Dataverse OAuth only)
+- **Azure Key Vault**: Secrets management (Dataverse ClientSecret only)
 - **Application Insights**: Monitoring and telemetry
 - **Azure Storage**: Function state and Durable Functions orchestration state
 
@@ -952,7 +952,7 @@ graph LR
 
 #### External Service Credentials
 Only non-Azure services require secrets in Key Vault:
-- **Dataverse**: OAuth connection string (ClientId + ClientSecret)
+- **Dataverse**: ClientSecret connection string (ClientId + ClientSecret)
 - **Copilot Studio**: Direct Line token endpoint (preferred) or secret
 
 ### Data Protection
@@ -1229,7 +1229,7 @@ The `DataverseSchemaPrefix` setting allows customization of the Dataverse table 
 | Worker failures | OpenAI rate limits | Increase deployment capacity or retry logic |
 | Missing results | Monitor not running | Check timer trigger configuration |
 | Authentication errors | Managed Identity not configured | Verify RBAC assignments |
-| Dataverse errors | OAuth connection string invalid | Update Key Vault secret |
+| Dataverse errors | ClientSecret connection string invalid | Update Key Vault secret |
 | Queue backlog | Insufficient workers | Check scaling configuration |
 | Stalled evaluation | Worker stuck or crashed | Check Application Insights logs |
 | Multi-turn context loss | ConversationId not preserved | Verify turn execution logic |

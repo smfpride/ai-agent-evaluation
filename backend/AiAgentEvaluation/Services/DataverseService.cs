@@ -43,7 +43,7 @@ public class DataverseService : IDataverseService, IDisposable
         // This prevents SDK from making authentication attempts to cached/default Dataverse instances
         if (string.IsNullOrWhiteSpace(_settings.Dataverse.ConnectionString))
         {
-            _connectionError = "Dataverse ConnectionString is not configured. Dataverse operations will not be available. Please configure DataverseConnectionString with OAuth authentication (AuthenticationType=OAuth).";
+            _connectionError = "Dataverse ConnectionString is not configured. Dataverse operations will not be available. Please configure DataverseConnectionString with ClientSecret authentication (AuthType=ClientSecret).";
             _logger.LogWarning(_connectionError);
             _serviceClient = null;
             return;
@@ -54,7 +54,7 @@ public class DataverseService : IDataverseService, IDisposable
             _logger.LogInformation("Attempting to connect to Dataverse with connection string: {ConnectionString}", 
                 _settings.Dataverse.ConnectionString.Substring(0, Math.Min(50, _settings.Dataverse.ConnectionString.Length)) + "...");
 
-            // Dataverse only supports OAuth, Certificate, ClientSecret, or Office365 authentication
+            // Dataverse supports ClientSecret, Certificate, or Office365 authentication
             // Managed Identity is NOT supported and not on the roadmap
             _serviceClient = new ServiceClient(_settings.Dataverse.ConnectionString);
             
@@ -80,7 +80,7 @@ public class DataverseService : IDataverseService, IDisposable
                 return;
             }
             
-            _logger.LogInformation("Successfully connected to Dataverse using OAuth authentication. Org: {OrgName}, AuthType: {AuthType}", 
+            _logger.LogInformation("Successfully connected to Dataverse using ClientSecret authentication. Org: {OrgName}, AuthType: {AuthType}", 
                 _serviceClient.ConnectedOrgFriendlyName, _serviceClient.ActiveAuthenticationType);
         }
         catch (Exception ex)

@@ -17,7 +17,7 @@
     "_StorageAccountConnectionString": "DefaultEndpointsProtocol=https;AccountName=your-storage;AccountKey=your-key;EndpointSuffix=core.windows.net",
     "_ServiceBusConnectionString": "Endpoint=sb://sbus-aiestagingmbwc.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=your-key",
     "_QueueName": "test-case-processing",
-    "_DataverseConnectionString": "AuthType=OAuth;Url=https://yourorg.crm.dynamics.com/;AppId=your-app-id;AppSecret=your-secret;LoginPrompt=Never",
+    "_DataverseConnectionString": "AuthType=ClientSecret;Url=https://yourorg.crm.dynamics.com/;ClientId=your-client-id;ClientSecret=your-client-secret",
     "_DataverseSchemaPrefix": "mcicaps",
     "_AzureOpenAIApiKey": "your-azure-openai-api-key",
     

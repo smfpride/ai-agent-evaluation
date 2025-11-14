@@ -16,9 +16,9 @@ public class AppSettings
 public class DataverseSettings
 {
     /// <summary>
-    /// OAuth connection string for Dataverse authentication
-    /// Example: "AuthType=OAuth;Url=https://demo-staging.crm.dynamics.com/;ClientId={your-client-id};ClientSecret={your-client-secret}"
-    /// Supported auth types: OAuth, Certificate, ClientSecret, Office365 (Managed Identity NOT supported)
+    /// ClientSecret connection string for Dataverse authentication
+    /// Example: "AuthType=ClientSecret;Url=https://demo-staging.crm.dynamics.com/;ClientId={your-client-id};ClientSecret={your-client-secret}"
+    /// Supported auth types: ClientSecret, Certificate, Office365 (Managed Identity NOT supported)
     /// </summary>
     public string ConnectionString { get; set; } = string.Empty;
     
