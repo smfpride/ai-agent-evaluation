@@ -168,11 +168,16 @@ public class MultiTurnDurableOrchestratorTests
     public async Task RunOrchestrator_TestCaseNotFound_ReturnsEmptyContext()
     {
         // Arrange
+        var evaluatorId = Guid.NewGuid();
+        var aggregateId = Guid.NewGuid();
+        
         var input = new MultiTurnOrchestratorInput
         {
             TestCaseId = Guid.NewGuid(),
             TestRunId = Guid.NewGuid(),
             DirectLineUrl = "https://test.example.com",
+            EvaluatorTypeIds = new List<Guid> { evaluatorId },
+            AggregateResultIds = new Dictionary<Guid, Guid> { { evaluatorId, aggregateId } },
             PassingThreshold = 0.7m
         };
 
@@ -221,11 +226,16 @@ public class MultiTurnDurableOrchestratorTests
         var testCaseId = Guid.NewGuid();
         var testRunId = Guid.NewGuid();
 
+        var evaluatorId = Guid.NewGuid();
+        var aggregateId = Guid.NewGuid();
+        
         var input = new MultiTurnOrchestratorInput
         {
             TestCaseId = testCaseId,
             TestRunId = testRunId,
             DirectLineUrl = "https://test.example.com",
+            EvaluatorTypeIds = new List<Guid> { evaluatorId },
+            AggregateResultIds = new Dictionary<Guid, Guid> { { evaluatorId, aggregateId } },
             PassingThreshold = 0.7m
         };
 
@@ -342,11 +352,16 @@ public class MultiTurnDurableOrchestratorTests
             }
         };
 
+        var evaluatorId = Guid.NewGuid();
+        var aggregateId = Guid.NewGuid();
+        
         var input = new MultiTurnOrchestratorInput
         {
             TestCaseId = testCaseId,
             TestRunId = Guid.NewGuid(),
             DirectLineUrl = "https://test.example.com",
+            EvaluatorTypeIds = new List<Guid> { evaluatorId },
+            AggregateResultIds = new Dictionary<Guid, Guid> { { evaluatorId, aggregateId } },
             PassingThreshold = 0.7m
         };
 
