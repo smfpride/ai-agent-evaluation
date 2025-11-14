@@ -23,7 +23,7 @@ public class EvaluatorType
     /// Lookup to Judge Agent for evaluation backend configuration
     /// Replaces the deprecated mcicaps_deploymentname field
     /// </summary>
-    [JsonPropertyName("_mcicaps_judgeagent_value")]
+    [JsonPropertyName("mcicaps_judgeagentid")]
     public Guid? JudgeAgentId { get; set; }
 
     /// <summary>

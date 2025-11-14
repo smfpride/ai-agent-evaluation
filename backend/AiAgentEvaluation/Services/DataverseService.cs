@@ -878,7 +878,7 @@ public class DataverseService : IDataverseService, IDisposable
                     "mcicaps_evaluatortypeid",
                     "mcicaps_name",
                     "mcicaps_evaluatorprompt",
-                    "_mcicaps_judgeagent_value",
+                    "mcicaps_judgeagentid",
                     "mcicaps_deploymentname",
                     "statecode",
                     "statuscode",
@@ -913,8 +913,8 @@ public class DataverseService : IDataverseService, IDisposable
 #pragma warning disable CS0618 // Type or member is obsolete
                 DeploymentName = entity.GetAttributeValue<string>("mcicaps_deploymentname"),
 #pragma warning restore CS0618 // Type or member is obsolete
-                JudgeAgentId = entity.Contains("_mcicaps_judgeagent_value") 
-                    ? entity.GetAttributeValue<EntityReference>("_mcicaps_judgeagent_value")?.Id 
+                JudgeAgentId = entity.Contains("mcicaps_judgeagentid") 
+                    ? entity.GetAttributeValue<EntityReference>("mcicaps_judgeagentid")?.Id 
                     : null,
                 StateCode = GetIntValue(entity, "statecode"),
                 StatusCode = entity.GetAttributeValue<OptionSetValue>("statuscode")?.Value ?? 1,
