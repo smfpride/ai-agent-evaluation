@@ -704,6 +704,7 @@ public class WorkerFunctionTests
             DirectLineUrl = "https://test.powerplatform.com/powervirtualagents/botsbyschema/test/directline/token",
             UserInput = "Test input",
             ExpectedResponse = "Expected output",
+            EvaluatorTypeIds = new List<Guid> { Guid.NewGuid() },
             RetryCount = 0,
             MaxRetries = 3
         };

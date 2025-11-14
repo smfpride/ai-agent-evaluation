@@ -101,9 +101,7 @@ public class PerformanceTests
             $"Orchestrator took {stopwatch.ElapsedMilliseconds}ms, expected < 30000ms");
         
         // Verify all messages were queued
-        _mockServiceBusService.Verify(x => x.SendBatchTestCaseMessagesAsync(
-            It.Is<List<ProcessTestCaseMessage>>(m => m.Count == 50000), 
-            It.IsAny<CancellationToken>()), Times.Once);
+        _mockServiceBusService.Verify(x => x.SendTestCaseMessageAsync(It.IsAny<ProcessTestCaseMessage>(), It.IsAny<CancellationToken>()), Times.Exactly(50000));
     }
 
     #endregion
