@@ -21,18 +21,9 @@ public class EvaluatorType
 
     /// <summary>
     /// Lookup to Judge Agent for evaluation backend configuration
-    /// Replaces the deprecated mcicaps_deploymentname field
     /// </summary>
     [JsonPropertyName("mcicaps_judgeagentid")]
     public Guid? JudgeAgentId { get; set; }
-
-    /// <summary>
-    /// DEPRECATED: Use JudgeAgentId instead
-    /// Kept for backward compatibility during migration
-    /// </summary>
-    [JsonPropertyName("mcicaps_deploymentname")]
-    [Obsolete("Use JudgeAgentId to reference a Judge Agent record instead")]
-    public string? DeploymentName { get; set; }
 
     [JsonPropertyName("statecode")]
     public int StateCode { get; set; } = 0; // Default: Active

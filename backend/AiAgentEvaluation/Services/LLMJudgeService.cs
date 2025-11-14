@@ -294,25 +294,23 @@ public class LLMJudgeService : ILLMJudgeService, IDisposable
         Guid? evaluatorTypeId, 
         CancellationToken cancellationToken = default)
     {
+        // Deployment name always comes from application settings (system default)
+        var deploymentName = _settings.AzureOpenAI.DeploymentName;
+        
         try
         {
-            // If evaluator type is specified, use it to get the prompt and deployment name
+            // If evaluator type is specified, use it to get the prompt template
             if (evaluatorTypeId.HasValue)
             {
                 var evaluatorType = await _dataverseService.GetEvaluatorTypeAsync(evaluatorTypeId.Value, cancellationToken);
                 
                 if (evaluatorType != null && !string.IsNullOrWhiteSpace(evaluatorType.EvaluatorPrompt))
                 {
-                    var deploymentName = !string.IsNullOrWhiteSpace(evaluatorType.DeploymentName)
-                        ? evaluatorType.DeploymentName
-                        : _settings.AzureOpenAI.DeploymentName;
-                    
                     _logger.LogInformation(
-                        "Retrieved evaluator '{EvaluatorName}' (ID: {EvaluatorTypeId}) - Prompt: custom, Deployment: {DeploymentName} {DeploymentSource}", 
+                        "Retrieved evaluator '{EvaluatorName}' (ID: {EvaluatorTypeId}) - Prompt: custom, Deployment: {DeploymentName} (system default)", 
                         evaluatorType.Name, 
                         evaluatorTypeId, 
-                        deploymentName,
-                        !string.IsNullOrWhiteSpace(evaluatorType.DeploymentName) ? "(from evaluator)" : "(system default)");
+                        deploymentName);
                     
                     return (evaluatorType.EvaluatorPrompt, deploymentName);
                 }
@@ -324,12 +322,12 @@ public class LLMJudgeService : ILLMJudgeService, IDisposable
                 _logger.LogWarning("No evaluator type specified, using defaults");
             }
             
-            return (GetDefaultPromptTemplate(), _settings.AzureOpenAI.DeploymentName);
+            return (GetDefaultPromptTemplate(), deploymentName);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to get prompt for evaluator type {EvaluatorTypeId}, using defaults", evaluatorTypeId);
-            return (GetDefaultPromptTemplate(), _settings.AzureOpenAI.DeploymentName);
+            return (GetDefaultPromptTemplate(), deploymentName);
         }
     }
     
