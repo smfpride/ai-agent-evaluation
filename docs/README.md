@@ -2,102 +2,137 @@
 
 This directory contains all project documentation organized into logical categories for easy navigation.
 
-## 📁 Top-Level Documentation
+## 📁 Core Documentation
 
-- **[implementation.md](implementation.md)** - Complete implementation status and technical overview
+### 📘 Essential Reading (Root Level)
+
+Three critical documents live at the root for quick access:
+
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** - Complete system architecture, data flows, and component interactions
+  - Start here to understand the system design
+  - Required reading for all developers
+  
+- **[implementation.md](implementation.md)** - Master implementation status tracking document
+  - Comprehensive project status across all phases
+  - Implementation notes and decisions
+  - Current and historical development progress
+  
+- **[durable-functions-guide.md](durable-functions-guide.md)** - Durable Functions implementation guide
+  - Technical guide for multi-turn conversation orchestrations
+  - Architecture, patterns, and best practices
+  - Required for understanding multi-turn execution
+
+### 📋 Requirements & Design
 - **[prd/](prd/)** - Product Requirements Documents
 - **[stories/](stories/)** - User stories and feature specifications
 - **[tests/](tests/)** - Testing documentation and test plans
 
-## 📂 misc/ - Organized Documentation
+## 📂 Organized Documentation
 
-The `misc/` folder contains supporting documentation organized into the following categories:
+### 🚀 [deployment/](deployment/)
+Deployment guides, checklists, and validation procedures.
+- Pre-deployment verification checklist
+- Production deployment guide with rollback procedures
+- Multi-turn staging validation and test data setup
 
-### 🚀 [misc/deployment/](misc/deployment/)
-Deployment guides, checklists, and procedures for deploying the application to various environments.
+[View Deployment README →](deployment/README.md)
 
-**Files:**
-- `DEPLOYMENT_CHECKLIST.md` - Pre-deployment verification checklist
-- `phase6-production-deployment.md` - Phase 6 production deployment guide
+### 📝 [implementation/](implementation/)
+Implementation tracking, gap analyses, and development summaries.
+- Implementation status across all stories
+- Gap analysis between requirements and actual code
+- Feature-specific implementation guides
 
-### 📝 [misc/implementation/](misc/implementation/)
-Implementation tracking documents, gap analyses, and development summaries.
+[View Implementation README →](implementation/README.md)
 
-**Files:**
-- `IMPLEMENTATION_GAP_ANALYSIS.md` - Analysis of gaps between user stories and implementation
-- `IMPLEMENTATION_SUMMARY.md` - Summary of implementation status
-- `STORY_IMPLEMENTATION_REVIEW.md` - Review of story implementation against requirements
-
-### 🔌 [misc/integrations/](misc/integrations/)
+### 🔌 [integrations/](integrations/)
 Integration guides for external services and components.
+- Copilot Studio Direct Line API integration
+- Dataverse OAuth configuration
+- Azure Service Bus setup
+- Monitor function implementation
 
-**Files:**
-- `copilot-studio-token-endpoint-integration.md` - Copilot Studio token endpoint authentication guide
-- `HANDOFF_SUMMARY.md` - Project handoff and integration summary (includes Dataverse OAuth)
-- `MONITOR_FUNCTION_IMPLEMENTATION.md` - Monitor function implementation details
-- `SERVICE_BUS_SETUP.md` - Azure Service Bus setup and configuration
+[View Integrations README →](integrations/README.md)
 
-### ⚙️ [misc/operations/](misc/operations/)
-Operational procedures, monitoring configurations, and performance optimization guides.
+### ⚙️ [operations/](operations/)
+Operational procedures, monitoring, and performance optimization.
+- Production operations runbook with troubleshooting
+- Application Insights monitoring configuration
+- Performance tuning strategies
 
-**Files:**
-- `monitoring-configuration.md` - Monitoring and alerting configuration
-- `performance-optimization-guide.md` - Performance tuning and optimization strategies
-- `production-runbook.md` - Production operations runbook with troubleshooting procedures
+[View Operations README →](operations/README.md)
 
-### 📊 [misc/phase-reports/](misc/phase-reports/)
+### 📊 [phase-reports/](phase-reports/)
 Completion reports and summaries for each development phase.
+- Phase 4: LLM Judge Implementation
+- Phase 5: Testing & Quality Assurance
+- Historical phase completion details
 
-**Files:**
-- `PHASE4_COMPLETION_SUMMARY.md` - LLM Judge implementation completion (Phase 4)
-- `PHASE5_COMPLETION_REPORT.md` - Testing & quality assurance completion (Phase 5)
-- `PHASE5_TEST_SUMMARY.md` - Phase 5 test execution summary
+[View Phase Reports README →](phase-reports/README.md)
 
-### 🔐 [misc/security/](misc/security/)
-Security hardening, managed identity implementation, and compliance documentation.
+### 🔐 [security/](security/)
+Security implementation, managed identity, and compliance.
+- Managed Identity implementation guide
+- Security hardening checklist (SOC 2, ISO 27001)
+- RBAC configuration and authentication patterns
 
-**Files:**
-- `ManagedIdentityImplementation.md` - Managed identity implementation guide
-- `MANAGED_IDENTITY_CHANGE_SUMMARY.md` - Summary of managed identity changes
-- `MANAGED_IDENTITY_SUMMARY.md` - Managed identity architecture overview
-- `security-hardening-checklist.md` - Comprehensive security hardening checklist (SOC 2, ISO 27001)
+[View Security README →](security/README.md)
+
+### 🗄️ [archive/](archive/) & [archive-fixes/](archive-fixes/)
+Historical documentation and one-time reports kept for reference.
+- Documentation update records
+- Historical hotfixes and bug fix records
+- Superseded documents
+
+[View Archive README →](archive/README.md) | [View Fixes Archive →](archive-fixes/README.md)
 
 ## 📖 Quick Reference
 
 ### For Deployment
-1. Start with [implementation.md](implementation.md) for current status
-2. Review [misc/deployment/DEPLOYMENT_CHECKLIST.md](misc/deployment/DEPLOYMENT_CHECKLIST.md) before deploying
-3. Follow [misc/deployment/phase6-production-deployment.md](misc/deployment/phase6-production-deployment.md) for production deployment
-4. Check [misc/security/security-hardening-checklist.md](misc/security/security-hardening-checklist.md) for security requirements
+1. Review [ARCHITECTURE.md](ARCHITECTURE.md) to understand the system
+2. Check [deployment/DEPLOYMENT_CHECKLIST.md](deployment/DEPLOYMENT_CHECKLIST.md) before deploying
+3. Follow [deployment/phase6-production-deployment.md](deployment/phase6-production-deployment.md) for production
+4. Verify [security/security-hardening-checklist.md](security/security-hardening-checklist.md) requirements
 
 ### For Operations
-1. Use [misc/operations/production-runbook.md](misc/operations/production-runbook.md) for day-to-day operations
-2. Refer to [misc/operations/monitoring-configuration.md](misc/operations/monitoring-configuration.md) for monitoring setup
-3. Consult [misc/operations/performance-optimization-guide.md](misc/operations/performance-optimization-guide.md) for performance issues
+1. Use [operations/production-runbook.md](operations/production-runbook.md) for day-to-day operations
+2. Configure monitoring per [operations/monitoring-configuration.md](operations/monitoring-configuration.md)
+3. Optimize performance with [operations/performance-optimization-guide.md](operations/performance-optimization-guide.md)
 
 ### For Development
 1. Review [prd/PRD-Agent-Evaluation-Function.md](prd/PRD-Agent-Evaluation-Function.md) for requirements
-2. Check [stories/](stories/) for user stories and feature specifications
-3. Review [misc/implementation/IMPLEMENTATION_GAP_ANALYSIS.md](misc/implementation/IMPLEMENTATION_GAP_ANALYSIS.md) for known gaps
-4. Check [misc/integrations/](misc/integrations/) folder for service integration guides
-5. Refer to [misc/phase-reports/](misc/phase-reports/) for historical phase completion details
+2. Check [stories/](stories/) for user stories and acceptance criteria
+3. Review [implementation/IMPLEMENTATION_GAP_ANALYSIS.md](implementation/IMPLEMENTATION_GAP_ANALYSIS.md) for known gaps
+4. Consult [integrations/](integrations/) for service integration guides
+5. Reference [ARCHITECTURE.md](ARCHITECTURE.md) for design patterns
 
 ### For Testing
-1. Review [tests/](tests/) folder for test plans and summaries
-2. Check [misc/phase-reports/PHASE5_TEST_SUMMARY.md](misc/phase-reports/PHASE5_TEST_SUMMARY.md) for latest test results
+1. Review [tests/](tests/) folder for test plans
+2. Check [phase-reports/PHASE5_TEST_SUMMARY.md](phase-reports/PHASE5_TEST_SUMMARY.md) for test results
+3. Follow [deployment/multi-turn-test-data-setup.md](deployment/multi-turn-test-data-setup.md) for test data
 
 ### For Security & Compliance
-1. Complete [misc/security/security-hardening-checklist.md](misc/security/security-hardening-checklist.md) before production
-2. Review managed identity documents in [misc/security/](misc/security/) folder
-3. Ensure all security controls are implemented and documented
+1. Complete [security/security-hardening-checklist.md](security/security-hardening-checklist.md) before production
+2. Implement [security/ManagedIdentityImplementation.md](security/ManagedIdentityImplementation.md) guidance
+3. Review RBAC assignments per [ARCHITECTURE.md](ARCHITECTURE.md) authentication section
 
 ## 🔄 Document Maintenance
 
-- **Frequency**: Review and update documents quarterly or after major changes
+- **Frequency**: Review and update quarterly or after major changes
 - **Owner**: Development and Operations teams
-- **Feedback**: Submit documentation improvements via pull requests
+- **Feedback**: Submit improvements via pull requests
+- **Archive Policy**: Move superseded documents to [archive/](archive/) with README updates
+
+## 📐 Documentation Standards
+
+When updating documentation:
+1. Update [ARCHITECTURE.md](ARCHITECTURE.md) for design changes
+2. Update [prd/PRD-Agent-Evaluation-Function.md](prd/PRD-Agent-Evaluation-Function.md) for requirement changes
+3. Update relevant story in [stories/](stories/) for implementation details
+4. Add README.md to new folders explaining their purpose
+5. Archive superseded documents with dates and explanations
 
 ---
 
-**Last Organized**: November 9, 2025  
-**Organization Structure Version**: 1.0
+**Last Organized**: November 14, 2025  
+**Organization Structure Version**: 2.0
