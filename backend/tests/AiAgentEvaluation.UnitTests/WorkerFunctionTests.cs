@@ -57,6 +57,7 @@ public class WorkerFunctionTests
             DirectLineUrl = "https://test.powerplatform.com/powervirtualagents/botsbyschema/test/directline/token",
             UserInput = "What are the features of Product X?",
             ExpectedResponse = "Product X includes AI capabilities, cloud integration, and mobile support.",
+            EvaluatorTypeIds = new List<Guid> { Guid.NewGuid() },
             RetryCount = 0,
             MaxRetries = 3
         };
@@ -104,6 +105,7 @@ public class WorkerFunctionTests
             DirectLineUrl = "https://test.powerplatform.com/powervirtualagents/botsbyschema/test/directline/token",
             UserInput = "What is the capital of France?",
             ExpectedResponse = "Paris",
+            EvaluatorTypeIds = new List<Guid> { Guid.NewGuid() },
             RetryCount = 0,
             MaxRetries = 3
         };
@@ -151,6 +153,7 @@ public class WorkerFunctionTests
             DirectLineUrl = "https://test.powerplatform.com/powervirtualagents/botsbyschema/test/directline/token",
             UserInput = "How do I reset my password?",
             ExpectedResponse = "Instructions for password reset",
+            EvaluatorTypeIds = new List<Guid> { Guid.NewGuid() },
             RetryCount = 0,
             MaxRetries = 3
         };
@@ -321,7 +324,7 @@ public class WorkerFunctionTests
     #region TC-WRK-007: Azure OpenAI Rate Limiting
 
     [Fact]
-    public async Task ProcessTestCase_WhenLLMJudgeFails_RetriesMessage()
+    public async Task ProcessTestCase_WhenLLMJudgeFails_CreatesErrorResult()
     {
         // Arrange
         var message = CreateTestMessage();
@@ -350,10 +353,12 @@ public class WorkerFunctionTests
         // Act
         await _workerFunction.ProcessTestCase(messageBody, CancellationToken.None);
 
-        // Assert - Should retry
-        _mockServiceBusService.Verify(x => x.SendTestCaseMessageAsync(
-            It.Is<ProcessTestCaseMessage>(m => m.RetryCount == 1), 
-            It.IsAny<CancellationToken>()), Times.Once);
+        // Assert - Should create error result for failed evaluator (1 per evaluator in message)
+        _mockDataverseService.Verify(x => x.CreateEvaluationResultAsync(
+            It.Is<CreateEvaluationResultRequest>(r => 
+                r.StatusCode == EvaluationResultStatus.Errored &&
+                r.ErrorMessage!.Contains("Rate limit exceeded")), 
+            It.IsAny<CancellationToken>()), Times.Exactly(message.EvaluatorTypeIds.Count));
     }
 
     #endregion
@@ -601,9 +606,9 @@ public class WorkerFunctionTests
         // Act - Should not throw exception
         await _workerFunction.ProcessTestCase(messageBody, CancellationToken.None);
 
-        // Assert - Should attempt to handle error
+        // Assert - Should attempt twice per evaluator (once for normal, once for error handling)
         _mockDataverseService.Verify(x => x.CreateEvaluationResultAsync(
-            It.IsAny<CreateEvaluationResultRequest>(), It.IsAny<CancellationToken>()), Times.Once);
+            It.IsAny<CreateEvaluationResultRequest>(), It.IsAny<CancellationToken>()), Times.Exactly(message.EvaluatorTypeIds.Count * 2));
     }
 
     #endregion
@@ -701,6 +706,7 @@ public class WorkerFunctionTests
             DirectLineUrl = "https://test.powerplatform.com/powervirtualagents/botsbyschema/test/directline/token",
             UserInput = "Test input",
             ExpectedResponse = "Expected output",
+            EvaluatorTypeIds = new List<Guid> { Guid.NewGuid() },
             RetryCount = 0,
             MaxRetries = 3
         };
@@ -737,6 +743,10 @@ public class WorkerFunctionTests
             message.DirectLineUrl, message.UserInput, message.ConversationId, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(copilotResponse);
 
+        _mockLLMJudgeServiceFactory.Setup(x => x.CreateJudgeServiceAsync(
+            It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(_mockLLMJudgeService.Object);
+
         _mockLLMJudgeService.Setup(x => x.EvaluateResponseAsync(
             It.IsAny<LLMJudgeRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(judgeResponse);
@@ -744,21 +754,33 @@ public class WorkerFunctionTests
         _mockDataverseService.Setup(x => x.CreateEvaluationResultAsync(
             It.IsAny<CreateEvaluationResultRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Guid.NewGuid());
+        
+        _mockDataverseService.Setup(x => x.IncrementCompletedTestCasesAsync(
+            It.IsAny<Guid>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
     }
 
     private void VerifySuccessfulProcessing(ProcessTestCaseMessage message)
     {
+        var evaluatorCount = message.EvaluatorTypeIds?.Count ?? 0;
+        
+        // Copilot Studio called once regardless of evaluator count
         _mockCopilotStudioService.Verify(x => x.SendMessageAsync(
             It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Once);
 
+        // Factory and Judge called once per evaluator
+        _mockLLMJudgeServiceFactory.Verify(x => x.CreateJudgeServiceAsync(
+            It.IsAny<Guid?>(), It.IsAny<CancellationToken>()), Times.Exactly(evaluatorCount));
+        
         _mockLLMJudgeService.Verify(x => x.EvaluateResponseAsync(
-            It.IsAny<LLMJudgeRequest>(), It.IsAny<CancellationToken>()), Times.Once);
+            It.IsAny<LLMJudgeRequest>(), It.IsAny<CancellationToken>()), Times.Exactly(evaluatorCount));
 
+        // Result created once per evaluator
         _mockDataverseService.Verify(x => x.CreateEvaluationResultAsync(
             It.Is<CreateEvaluationResultRequest>(r => 
                 r.EvaluationRunId == message.EvaluationRunId && 
                 r.TestCaseId == message.TestCaseId), 
-            It.IsAny<CancellationToken>()), Times.Once);
+            It.IsAny<CancellationToken>()), Times.Exactly(evaluatorCount));
     }
 
     #endregion

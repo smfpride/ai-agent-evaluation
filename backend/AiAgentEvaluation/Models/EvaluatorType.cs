@@ -42,4 +42,11 @@ public class EvaluatorType
 
     [JsonPropertyName("_modifiedby_value")]
     public Guid? ModifiedBy { get; set; }
+
+    /// <summary>
+    /// Indicates if this evaluator requires an expected response to perform evaluation.
+    /// If true and expected response is missing, result will be marked as Not Applicable (statuscode 778760004).
+    /// </summary>
+    [JsonPropertyName("mcicaps_requiresexpectedresponse")]
+    public bool RequiresExpectedResponse { get; set; }
 }

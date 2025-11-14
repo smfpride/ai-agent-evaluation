@@ -66,8 +66,12 @@ public class ProcessTestCaseMessage
     [JsonPropertyName("expectedResponse")]
     public string ExpectedResponse { get; set; } = string.Empty;
 
-    [JsonPropertyName("evaluatorTypeId")]
-    public Guid? EvaluatorTypeId { get; set; }
+    /// <summary>
+    /// List of evaluator type IDs to use for evaluation.
+    /// The Copilot Studio agent will be called once, and the response will be evaluated by all evaluators.
+    /// </summary>
+    [JsonPropertyName("evaluatorTypeIds")]
+    public List<Guid> EvaluatorTypeIds { get; set; } = new();
 
     [JsonPropertyName("conversationId")]
     public string? ConversationId { get; set; }

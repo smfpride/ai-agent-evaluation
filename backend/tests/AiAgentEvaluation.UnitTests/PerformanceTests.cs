@@ -87,6 +87,8 @@ public class PerformanceTests
             .ReturnsAsync(agentToEval);
         _mockDataverseService.Setup(x => x.GetTestCasesAsync(evaluationRunId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(testCases);
+        _mockDataverseService.Setup(x => x.GetEvaluatorTypesForRunAsync(evaluationRunId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<EvaluatorType> { new() { Id = Guid.NewGuid(), Name = "Similarity", RequiresExpectedResponse = false } });
 
         var request = new StartEvaluationRunRequest { EvaluationRunId = evaluationRunId };
         var httpRequestData = CreateMockHttpRequestData(request);
@@ -100,10 +102,8 @@ public class PerformanceTests
         Assert.True(stopwatch.ElapsedMilliseconds < 30000, 
             $"Orchestrator took {stopwatch.ElapsedMilliseconds}ms, expected < 30000ms");
         
-        // Verify all messages were queued
-        _mockServiceBusService.Verify(x => x.SendBatchTestCaseMessagesAsync(
-            It.Is<List<ProcessTestCaseMessage>>(m => m.Count == 50000), 
-            It.IsAny<CancellationToken>()), Times.Once);
+        // Verify all messages were queued (50K test cases, 1 message each with 1 evaluator)
+        _mockServiceBusService.Verify(x => x.SendTestCaseMessageAsync(It.IsAny<ProcessTestCaseMessage>(), It.IsAny<CancellationToken>()), Times.Exactly(50000));
     }
 
     #endregion
@@ -157,6 +157,8 @@ public class PerformanceTests
                 });
             _mockDataverseService.Setup(x => x.GetTestCasesAsync(run.Id, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(run.TestCases);
+            _mockDataverseService.Setup(x => x.GetEvaluatorTypesForRunAsync(run.Id, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new List<EvaluatorType> { new() { Id = Guid.NewGuid(), Name = "Similarity", RequiresExpectedResponse = false } });
         }
 
         // Act - Execute all 10 runs concurrently
@@ -176,10 +178,10 @@ public class PerformanceTests
         Assert.True(stopwatch.ElapsedMilliseconds < 60000, 
             "Concurrent runs took too long, possible contention");
         
-        // Verify Service Bus was called 10 times (once per run)
-        _mockServiceBusService.Verify(x => x.SendBatchTestCaseMessagesAsync(
-            It.IsAny<List<ProcessTestCaseMessage>>(), 
-            It.IsAny<CancellationToken>()), Times.Exactly(10));
+        // Verify Service Bus was called correctly (10 runs × 5,000 test cases per run = 50,000 messages)
+        _mockServiceBusService.Verify(x => x.SendTestCaseMessageAsync(
+            It.IsAny<ProcessTestCaseMessage>(), 
+            It.IsAny<CancellationToken>()), Times.Exactly(50000));
     }
 
     #endregion
@@ -409,6 +411,15 @@ public class PerformanceTests
             It.IsAny<LLMJudgeRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(judgeResponse);
 
+        _mockDataverseService.Setup(x => x.GetEvaluatorTypeAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new EvaluatorType 
+            { 
+                Id = Guid.NewGuid(), 
+                Name = "Test Evaluator", 
+                RequiresExpectedResponse = false,
+                EvaluatorPrompt = "Evaluate: {prompt}"
+            });
+
         _mockDataverseService.Setup(x => x.CreateEvaluationResultAsync(
             It.IsAny<CreateEvaluationResultRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Guid.NewGuid());
@@ -422,6 +433,7 @@ public class PerformanceTests
             DirectLineUrl = "https://test.powerplatform.com/powervirtualagents/botsbyschema/test/directline/token",
             UserInput = $"Test {i}",
             ExpectedResponse = $"Expected {i}",
+            EvaluatorTypeIds = new List<Guid> { Guid.NewGuid() }, // 1 evaluator per message
             MaxRetries = 3
         }).ToList();
 

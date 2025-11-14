@@ -87,12 +87,18 @@ public class MultiTurnDurableOrchestrator
 
         logger.LogInformation("Starting orchestration for test case {TestCaseId}", input.TestCaseId);
 
-        var executionContext = new MultiTurnExecutionContext
+        // Create execution contexts for each evaluator
+        var executionContexts = new Dictionary<Guid, MultiTurnExecutionContext>();
+        foreach (var evaluatorTypeId in input.EvaluatorTypeIds)
         {
-            TestRunId = input.TestRunId,
-            PassingThreshold = input.PassingThreshold,
-            AggregateResultId = input.AggregateResultId
-        };
+            executionContexts[evaluatorTypeId] = new MultiTurnExecutionContext
+            {
+                TestRunId = input.TestRunId,
+                PassingThreshold = input.PassingThreshold,
+                AggregateResultId = input.AggregateResultIds[evaluatorTypeId],
+                EvaluatorTypeId = evaluatorTypeId
+            };
+        }
 
         try
         {
@@ -104,20 +110,24 @@ public class MultiTurnDurableOrchestrator
             if (testCase == null || testCase.Turns == null || !testCase.Turns.Any())
             {
                 logger.LogError("Test case {TestCaseId} not found or has no turns", input.TestCaseId);
-                return executionContext;
+                return executionContexts.Values.First();
             }
 
-            executionContext.TestCase = testCase;
-            executionContext.Turns = testCase.Turns.OrderBy(t => t.Sequence).ToList();
+            // Initialize all contexts with test case info
+            foreach (var ctx in executionContexts.Values)
+            {
+                ctx.TestCase = testCase;
+                ctx.Turns = testCase.Turns.OrderBy(t => t.Sequence).ToList();
+            }
 
-            logger.LogInformation("Executing {TurnCount} turns for test case {TestCaseId}",
-                executionContext.TotalTurns, input.TestCaseId);
+            logger.LogInformation("Executing {TurnCount} turns for test case {TestCaseId} with {EvaluatorCount} evaluators",
+                testCase.Turns.Count, input.TestCaseId, input.EvaluatorTypeIds.Count);
 
             string? conversationId = null;
             string? directLineToken = null;
 
             // Execute each turn sequentially
-            foreach (var turn in executionContext.Turns)
+            foreach (var turn in testCase.Turns.OrderBy(t => t.Sequence))
             {
                 var turnInput = new ExecuteTurnInput
                 {
@@ -125,66 +135,96 @@ public class MultiTurnDurableOrchestrator
                     ConversationId = conversationId,
                     DirectLineToken = directLineToken,
                     DirectLineUrl = input.DirectLineUrl,
-                    EvaluatorTypeId = input.EvaluatorTypeId,
+                    EvaluatorTypeIds = input.EvaluatorTypeIds,
                     PassingThreshold = input.PassingThreshold,
                     TestRunId = input.TestRunId
                 };
 
-                logger.LogInformation("Executing turn {Sequence} of {Total} for test case {TestCaseId}",
-                    turn.Sequence, executionContext.TotalTurns, input.TestCaseId);
+                logger.LogInformation("Executing turn {Sequence} of {Total} for test case {TestCaseId} with {EvaluatorCount} evaluators",
+                    turn.Sequence, testCase.Turns.Count, input.TestCaseId, input.EvaluatorTypeIds.Count);
 
-                // Execute turn (can take minutes - no timeout)
-                var turnResult = await context.CallActivityAsync<TurnExecutionResult>(
+                // Execute turn once - will evaluate with all evaluators
+                // Returns a list of results (one per evaluator)
+                var turnResults = await context.CallActivityAsync<List<TurnExecutionResult>>(
                     "ExecuteSingleTurn",
                     turnInput);
 
                 // Store conversation ID and DirectLine token from first turn
-                if (turn.Sequence == 1 && !string.IsNullOrEmpty(turnResult.ConversationId))
+                if (turn.Sequence == 1 && turnResults.Any() && !string.IsNullOrEmpty(turnResults[0].ConversationId))
                 {
-                    conversationId = turnResult.ConversationId;
-                    directLineToken = turnResult.DirectLineToken;
-                    executionContext.ConversationId = conversationId;
+                    conversationId = turnResults[0].ConversationId;
+                    directLineToken = turnResults[0].DirectLineToken;
+                    
+                    foreach (var ctx in executionContexts.Values)
+                    {
+                        ctx.ConversationId = conversationId;
+                    }
+                    
                     logger.LogInformation("Captured conversation ID and token from turn 1: {ConversationId}", conversationId);
                 }
 
-                // Create an EvaluationResult object to store in the context
-                var evaluationResult = new EvaluationResult
+                // Store results for each evaluator
+                foreach (var turnResult in turnResults)
                 {
-                    Id = turnResult.EvaluationResultId ?? Guid.Empty,
-                    Passed = turnResult.Passed,
-                    Score = turnResult.Score,
-                    ExecutionTimeMs = turnResult.ExecutionTimeMs,
-                    ErrorMessage = turnResult.ErrorMessage
-                };
+                    if (turnResult.EvaluationResultId.HasValue)
+                    {
+                        // Find which evaluator this result belongs to by matching the result ID
+                        // We need to get the EvaluatorTypeId from the result
+                        // For now, we'll match by index (assumes results are returned in same order as EvaluatorTypeIds)
+                        var evaluatorIndex = turnResults.IndexOf(turnResult);
+                        if (evaluatorIndex < input.EvaluatorTypeIds.Count)
+                        {
+                            var evaluatorTypeId = input.EvaluatorTypeIds[evaluatorIndex];
+                            var ctx = executionContexts[evaluatorTypeId];
+                            
+                            var evaluationResult = new EvaluationResult
+                            {
+                                Id = turnResult.EvaluationResultId.Value,
+                                Passed = turnResult.Passed,
+                                Score = turnResult.Score,
+                                ExecutionTimeMs = turnResult.ExecutionTimeMs,
+                                ErrorMessage = turnResult.ErrorMessage,
+                                StatusCode = turnResult.StatusCode
+                            };
 
-                executionContext.TurnResults[turn.Sequence] = evaluationResult;
+                            ctx.TurnResults[turn.Sequence] = evaluationResult;
+                        }
+                    }
+                }
 
-                logger.LogInformation("Completed turn {Sequence}: Passed={Passed}, Score={Score}",
-                    turn.Sequence, turnResult.Passed, turnResult.Score);
+                logger.LogInformation("Completed turn {Sequence} for {EvaluatorCount} evaluators",
+                    turn.Sequence, turnResults.Count);
 
                 // Optional: Add small delay between turns for rate limiting
-                if (turn.Sequence < executionContext.TotalTurns)
+                if (turn.Sequence < testCase.Turns.Count)
                 {
-                    await context.CreateTimer(context.CurrentUtcDateTime.AddSeconds(2), CancellationToken.None);
+                    await context.CallActivityAsync("CreateTurnDelay", 2);
                 }
             }
 
-            // Create aggregate result
-            logger.LogInformation("Creating aggregate result for test case {TestCaseId}", input.TestCaseId);
+            // Create aggregate results for each evaluator
+            logger.LogInformation("Creating {Count} aggregate results for test case {TestCaseId}", 
+                input.EvaluatorTypeIds.Count, input.TestCaseId);
             
-            await context.CallActivityAsync(
-                "CreateAggregateResult",
-                new CreateAggregateResultInput
-                {
-                    Context = executionContext,
-                    TestRunId = input.TestRunId
+            foreach (var evaluatorTypeId in input.EvaluatorTypeIds)
+            {
+                var ctx = executionContexts[evaluatorTypeId];
+                
+                await context.CallActivityAsync(
+                    "CreateAggregateResult",
+                    new CreateAggregateResultInput
+                    {
+                        Context = ctx,
+                        TestRunId = input.TestRunId
                 });
+            }
 
             logger.LogInformation(
-                "Completed multi-turn test case {TestCaseId} - Pass Rate: {PassRate:P0} ({Passed}/{Total})",
-                input.TestCaseId, executionContext.PassRate, executionContext.PassedTurns, executionContext.TotalTurns);
+                "Completed multi-turn test case {TestCaseId} with {EvaluatorCount} evaluators",
+                input.TestCaseId, input.EvaluatorTypeIds.Count);
 
-            return executionContext;
+            // Return the first context (for backward compatibility)
+            return executionContexts.Values.First();
         }
         catch (Exception ex)
         {

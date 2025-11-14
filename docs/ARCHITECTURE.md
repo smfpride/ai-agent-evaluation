@@ -575,6 +575,48 @@ mcicaps_testcases (1) ←→ (N) mcicaps_testcaseturn
 mcicaps_testcaseturn (1) ←→ (N) mcicaps_evaluationresults
 ```
 
+#### Multi-Evaluator Architecture (Story 09)
+
+**Overview**: The system supports N:N relationships between evaluation runs and evaluator types, enabling a single test case to be evaluated with multiple evaluators (Similarity, Accuracy, Relevancy, etc.) in a single run.
+
+**Key Design Principles**:
+1. **Test Cases are Evaluator-Agnostic**: No evaluator type stored on test case - selection happens at run level
+2. **Optimized API Calls**: Copilot Studio called once per test case, response evaluated by all evaluators
+3. **Concurrent Evaluation**: All evaluators run in parallel using `Task.WhenAll` for maximum performance
+4. **NA Handling**: Evaluators requiring expected responses skip execution when data missing
+
+**Architecture Flow**:
+```
+1. Orchestrator fetches evaluator types from N:N join (GetEvaluatorTypesForRunAsync)
+2. For each test case:
+   - Create 1 message/orchestration with all evaluator IDs (not N separate messages)
+   - Worker/Activity calls Copilot Studio once
+   - Worker/Activity evaluates concurrently with all evaluators using Task.WhenAll
+   - Each evaluator creates its own result with evaluatorTypeId
+```
+
+**Efficiency Gains**:
+- **Copilot Studio API Calls**: Reduced by (N-1)/N
+  - 3 evaluators: 67% fewer calls
+  - 5 evaluators: 80% fewer calls  
+  - 10 evaluators: 90% fewer calls
+- **Evaluation Time**: Reduced by concurrent execution
+  - 3 evaluators @ 2s each: 6s → 2s (67% faster)
+  - 5 evaluators @ 2s each: 10s → 2s (80% faster)
+
+**Progress Tracking Formula**:
+```
+totalUnits = Σ(single-turn: testCount × evaluatorCount)
+           + Σ(multi-turn: (turnCount × evaluatorCount) + evaluatorCount for aggregates)
+```
+
+**Not Applicable (NA) Handling**:
+- EvaluatorType field: `mcicaps_requiresexpectedresponse` (boolean)
+- If true and expected response missing → create NA result immediately
+- NA results: StatusCode 778760004, Score 0.0, no API calls made
+- NA results excluded from aggregate calculations
+- Counts as "completed" for progress tracking
+
 ---
 
 ### 5. Supporting Azure Services
@@ -616,7 +658,7 @@ mcicaps_testcaseturn (1) ←→ (N) mcicaps_evaluationresults
 
 ## Data Flow
 
-### Single-Turn Test Case Execution
+### Single-Turn Test Case Execution (Multi-Evaluator with Concurrent Evaluation)
 <!-- ![](./images/SingleTurnTestCaseExecution.png) -->
 ```mermaid
 sequenceDiagram
@@ -630,22 +672,36 @@ sequenceDiagram
     participant Monitor
 
     User->>Orchestrator: POST /api/orchestrator<br/>{evaluationRunId}
+    Orchestrator->>Dataverse: Fetch Evaluator Types (N:N join)
+    Dataverse-->>Orchestrator: EvaluatorTypes [Similarity, Accuracy, Relevancy]
     Orchestrator->>Dataverse: Fetch Test Cases
     Dataverse-->>Orchestrator: Test Cases (single-turn)
     Orchestrator->>Dataverse: Update Status = Running
     
     loop For each test case
-        Orchestrator->>ServiceBus: Queue Message
+        Orchestrator->>ServiceBus: Queue 1 Message<br/>(with all evaluator IDs)
     end
     
     Orchestrator-->>User: 202 Accepted<br/>{tracking info}
 
     ServiceBus->>Worker: Dequeue Message
-    Worker->>CopilotStudio: Send Prompt via Direct Line
+    Worker->>CopilotStudio: Send Prompt ONCE via Direct Line
     CopilotStudio-->>Worker: Agent Response + conversationId
-    Worker->>OpenAI: Evaluate Response<br/>(type-specific prompt)
-    OpenAI-->>Worker: Score + Reasoning
-    Worker->>Dataverse: Save Result
+    
+    Note over Worker: Concurrent Evaluation with Task.WhenAll
+    par Evaluate with Similarity
+        Worker->>OpenAI: Evaluate (Similarity prompt)
+        OpenAI-->>Worker: Score + Reasoning
+        Worker->>Dataverse: Save Result 1 (evaluatorTypeId=Similarity)
+    and Evaluate with Accuracy  
+        Worker->>OpenAI: Evaluate (Accuracy prompt)
+        OpenAI-->>Worker: Score + Reasoning
+        Worker->>Dataverse: Save Result 2 (evaluatorTypeId=Accuracy)
+    and Evaluate with Relevancy
+        Worker->>OpenAI: Evaluate (Relevancy prompt)
+        OpenAI-->>Worker: Score + Reasoning
+        Worker->>Dataverse: Save Result 3 (evaluatorTypeId=Relevancy)
+    end
     
     Note over Monitor: Timer fires every 1 min
     Monitor->>Dataverse: Check Progress
@@ -697,7 +753,7 @@ sequenceDiagram
     MTWorker->>Dataverse: Save Aggregate Result<br/>(IsAggregate = true)
 ```
 
-### Multi-Turn Test Case Execution (Durable Functions - Alternative)
+### Multi-Turn Test Case Execution (Durable Functions with Multi-Evaluator & Concurrent Evaluation)
 <!-- ![](./images/DurableFunctionsMultiTurn.png) -->
 ```mermaid
 sequenceDiagram
@@ -712,11 +768,13 @@ sequenceDiagram
     participant CopilotStudio
     participant OpenAI
 
+    Orchestrator->>Dataverse: Fetch Evaluator Types (N:N join)
+    Dataverse-->>Orchestrator: EvaluatorTypes [Similarity, Relevancy]
     Orchestrator->>Dataverse: Fetch Test Cases<br/>(IsMultiTurn = true)
     Dataverse-->>Orchestrator: Multi-Turn Test Cases
-    Orchestrator->>DurableClient: ScheduleNewOrchestrationInstanceAsync<br/>(MultiTurnTestCaseOrchestrator)
+    Orchestrator->>DurableClient: ScheduleNewOrchestrationInstanceAsync<br/>(1 orchestration per test case,<br/>with all evaluator IDs)
     
-    Note over DurableOrch: Orchestration Started
+    Note over DurableOrch: Orchestration Started<br/>(evaluatorTypeIds=[Sim, Rel])
     DurableOrch->>Storage: Save Orchestration State
     
     DurableOrch->>GetTurns: CallActivityAsync<br/>(GetTestCaseWithTurns)
@@ -729,37 +787,52 @@ sequenceDiagram
     Note over DurableOrch: Loop through each turn
     
     loop For each turn (1 to N)
-        DurableOrch->>ExecTurn: CallActivityAsync<br/>(ExecuteSingleTurn, turnInput)
-        ExecTurn->>CopilotStudio: Send Turn Prompt<br/>(with conversationId from Turn 1)
+        DurableOrch->>ExecTurn: CallActivityAsync<br/>(ExecuteSingleTurn with all evaluator IDs)
+        ExecTurn->>CopilotStudio: Send Turn Prompt ONCE<br/>(with conversationId from Turn 1)
         CopilotStudio-->>ExecTurn: Agent Response
-        ExecTurn->>OpenAI: Evaluate Turn Response
-        OpenAI-->>ExecTurn: Score + Reasoning
-        ExecTurn->>Dataverse: Save Turn Result
-        ExecTurn-->>DurableOrch: TurnExecutionResult
-        DurableOrch->>Storage: Update State with Turn Result
+        
+        Note over ExecTurn: Concurrent Evaluation with Task.WhenAll
+        par Evaluate with Similarity
+            ExecTurn->>OpenAI: Evaluate (Similarity)
+            OpenAI-->>ExecTurn: Score + Reasoning
+            ExecTurn->>Dataverse: Save Turn Result 1
+        and Evaluate with Relevancy
+            ExecTurn->>OpenAI: Evaluate (Relevancy)
+            OpenAI-->>ExecTurn: Score + Reasoning
+            ExecTurn->>Dataverse: Save Turn Result 2
+        end
+        
+        ExecTurn-->>DurableOrch: List<TurnExecutionResult>
+        DurableOrch->>Storage: Update State with Turn Results
         
         Note over DurableOrch: Optional 2-second delay<br/>between turns
         DurableOrch->>DurableOrch: CreateTimer (2 seconds)
     end
     
-    Note over DurableOrch: All turns completed
-    DurableOrch->>CreateAgg: CallActivityAsync<br/>(CreateAggregateResult)
-    CreateAgg->>CreateAgg: Calculate Pass Rate<br/>& Overall Metrics
-    CreateAgg->>Dataverse: Save Aggregate Result<br/>(IsAggregate = true)
-    CreateAgg-->>DurableOrch: Aggregate Created
+    Note over DurableOrch: All turns completed<br/>Create aggregates for each evaluator
     
-    DurableOrch->>Dataverse: Increment Completed Count
+    loop For each evaluator type
+        DurableOrch->>CreateAgg: CallActivityAsync<br/>(CreateAggregateResult per evaluator)
+        CreateAgg->>CreateAgg: Calculate Pass Rate<br/>& Overall Metrics<br/>(filter NA results)
+        CreateAgg->>Dataverse: Save Aggregate Result<br/>(IsAggregate = true, evaluatorTypeId)
+        CreateAgg-->>DurableOrch: Aggregate Created
+    end
+    
+    DurableOrch->>Dataverse: Increment Completed Count<br/>(by evaluator count)
     DurableOrch->>Storage: Save Final State
     
     Note over DurableOrch: Orchestration Complete<br/>(Can run for hours)
 ```
 
-**Key Advantages of Durable Functions Approach**:
+**Key Advantages of Durable Functions Multi-Evaluator Approach**:
 - **Unlimited Runtime**: No 5-minute Service Bus message lock limitation
 - **State Management**: Automatic checkpointing and replay
 - **Resilience**: Automatic retries and failure handling
 - **Debugging**: Full execution history in Azure Storage
 - **Long Conversations**: Ideal for 10+ turn conversations
+- **Efficiency**: 1 Copilot call per turn (not N), concurrent evaluation
+- **Cost Savings**: 67-90% fewer Copilot Studio API calls
+- **Performance**: 67-80% faster evaluation through parallelization
 
 ### Azure OpenAI Deployment Name Resolution
 <!-- ![](./images/DeploymentNameResolution.png) -->
