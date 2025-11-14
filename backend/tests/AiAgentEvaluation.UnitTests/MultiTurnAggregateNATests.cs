@@ -16,7 +16,7 @@ public class MultiTurnAggregateNATests
     private readonly Mock<ILogger<MultiTurnDurableActivities>> _mockLogger;
     private readonly Mock<IDataverseService> _mockDataverseService;
     private readonly Mock<ICopilotStudioService> _mockCopilotStudioService;
-    private readonly Mock<ILLMJudgeService> _mockLLMJudgeService;
+    private readonly Mock<ILLMJudgeServiceFactory> _mockLLMJudgeServiceFactory;
     private readonly MultiTurnDurableActivities _activities;
 
     public MultiTurnAggregateNATests()
@@ -24,13 +24,13 @@ public class MultiTurnAggregateNATests
         _mockLogger = new Mock<ILogger<MultiTurnDurableActivities>>();
         _mockDataverseService = new Mock<IDataverseService>();
         _mockCopilotStudioService = new Mock<ICopilotStudioService>();
-        _mockLLMJudgeService = new Mock<ILLMJudgeService>();
+        _mockLLMJudgeServiceFactory = new Mock<ILLMJudgeServiceFactory>();
 
         _activities = new MultiTurnDurableActivities(
             _mockLogger.Object,
             _mockDataverseService.Object,
             _mockCopilotStudioService.Object,
-            _mockLLMJudgeService.Object);
+            _mockLLMJudgeServiceFactory.Object);
     }
 
     [Fact]
