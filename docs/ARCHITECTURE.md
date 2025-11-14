@@ -1197,6 +1197,7 @@ Response: 200 OK
   "AzureOpenAIEndpoint": "https://openai-aiedev1234.openai.azure.com/",
   "KeyVaultUrl": "https://kv-aiedev1234.vault.azure.net/",
   "DataverseConnectionString": "@Microsoft.KeyVault(VaultName=kv-aiedev1234;SecretName=DataverseConnectionString)",
+  "DataverseSchemaPrefix": "mcicaps",
   "DefaultEvaluationTimeoutMinutes": "5",
   "MaxConcurrentTestCases": "100",
   "CopilotStudio__TimeoutSeconds": "60",
@@ -1206,6 +1207,19 @@ Response: 200 OK
   "AzureOpenAI__TimeoutSeconds": "60"
 }
 ```
+
+**Dataverse Schema Prefix Configuration**:
+
+The `DataverseSchemaPrefix` setting allows customization of the Dataverse table and field prefix:
+
+- **Default Value**: `mcicaps` (if not configured)
+- **Automatic Underscore**: The system automatically appends `_` if not present
+- **Usage Examples**:
+  - Set `DataverseSchemaPrefix=mcicaps` → Tables/fields use `mcicaps_`
+  - Set `DataverseSchemaPrefix=custom` → Tables/fields use `custom_`
+  - Set `DataverseSchemaPrefix=mcicaps_` → Tables/fields use `mcicaps_` (underscore not duplicated)
+- **Where Used**: All Dataverse table names (`evaluationruns`, `testcases`, etc.) and field names in `DataverseService`
+- **Backward Compatibility**: Defaults to `mcicaps` to maintain compatibility with existing deployments
 
 ### Troubleshooting Guide
 

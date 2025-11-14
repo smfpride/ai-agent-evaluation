@@ -311,6 +311,7 @@ HTTP Trigger → Orchestrator Function → Service Bus Queue → Worker Function
 ```json
 {
   "DataverseConnectionString": "@Microsoft.KeyVault(VaultName=kv-name;SecretName=DataverseConnectionString)",
+  "DataverseSchemaPrefix": "mcicaps",
   "AzureOpenAIEndpoint": "https://your-openai.openai.azure.com/",
   "ServiceBus__Namespace": "yournamespace.servicebus.windows.net",
   "ServiceBus__QueueName": "test-case-processing",
@@ -327,6 +328,8 @@ HTTP Trigger → Orchestrator Function → Service Bus Queue → Worker Function
 ```
 
 **Note**: All Azure service connections use managed identity. Only Dataverse requires OAuth connection string stored in Key Vault as it does not support Managed Identity authentication.
+
+**Dataverse Schema Prefix**: The `DataverseSchemaPrefix` setting (default: `mcicaps`) allows customization of table and field prefixes. The system automatically appends an underscore if not present. For example, setting `DataverseSchemaPrefix=custom` will use `custom_` for all table and field names in Dataverse operations.
 
 ### 4.4 Managed Identity RBAC Requirements
 
