@@ -117,11 +117,8 @@ public class MultiTurnDurableOrchestratorTests
         // Mock CreateAggregateResult activity
         mockContext.Setup(x => x.CallActivityAsync("CreateAggregateResult", It.IsAny<CreateAggregateResultInput>(), It.IsAny<TaskOptions>())).Returns(Task.CompletedTask);
 
-        // Mock CreateTimer for delay between turns
-        mockContext.Setup(x => x.CurrentUtcDateTime)
-            .Returns(DateTime.UtcNow);
-
-        mockContext.Setup(x => x.CreateTimer(It.IsAny<DateTime>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        // Mock CreateTurnDelay activity for delay between turns
+        mockContext.Setup(x => x.CallActivityAsync("CreateTurnDelay", It.IsAny<int>(), It.IsAny<TaskOptions>())).Returns(Task.CompletedTask);
 
         // Act
         var result = await _orchestrator.RunOrchestrator(mockContext.Object);
@@ -156,11 +153,12 @@ public class MultiTurnDurableOrchestratorTests
                 It.IsAny<TaskOptions>()),
             Times.Once);
 
-        // Verify timer for delay between turns (called once after turn 1)
+        // Verify CreateTurnDelay activity for delay between turns (called once after turn 1)
         mockContext.Verify(
-            x => x.CreateTimer(
-                It.IsAny<DateTime>(),
-                It.IsAny<CancellationToken>()),
+            x => x.CallActivityAsync(
+                "CreateTurnDelay",
+                It.IsAny<int>(),
+                It.IsAny<TaskOptions>()),
             Times.Once);
     }
 

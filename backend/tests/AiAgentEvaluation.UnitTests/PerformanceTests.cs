@@ -178,10 +178,10 @@ public class PerformanceTests
         Assert.True(stopwatch.ElapsedMilliseconds < 60000, 
             "Concurrent runs took too long, possible contention");
         
-        // Verify Service Bus was called correctly (10 runs × 10 test cases per run = 100 messages)
+        // Verify Service Bus was called correctly (10 runs × 5,000 test cases per run = 50,000 messages)
         _mockServiceBusService.Verify(x => x.SendTestCaseMessageAsync(
             It.IsAny<ProcessTestCaseMessage>(), 
-            It.IsAny<CancellationToken>()), Times.Exactly(100));
+            It.IsAny<CancellationToken>()), Times.Exactly(50000));
     }
 
     #endregion
