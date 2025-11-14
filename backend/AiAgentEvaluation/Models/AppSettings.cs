@@ -17,10 +17,39 @@ public class DataverseSettings
 {
     /// <summary>
     /// OAuth connection string for Dataverse authentication
-    /// Example: "AuthType=OAuth;Url=https://demo-staging.crm.dynamics.com/;ClientId=2e8f2905-8f14-42a2-9f6d-3080b5e85146;ClientSecret=SEl8Q~~xLt3PfT2F5qOYNlgBgn8zLbICdnl2gdqr"
+    /// Example: "AuthType=OAuth;Url=https://demo-staging.crm.dynamics.com/;ClientId={your-client-id};ClientSecret={your-client-secret}"
     /// Supported auth types: OAuth, Certificate, ClientSecret, Office365 (Managed Identity NOT supported)
     /// </summary>
     public string ConnectionString { get; set; } = string.Empty;
+    
+    private string _schemaPrefix = "mcicaps";
+    
+    /// <summary>
+    /// Schema prefix for Dataverse tables and fields (default: "mcicaps")
+    /// The underscore will be automatically appended if not present.
+    /// Example: Setting "mcicaps" will result in "mcicaps_" being used for all table and field names.
+    /// </summary>
+    public string SchemaPrefix 
+    { 
+        get => _schemaPrefix;
+        set => _schemaPrefix = value ?? "mcicaps";
+    }
+    
+    /// <summary>
+    /// Gets the schema prefix with underscore appended if not already present
+    /// </summary>
+    public string SchemaPrefixWithUnderscore
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(SchemaPrefix))
+            {
+                return "mcicaps_";
+            }
+            return SchemaPrefix.EndsWith("_") ? SchemaPrefix : SchemaPrefix + "_";
+        }
+    }
+    
     public int TimeoutSeconds { get; set; } = 30;
     public int MaxRetryAttempts { get; set; } = 3;
 }
