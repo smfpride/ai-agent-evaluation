@@ -148,17 +148,17 @@ HTTP Trigger → Orchestrator Function → Service Bus Queue → Worker Function
   - Key Fields: 
     - `mcicaps_name` (e.g., "Similarity", "Accuracy", "Relevancy")
     - `mcicaps_description`
-    - `mcicaps_prompttemplate` (LLM Judge prompt text)
-    - `mcicaps_systemprompttemplate` (optional system prompt)
+    - `mcicaps_evaluatorprompt` (LLM Judge prompt text)
     - `mcicaps_judgeagentid` (lookup to Judge Agent - replaces mcicaps_deploymentname)
     - `mcicaps_requiresexpectedresponse` (Boolean)
   - **Judge Selection**: References Judge Agent via lookup field. Factory pattern selects appropriate judge service (Azure OpenAI or Copilot Studio) based on Judge Agent configuration. If NULL, falls back to system default Azure OpenAI from AppSettings.
   - Purpose: Stores evaluation criteria and prompts in Dataverse (replaces Azure Blob Storage approach)
+  - Note: Fields not in use: `mcicaps_systemprompttemplate`, `mcicaps_isdomainspecific`
 
 #### 3.2.2 Output Tables
 - **mcicaps_evaluationresults**: Individual test results
   - Primary Key: `mcicaps_evaluationresultsid` (auto-generated GUID)
-  - Key Fields: `mcicaps_actualresponse`, `mcicaps_score`, `mcicaps_passed`, `mcicaps_evaluation`, `mcicaps_reasoning`, `mcicaps_testcase`, `mcicaps_testcaseturnid` (for multi-turn results), `mcicaps_conversationid`, `mcicaps_responsetimems`, `mcicaps_isaggregate`, `mcicaps_evaluatortypeid`, `mcicaps_errormessage`, `statuscode`
+  - Key Fields: `mcicaps_actualresponse`, `mcicaps_score`, `mcicaps_passed`, `mcicaps_evaluation` (lookup to evaluation run), `mcicaps_reasoning`, `mcicaps_testcase`, `mcicaps_testcaseturnid` (for multi-turn results), `mcicaps_conversationid`, `mcicaps_executiontime`, `mcicaps_isaggregate`, `mcicaps_evaluatortypeid`, `mcicaps_errormessage`, `statuscode`
   - Multi-Turn Support: Individual turn results linked via `mcicaps_testcaseturnid`, aggregate results marked with `mcicaps_isaggregate = true`
   - **Status Code Lifecycle Management** (as of Story 08):
     - `1` (Pending): Placeholder result created, execution not started (multi-turn orchestrations only)
@@ -436,11 +436,11 @@ The evaluation prompts are stored in Microsoft Dataverse EvaluatorType records f
 - **Storage Location**: Microsoft Dataverse `mcicaps_evaluatortypes` table
 - **Fields**: 
   - `mcicaps_name`: Evaluator type name (e.g., "Similarity", "Accuracy", "Relevancy")
-  - `mcicaps_prompttemplate`: User prompt template text
-  - `mcicaps_systemprompttemplate`: System prompt template text (optional)
+  - `mcicaps_evaluatorprompt`: Evaluator prompt template text
 - **Versioning**: Managed through Dataverse solution lifecycle
 - **Updates**: Prompts can be updated through Dataverse without function redeployment
 - **Fallback**: Function includes default embedded prompts if Dataverse template is unavailable
+- **Note**: Fields not in use: `mcicaps_systemprompttemplate`, `mcicaps_isdomainspecific`
 
 **Sample EvaluatorType Records**:
 - Similarity (GUID reference)
