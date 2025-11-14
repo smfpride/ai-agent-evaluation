@@ -164,13 +164,15 @@ flowchart TB
 - Receive test case message from queue
 - Send prompt to Copilot Studio via Direct Line API
 - Collect agent response
-- Evaluate response using Azure OpenAI Judge
+- Use `LLMJudgeServiceFactory` to get appropriate judge (Azure OpenAI or Copilot Studio)
+- Evaluate response using selected judge
 - Save evaluation result to Dataverse
 
 **Key Features**:
 - Stateless execution for horizontal scaling
 - Retry logic for transient failures
 - Type-specific evaluation (Similarity, Accuracy, Relevancy)
+- Dynamic judge selection via factory pattern
 - Response time tracking
 
 #### 1.3 Monitor Function
@@ -293,35 +295,67 @@ flowchart TB
 
 ---
 
-### 3. Azure OpenAI (LLM Judge)
+### 3. LLM Judge (Configurable Backend)
 
-**Purpose**: Evaluate agent responses using GPT-4o as an intelligent judge
+**Purpose**: Evaluate agent responses using configurable judge backends (Azure OpenAI or Copilot Studio)
 
-#### Configuration
+#### Architecture Pattern: Factory Pattern
+
+The system uses `LLMJudgeServiceFactory` to dynamically select the appropriate judge implementation based on Dataverse configuration:
+
+```
+EvaluatorType → JudgeAgent → Factory → AzureOpenAIJudgeService | CopilotStudioJudgeService
+```
+
+**Factory Behavior**:
+1. Fetches `EvaluatorType` from Dataverse using evaluator type ID
+2. Retrieves linked `JudgeAgent` via `mcicaps_judgeagentid` lookup
+3. Validates configuration based on judge type
+4. Creates appropriate service instance:
+   - `AzureOpenAIJudgeService` for JudgeType = 778760000
+   - `CopilotStudioJudgeService` for JudgeType = 778760001
+5. Falls back to default Azure OpenAI if no Judge Agent configured
+
+#### Azure OpenAI Judge
+
+**Configuration**:
 - **Models**: Supports multiple deployments (gpt-4o, gpt-4-turbo, gpt-35-turbo, etc.)
 - **Default Deployment**: gpt-4o (2024-08-06) - Standard (150 TPM capacity)
 - **Authentication**: Managed Identity (Cognitive Services OpenAI User role)
-- **Dynamic Deployment Selection**: Per-evaluator deployment name configuration (see below)
+- **Dynamic Selection**: Per-judge-agent endpoint and deployment configuration
 
-#### Deployment Name Resolution
+**Features**:
+- On-demand `ChatClient` creation with judge-specific endpoint
+- Supports multiple Azure OpenAI instances
+- JSON response parsing with structured evaluation format
+- Retry logic with exponential backoff
 
-The service supports **dynamic deployment name selection per evaluator type**:
+#### Copilot Studio Judge
 
-1. **Per-Evaluator Override**: Each evaluator type can specify `mcicaps_deploymentname` in Dataverse
-2. **System Default Fallback**: If evaluator doesn't specify a deployment, uses `AppSettings.AzureOpenAI.DeploymentName`
-3. **On-Demand Client Creation**: `ChatClient` instances created per request using appropriate deployment
-4. **Observable**: Logs indicate which deployment is used for each evaluation
+**Configuration**:
+- **Integration**: Direct Line API
+- **Authentication**: Token-based via Direct Line endpoint
+- **Optional Model Routing**: Prefix injection for multi-model agents
 
-**Example Configuration**:
-- Similarity evaluator → `gpt-4o` (high accuracy for semantic comparison)
-- Simple classification → `gpt-35-turbo` (cost-effective for basic evaluations)
-- Complex reasoning → `gpt-4-turbo` (balanced performance/cost)
+**Features**:
+- Optional MODEL prefix for topic routing: `MODEL: gpt-4o\n\n{prompt}`
+- JSON response parsing with markdown code fence removal
+- Regex fallback for non-JSON responses
+- Stateless execution (new conversation per evaluation)
+- Supports domain-specific judge agents
+
+**Model Routing** (Optional):
+If `mcicaps_modelname` is specified in Judge Agent:
+- System prefixes all prompts with `MODEL: {modelname}\n\n`
+- Copilot Studio agent routes to appropriate topic/model
+- Enables single agent to support multiple models
+- If NULL, no prefix added (agent uses default topic)
 
 **Benefits**:
-- Cost optimization by using cheaper models for simpler evaluations
-- Performance tuning per evaluator type
-- Model selection based on task complexity
-- Backward compatible (existing evaluators use system default)
+- Cost optimization (Azure OpenAI vs Power Platform licensing)
+- Domain-specific evaluations (specialized Copilot Studio agents)
+- Flexible model selection per evaluator type
+- Centralized judge configuration in Dataverse
 
 #### Evaluation Types
 
@@ -424,7 +458,35 @@ Fields:
   - mcicaps_conversationid (Text): Conversation identifier
 ```
 
-##### 4.4 mcicaps_evaluatortypes (Evaluator Type Configuration)
+##### 4.4 mcicaps_judgeagents (Judge Agent Configuration) - NEW
+**Purpose**: Configurable LLM Judge backends (Azure OpenAI or Copilot Studio)
+```
+Primary Key: mcicaps_judgeagentid (GUID)
+Fields:
+  - mcicaps_name (Text): Judge agent name (e.g., "GPT-4o Judge", "Finance Domain Judge")
+  - mcicaps_description (Text): Purpose and configuration notes
+  - mcicaps_judgetype (Choice/OptionSet): Judge backend type
+    - 778760000: Azure OpenAI
+    - 778760001: Copilot Studio
+  
+  Azure OpenAI Fields (required when mcicaps_judgetype = 778760000):
+  - mcicaps_aoaiendpoint (Text): Azure OpenAI endpoint URL
+  - mcicaps_aoaideploymentname (Text): Deployment name (e.g., gpt-4o, gpt-4-turbo)
+  
+  Copilot Studio Fields (required when mcicaps_judgetype = 778760001):
+  - mcicaps_directlineurl (Text): Direct Line token endpoint URL
+  - mcicaps_modelname (Text, Optional): Model name for topic routing (e.g., "gpt-4o", "gpt-4-turbo")
+      * If specified, system prefixes prompts with "MODEL: {modelname}\n\n"
+      * If NULL/empty, no prefix added (agent uses default topic)
+      * Enables multi-model Copilot Studio agents with topic-based routing
+
+Notes:
+  - Reusable across multiple evaluator types
+  - Enables centralized judge configuration
+  - Supports cost optimization and domain-specific evaluations
+```
+
+##### 4.5 mcicaps_evaluatortypes (Evaluator Type Configuration)
 **Purpose**: Evaluation type definitions and prompt templates
 ```
 Primary Key: mcicaps_evaluatortypeid (GUID)
@@ -432,16 +494,17 @@ Fields:
   - mcicaps_name (Text): Evaluator name (e.g., "Similarity", "Accuracy", "Relevancy")
   - mcicaps_description (Text): Purpose and criteria description
   - mcicaps_prompttemplate (Text): LLM Judge prompt template with placeholders
-  - mcicaps_deploymentname (Text, Optional): Azure OpenAI deployment name (e.g., gpt-4o, gpt-4-turbo, gpt-35-turbo)
-      * If specified, this evaluator uses the custom deployment
-      * If NULL/empty, falls back to system default deployment from AppSettings
-      * Enables per-evaluator model selection for cost/performance optimization
+  - mcicaps_judgeagentid (Lookup): Reference to Judge Agent configuration (replaces mcicaps_deploymentname)
   - mcicaps_requiresexpectedresponse (Boolean): If true and expected response missing, evaluation result marked Not Applicable
   - mcicaps_systemprompttemplate (Text): Optional system prompt template
   - mcicaps_isdomainspecific (Boolean): Custom domain-specific flag
+
+Migration Notes:
+  - mcicaps_deploymentname field removed (replaced by Judge Agent lookup)
+  - If mcicaps_judgeagentid is NULL, factory falls back to system default Azure OpenAI from AppSettings
 ```
 
-##### 4.5 mcicaps_evaluationrun_evaluatortype (Run ↔ EvaluatorType Join) - NEW
+##### 4.6 mcicaps_evaluationrun_evaluatortype (Run ↔ EvaluatorType Join) - NEW
 **Purpose**: Defines evaluator types selected for a specific evaluation run (multi-evaluator support)
 ```
 Primary Key: mcicaps_evaluationrun_evaluatortypeid (GUID)
@@ -454,7 +517,7 @@ Notes:
   - Orchestrator enumerates evaluator types from this join when scheduling
 ```
 
-##### 4.6 mcicaps_testcaseturn (Test Case Turn)
+##### 4.7 mcicaps_testcaseturn (Test Case Turn)
 **Purpose**: Individual turns within multi-turn test cases
 ```
 Primary Key: mcicaps_testcaseturnid (GUID)
@@ -468,7 +531,7 @@ Fields:
 Relationship: N:1 with mcicaps_testcases (cascade delete)
 ```
 
-##### 4.7 mcicaps_evaluationresults (Evaluation Result)
+##### 4.8 mcicaps_evaluationresults (Evaluation Result)
 **Purpose**: Individual test execution results
 ```
 Primary Key: mcicaps_evaluationresultsid (GUID, auto-generated)

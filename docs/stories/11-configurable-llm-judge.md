@@ -1244,18 +1244,97 @@ This file (`docs/stories/10-configurable-llm-judge.md`):
 
 ---
 
+## Implementation Notes
+
+**Implementation Completed**: November 14, 2025  
+**Status**: ✅ Complete  
+
+### Summary
+
+Successfully implemented configurable LLM judge with factory pattern supporting both Azure OpenAI and Copilot Studio backends. All evaluation consumers migrated to use the factory pattern exclusively.
+
+### Key Implementation Decisions
+
+1. **Factory Pattern**: Implemented `LLMJudgeServiceFactory` that dynamically selects judge based on Dataverse configuration
+   - Supports `null` evaluatorTypeId for health checks (returns default Azure OpenAI judge)
+   - Fetches JudgeAgent via EvaluatorType lookup
+   - Validates configuration before creating service instance
+
+2. **Complete Migration**: Removed original `LLMJudgeService.cs` entirely
+   - Migrated all consumers including `HealthCheckFunction` to use factory
+   - Deleted 872 lines of redundant code
+   - Removed 30 LLMJudgeService-specific unit tests (no longer needed)
+
+3. **Field Naming Standardization**:
+   - Changed `_mcicaps_judgeagent_value` to `mcicaps_judgeagentid` for consistency with Dataverse conventions
+   - Removed deprecated `mcicaps_deploymentname` field from EvaluatorType
+
+4. **Service Implementations**:
+   - `AzureOpenAIJudgeService`: Refactored from original, accepts `JudgeAgent` parameter
+   - `CopilotStudioJudgeService`: New implementation with Direct Line API integration
+   - Both implement `ILLMJudgeService` for consistent interface
+
+5. **Copilot Studio Integration**:
+   - Optional MODEL prefix injection for topic routing: `MODEL: gpt-4o\n\n{prompt}`
+   - JSON parsing with markdown code fence removal
+   - Regex fallback for non-JSON responses
+   - Stateless design (new conversation per evaluation)
+
+### Files Created
+- `backend/AiAgentEvaluation/Models/JudgeAgent.cs` - Judge agent data model
+- `backend/AiAgentEvaluation/Services/ILLMJudgeServiceFactory.cs` - Factory interface
+- `backend/AiAgentEvaluation/Services/LLMJudgeServiceFactory.cs` - Factory implementation
+- `backend/AiAgentEvaluation/Services/AzureOpenAIJudgeService.cs` - Azure OpenAI judge
+- `backend/AiAgentEvaluation/Services/CopilotStudioJudgeService.cs` - Copilot Studio judge
+
+### Files Deleted
+- `backend/AiAgentEvaluation/Services/LLMJudgeService.cs` - ✅ Removed completely
+- `backend/tests/AiAgentEvaluation.UnitTests/LLMJudgeServiceTests.cs` - ✅ Removed (30 tests)
+
+### Files Modified
+- `backend/AiAgentEvaluation/Models/EvaluatorType.cs` - Added JudgeAgentId lookup
+- `backend/AiAgentEvaluation/Services/IDataverseService.cs` - Added GetJudgeAgentAsync
+- `backend/AiAgentEvaluation/Services/DataverseService.cs` - Implemented GetJudgeAgentAsync
+- `backend/AiAgentEvaluation/Functions/WorkerFunction.cs` - Uses factory
+- `backend/AiAgentEvaluation/Functions/HealthCheckFunction.cs` - Uses factory with null
+- `backend/AiAgentEvaluation/Services/MultiTurnExecutionService.cs` - Uses factory
+- `backend/AiAgentEvaluation/Functions/MultiTurnDurableActivities.cs` - Uses factory
+- `backend/AiAgentEvaluation/Program.cs` - Removed LLMJudgeService registration
+
+### Test Results
+- **Build**: ✅ 0 warnings, 0 errors
+- **Unit Tests**: ✅ 102/102 passing (down from 132 after removing LLMJudgeService tests)
+- **Integration Tests**: ✅ Updated and passing
+
+### Migration Approach
+1. Created new services alongside existing LLMJudgeService
+2. Implemented factory pattern with fallback support
+3. Migrated consumers one by one (WorkerFunction → MultiTurn → HealthCheck)
+4. Verified all tests passing after each migration
+5. Removed original LLMJudgeService only after complete migration
+
+---
+
 ## Lessons Learned
 
-*(To be completed after implementation)*
-
 ### What Went Well
-- TBD
+- **Factory Pattern**: Clean separation of concerns with single responsibility
+- **Backward Compatibility**: Null evaluatorTypeId support allowed seamless migration of health checks
+- **Incremental Migration**: Step-by-step approach reduced risk and allowed validation at each step
+- **Test Coverage**: Existing tests caught issues during refactoring
+- **Interface Consistency**: Both judges implement same interface, making integration seamless
 
 ### What Could Be Improved
-- TBD
+- **Initial Planning**: Could have removed LLMJudgeService earlier in the design phase
+- **Documentation**: Should have updated docs incrementally during implementation
+- **Testing**: Could have added more integration tests for Copilot Studio judge
 
 ### Key Takeaways
-- TBD
+- Factory pattern is ideal for dynamic service selection based on configuration
+- Complete removal of legacy code (not just deprecation) leads to cleaner codebase
+- Dataverse lookups provide flexible configuration without code changes
+- Null/optional parameters in factory enable graceful fallback behavior
+- Consistent interfaces across implementations simplify testing and maintenance
 
 ---
 
