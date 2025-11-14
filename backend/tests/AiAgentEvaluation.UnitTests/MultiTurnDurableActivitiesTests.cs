@@ -383,12 +383,14 @@ public class MultiTurnDurableActivitiesTests
         Assert.False(result.Passed);
         Assert.Contains("Rate limit exceeded", result.ErrorMessage);
 
-        // Verify Dataverse CreateEvaluationResult was NOT called (failures not saved)
+        // Verify Dataverse CreateEvaluationResult WAS called (error results are saved)
         _mockDataverseService.Verify(
             x => x.CreateEvaluationResultAsync(
-                It.IsAny<CreateEvaluationResultRequest>(),
+                It.Is<CreateEvaluationResultRequest>(r => 
+                    r.ErrorMessage != null &&
+                    r.StatusCode == EvaluationResultStatus.Errored),
                 It.IsAny<CancellationToken>()),
-            Times.Never);
+            Times.Once);
     }
 
     [Fact]

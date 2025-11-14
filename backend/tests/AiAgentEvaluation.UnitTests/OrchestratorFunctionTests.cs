@@ -81,6 +81,8 @@ public class OrchestratorFunctionTests
             .ReturnsAsync(agentToEval);
         _mockDataverseService.Setup(x => x.GetTestCasesAsync(evaluationRunId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(testCases);
+        _mockDataverseService.Setup(x => x.GetEvaluatorTypesForRunAsync(evaluationRunId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<EvaluatorType> { new() { Id = Guid.NewGuid(), Name = "Similarity", RequiresExpectedResponse = false } });
 
         var httpRequestData = CreateMockHttpRequestData(request);
 
@@ -145,6 +147,8 @@ public class OrchestratorFunctionTests
             .ReturnsAsync(new AgentToEval { Id = Guid.NewGuid(), Name = "Test Agent", DirectLineSpeechUrl = "https://test.powerplatform.com/powervirtualagents/botsbyschema/test/directline/token" });
         _mockDataverseService.Setup(x => x.GetTestCasesAsync(evaluationRunId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(testCases);
+        _mockDataverseService.Setup(x => x.GetEvaluatorTypesForRunAsync(evaluationRunId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<EvaluatorType> { new() { Id = Guid.NewGuid(), Name = "Similarity", RequiresExpectedResponse = false } });
 
         var httpRequestData = CreateMockHttpRequestData(request);
 
@@ -309,6 +313,8 @@ public class OrchestratorFunctionTests
             .ReturnsAsync(new AgentToEval { Id = Guid.NewGuid(), Name = "Test Agent", DirectLineSpeechUrl = "https://test.powerplatform.com/powervirtualagents/botsbyschema/test/directline/token" });
         _mockDataverseService.Setup(x => x.GetTestCasesAsync(evaluationRunId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(testCases);
+        _mockDataverseService.Setup(x => x.GetEvaluatorTypesForRunAsync(evaluationRunId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<EvaluatorType> { new() { Id = Guid.NewGuid(), Name = "Similarity", RequiresExpectedResponse = false } });
         _mockServiceBusService.Setup(x => x.SendBatchTestCaseMessagesAsync(
             It.IsAny<List<ProcessTestCaseMessage>>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("Service Bus unavailable"));
@@ -504,6 +510,8 @@ public class OrchestratorFunctionTests
             .ReturnsAsync(agentToEval);
         _mockDataverseService.Setup(x => x.GetTestCasesAsync(evaluationRunId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(testCases);
+        _mockDataverseService.Setup(x => x.GetEvaluatorTypesForRunAsync(evaluationRunId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<EvaluatorType> { new() { Id = Guid.NewGuid(), Name = "Similarity", RequiresExpectedResponse = false } });
         _mockDataverseService.Setup(x => x.GetAggregateResultForTestCaseAsync(
             evaluationRunId, testCaseId, It.IsAny<CancellationToken>()))
             .ReturnsAsync((EvaluationResult?)null);  // No existing result
@@ -587,6 +595,8 @@ public class OrchestratorFunctionTests
             .ReturnsAsync(agentToEval);
         _mockDataverseService.Setup(x => x.GetTestCasesAsync(evaluationRunId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(testCases);
+        _mockDataverseService.Setup(x => x.GetEvaluatorTypesForRunAsync(evaluationRunId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<EvaluatorType> { new() { Id = Guid.NewGuid(), Name = "Similarity", RequiresExpectedResponse = false } });
         _mockDataverseService.Setup(x => x.GetAggregateResultForTestCaseAsync(
             evaluationRunId, testCaseId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(existingResult);  // Existing result found
@@ -660,6 +670,8 @@ public class OrchestratorFunctionTests
             .ReturnsAsync(agentToEval);
         _mockDataverseService.Setup(x => x.GetTestCasesAsync(evaluationRunId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(testCases);
+        _mockDataverseService.Setup(x => x.GetEvaluatorTypesForRunAsync(evaluationRunId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<EvaluatorType> { new() { Id = Guid.NewGuid(), Name = "Similarity", RequiresExpectedResponse = false } });
         _mockDataverseService.Setup(x => x.GetAggregateResultForTestCaseAsync(
             evaluationRunId, testCaseId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(existingResult);  // Existing errored result
