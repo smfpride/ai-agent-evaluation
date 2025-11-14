@@ -19,6 +19,9 @@ public class EvaluatorType
     [Required]
     public string EvaluatorPrompt { get; set; } = string.Empty;
 
+    [JsonPropertyName("mcicaps_deploymentname")]
+    public string? DeploymentName { get; set; }
+
     [JsonPropertyName("statecode")]
     public int StateCode { get; set; } = 0; // Default: Active
 

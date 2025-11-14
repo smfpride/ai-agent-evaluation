@@ -340,6 +340,219 @@ public class LLMJudgeServiceTests
         Assert.Equal(0.5m, result.Score); // Default neutral score
     }
 
+    // Dynamic Deployment Name Tests
+    
+    [Fact]
+    public async Task GetPromptTemplateAndDeploymentAsync_WithCustomDeploymentName_ReturnsCustomDeployment()
+    {
+        // Arrange
+        var evaluatorTypeId = Guid.NewGuid();
+        var customDeploymentName = "gpt-35-turbo";
+        var evaluatorType = new EvaluatorType
+        {
+            Id = evaluatorTypeId,
+            Name = "Budget Evaluator",
+            EvaluatorPrompt = "Test prompt",
+            DeploymentName = customDeploymentName
+        };
+        
+        _mockDataverseService
+            .Setup(x => x.GetEvaluatorTypeAsync(evaluatorTypeId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(evaluatorType);
+
+        using var service = new LLMJudgeService(_mockLogger.Object, _settings, _mockDataverseService.Object);
+
+        // Act
+        var (promptTemplate, deploymentName) = await service.GetPromptTemplateAndDeploymentAsync(evaluatorTypeId);
+
+        // Assert
+        Assert.Equal("Test prompt", promptTemplate);
+        Assert.Equal(customDeploymentName, deploymentName);
+        _mockDataverseService.Verify(
+            x => x.GetEvaluatorTypeAsync(evaluatorTypeId, It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task GetPromptTemplateAndDeploymentAsync_WithoutDeploymentName_ReturnsSystemDefault()
+    {
+        // Arrange
+        var evaluatorTypeId = Guid.NewGuid();
+        var evaluatorType = new EvaluatorType
+        {
+            Id = evaluatorTypeId,
+            Name = "Legacy Evaluator",
+            EvaluatorPrompt = "Test prompt",
+            DeploymentName = null
+        };
+        
+        _mockDataverseService
+            .Setup(x => x.GetEvaluatorTypeAsync(evaluatorTypeId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(evaluatorType);
+
+        using var service = new LLMJudgeService(_mockLogger.Object, _settings, _mockDataverseService.Object);
+
+        // Act
+        var (promptTemplate, deploymentName) = await service.GetPromptTemplateAndDeploymentAsync(evaluatorTypeId);
+
+        // Assert
+        Assert.Equal("Test prompt", promptTemplate);
+        Assert.Equal("gpt-4", deploymentName); // System default from settings
+        _mockDataverseService.Verify(
+            x => x.GetEvaluatorTypeAsync(evaluatorTypeId, It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task GetPromptTemplateAndDeploymentAsync_WithEmptyDeploymentName_ReturnsSystemDefault()
+    {
+        // Arrange
+        var evaluatorTypeId = Guid.NewGuid();
+        var evaluatorType = new EvaluatorType
+        {
+            Id = evaluatorTypeId,
+            Name = "Test Evaluator",
+            EvaluatorPrompt = "Test prompt",
+            DeploymentName = ""
+        };
+        
+        _mockDataverseService
+            .Setup(x => x.GetEvaluatorTypeAsync(evaluatorTypeId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(evaluatorType);
+
+        using var service = new LLMJudgeService(_mockLogger.Object, _settings, _mockDataverseService.Object);
+
+        // Act
+        var (promptTemplate, deploymentName) = await service.GetPromptTemplateAndDeploymentAsync(evaluatorTypeId);
+
+        // Assert
+        Assert.Equal("Test prompt", promptTemplate);
+        Assert.Equal("gpt-4", deploymentName); // System default
+    }
+
+    [Fact]
+    public async Task GetPromptTemplateAndDeploymentAsync_WithWhitespaceDeploymentName_ReturnsSystemDefault()
+    {
+        // Arrange
+        var evaluatorTypeId = Guid.NewGuid();
+        var evaluatorType = new EvaluatorType
+        {
+            Id = evaluatorTypeId,
+            Name = "Test Evaluator",
+            EvaluatorPrompt = "Test prompt",
+            DeploymentName = "   "
+        };
+        
+        _mockDataverseService
+            .Setup(x => x.GetEvaluatorTypeAsync(evaluatorTypeId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(evaluatorType);
+
+        using var service = new LLMJudgeService(_mockLogger.Object, _settings, _mockDataverseService.Object);
+
+        // Act
+        var (promptTemplate, deploymentName) = await service.GetPromptTemplateAndDeploymentAsync(evaluatorTypeId);
+
+        // Assert
+        Assert.Equal("Test prompt", promptTemplate);
+        Assert.Equal("gpt-4", deploymentName); // System default
+    }
+
+    [Fact]
+    public async Task GetPromptTemplateAndDeploymentAsync_WithNullEvaluatorTypeId_ReturnsDefaults()
+    {
+        // Arrange
+        using var service = new LLMJudgeService(_mockLogger.Object, _settings, _mockDataverseService.Object);
+
+        // Act
+        var (promptTemplate, deploymentName) = await service.GetPromptTemplateAndDeploymentAsync(null);
+
+        // Assert
+        Assert.NotNull(promptTemplate);
+        Assert.Contains("Evaluate", promptTemplate);
+        Assert.Equal("gpt-4", deploymentName); // System default
+        _mockDataverseService.Verify(
+            x => x.GetEvaluatorTypeAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task GetPromptTemplateAndDeploymentAsync_WhenDataverseFails_ReturnsDefaults()
+    {
+        // Arrange
+        var evaluatorTypeId = Guid.NewGuid();
+        _mockDataverseService
+            .Setup(x => x.GetEvaluatorTypeAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new Exception("Dataverse error"));
+
+        using var service = new LLMJudgeService(_mockLogger.Object, _settings, _mockDataverseService.Object);
+
+        // Act
+        var (promptTemplate, deploymentName) = await service.GetPromptTemplateAndDeploymentAsync(evaluatorTypeId);
+
+        // Assert
+        Assert.NotNull(promptTemplate);
+        Assert.Contains("evaluate", promptTemplate.ToLowerInvariant());
+        Assert.Equal("gpt-4", deploymentName); // System default
+    }
+
+    [Theory]
+    [InlineData("gpt-4o")]
+    [InlineData("gpt-4-turbo")]
+    [InlineData("gpt-35-turbo")]
+    [InlineData("custom-model-v2")]
+    [InlineData("deployment-with-numbers-123")]
+    public async Task GetPromptTemplateAndDeploymentAsync_WithVariousDeploymentNames_ReturnsExactName(string deploymentName)
+    {
+        // Arrange
+        var evaluatorTypeId = Guid.NewGuid();
+        var evaluatorType = new EvaluatorType
+        {
+            Id = evaluatorTypeId,
+            Name = "Test Evaluator",
+            EvaluatorPrompt = "Test prompt",
+            DeploymentName = deploymentName
+        };
+        
+        _mockDataverseService
+            .Setup(x => x.GetEvaluatorTypeAsync(evaluatorTypeId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(evaluatorType);
+
+        using var service = new LLMJudgeService(_mockLogger.Object, _settings, _mockDataverseService.Object);
+
+        // Act
+        var (_, returnedDeploymentName) = await service.GetPromptTemplateAndDeploymentAsync(evaluatorTypeId);
+
+        // Assert
+        Assert.Equal(deploymentName, returnedDeploymentName);
+    }
+
+    [Fact]
+    public async Task GetPromptTemplateAsync_StillWorks_ForBackwardCompatibility()
+    {
+        // Arrange
+        var evaluatorTypeId = Guid.NewGuid();
+        var evaluatorType = new EvaluatorType
+        {
+            Id = evaluatorTypeId,
+            Name = "Test Evaluator",
+            EvaluatorPrompt = "Test prompt",
+            DeploymentName = "gpt-35-turbo"
+        };
+        
+        _mockDataverseService
+            .Setup(x => x.GetEvaluatorTypeAsync(evaluatorTypeId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(evaluatorType);
+
+        using var service = new LLMJudgeService(_mockLogger.Object, _settings, _mockDataverseService.Object);
+
+        // Act
+        var result = await service.GetPromptTemplateAsync(evaluatorTypeId);
+
+        // Assert
+        Assert.Equal("Test prompt", result);
+        // Deployment name resolved internally but not returned
+    }
+
     // Helper method to access private methods via reflection
     private MethodInfo GetPrivateMethod(object obj, string methodName)
     {
