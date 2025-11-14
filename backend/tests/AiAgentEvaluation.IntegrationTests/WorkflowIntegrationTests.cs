@@ -86,7 +86,9 @@ public class WorkflowIntegrationTests : IntegrationTestBase
     public async Task LLMJudge_EvaluationWorkflow_ShouldWork()
     {
         // Arrange
-        var llmJudgeService = GetService<ILLMJudgeService>();
+        var llmJudgeServiceFactory = GetService<ILLMJudgeServiceFactory>();
+        // Create default judge service (no evaluator type needed for basic integration test)
+        var llmJudgeService = await llmJudgeServiceFactory.CreateJudgeServiceAsync(null, CancellationToken.None);
         var request = new LLMJudgeRequest
         {
             UserInput = "What is the capital of France?",
