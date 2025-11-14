@@ -19,7 +19,6 @@ public class MonitorFunctionTests
     private readonly Mock<ILogger<MonitorFunction>> _mockLogger;
     private readonly Mock<IDataverseService> _mockDataverseService;
     private readonly Mock<IServiceBusService> _mockServiceBusService;
-    private readonly Mock<ILLMJudgeService> _mockLLMJudgeService;
     private readonly MonitorFunction _monitorFunction;
 
     public MonitorFunctionTests()
@@ -27,18 +26,15 @@ public class MonitorFunctionTests
         _mockLogger = new Mock<ILogger<MonitorFunction>>();
         _mockDataverseService = new Mock<IDataverseService>();
         _mockServiceBusService = new Mock<IServiceBusService>();
-        _mockLLMJudgeService = new Mock<ILLMJudgeService>();
 
         // Setup default health check returns
         _mockDataverseService.Setup(x => x.CheckHealthAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);
         _mockServiceBusService.Setup(x => x.CheckHealthAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);
-        _mockLLMJudgeService.Setup(x => x.CheckHealthAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);
 
         _monitorFunction = new MonitorFunction(
             _mockLogger.Object,
             _mockDataverseService.Object,
-            _mockServiceBusService.Object,
-            _mockLLMJudgeService.Object);
+            _mockServiceBusService.Object);
     }
 
     #region TC-MON-001: Timer Trigger Execution

@@ -14,20 +14,20 @@ public class WorkerFunction
     private readonly ILogger<WorkerFunction> _logger;
     private readonly IDataverseService _dataverseService;
     private readonly ICopilotStudioService _copilotStudioService;
-    private readonly ILLMJudgeService _llmJudgeService;
+    private readonly ILLMJudgeServiceFactory _llmJudgeServiceFactory;
     private readonly IServiceBusService _serviceBusService;
 
     public WorkerFunction(
         ILogger<WorkerFunction> logger,
         IDataverseService dataverseService,
         ICopilotStudioService copilotStudioService,
-        ILLMJudgeService llmJudgeService,
+        ILLMJudgeServiceFactory llmJudgeServiceFactory,
         IServiceBusService serviceBusService)
     {
         _logger = logger;
         _dataverseService = dataverseService;
         _copilotStudioService = copilotStudioService;
-        _llmJudgeService = llmJudgeService;
+        _llmJudgeServiceFactory = llmJudgeServiceFactory;
         _serviceBusService = serviceBusService;
     }
 
@@ -89,6 +89,10 @@ public class WorkerFunction
                 message.TestCaseId, message.UserInput, copilotResponse.Response, copilotResponse.ConversationId);
 
             // Step 2: Evaluate the response using LLM Judge
+            // Use factory to get the appropriate judge service based on evaluator configuration
+            var llmJudgeService = await _llmJudgeServiceFactory.CreateJudgeServiceAsync(
+                message.EvaluatorTypeId, cancellationToken);
+            
             var judgeRequest = new LLMJudgeRequest
             {
                 EvaluatorTypeId = message.EvaluatorTypeId,
@@ -98,7 +102,7 @@ public class WorkerFunction
                 ConversationId = copilotResponse.ConversationId
             };
 
-            var judgeResponse = await _llmJudgeService.EvaluateResponseAsync(judgeRequest, cancellationToken);
+            var judgeResponse = await llmJudgeService.EvaluateResponseAsync(judgeRequest, cancellationToken);
 
             if (!judgeResponse.Success)
             {

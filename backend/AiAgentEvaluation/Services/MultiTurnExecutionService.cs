@@ -10,18 +10,18 @@ public class MultiTurnExecutionService : IMultiTurnExecutionService
 {
     private readonly IDataverseService _dataverseService;
     private readonly ICopilotStudioService _copilotStudioService;
-    private readonly ILLMJudgeService _llmJudgeService;
+    private readonly ILLMJudgeServiceFactory _llmJudgeServiceFactory;
     private readonly ILogger<MultiTurnExecutionService> _logger;
 
     public MultiTurnExecutionService(
         IDataverseService dataverseService,
         ICopilotStudioService copilotStudioService,
-        ILLMJudgeService llmJudgeService,
+        ILLMJudgeServiceFactory llmJudgeServiceFactory,
         ILogger<MultiTurnExecutionService> logger)
     {
         _dataverseService = dataverseService;
         _copilotStudioService = copilotStudioService;
-        _llmJudgeService = llmJudgeService;
+        _llmJudgeServiceFactory = llmJudgeServiceFactory;
         _logger = logger;
     }
 
@@ -135,6 +135,10 @@ public class MultiTurnExecutionService : IMultiTurnExecutionService
                 }
 
                 // 3. Evaluate response using LLM Judge
+                // Use factory to get the appropriate judge service based on evaluator configuration
+                var llmJudgeService = await _llmJudgeServiceFactory.CreateJudgeServiceAsync(
+                    testCase.EvaluatorTypeId, cancellationToken);
+                
                 var judgeRequest = new LLMJudgeRequest
                 {
                     EvaluatorTypeId = testCase.EvaluatorTypeId,
@@ -144,7 +148,7 @@ public class MultiTurnExecutionService : IMultiTurnExecutionService
                     ConversationId = copilotResponse.ConversationId
                 };
 
-                var judgeResponse = await _llmJudgeService.EvaluateResponseAsync(
+                var judgeResponse = await llmJudgeService.EvaluateResponseAsync(
                     judgeRequest, cancellationToken);
 
                 if (!judgeResponse.Success)

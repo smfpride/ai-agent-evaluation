@@ -15,6 +15,7 @@ public class MultiTurnExecutionServiceTests
     private readonly Mock<IDataverseService> _mockDataverseService;
     private readonly Mock<ICopilotStudioService> _mockCopilotStudioService;
     private readonly Mock<ILLMJudgeService> _mockLLMJudgeService;
+    private readonly Mock<ILLMJudgeServiceFactory> _mockLLMJudgeServiceFactory;
     private readonly MultiTurnExecutionService _service;
 
     public MultiTurnExecutionServiceTests()
@@ -23,11 +24,17 @@ public class MultiTurnExecutionServiceTests
         _mockDataverseService = new Mock<IDataverseService>();
         _mockCopilotStudioService = new Mock<ICopilotStudioService>();
         _mockLLMJudgeService = new Mock<ILLMJudgeService>();
+        _mockLLMJudgeServiceFactory = new Mock<ILLMJudgeServiceFactory>();
+
+        // Setup factory to return mock judge service
+        _mockLLMJudgeServiceFactory
+            .Setup(x => x.CreateJudgeServiceAsync(It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(_mockLLMJudgeService.Object);
 
         _service = new MultiTurnExecutionService(
             _mockDataverseService.Object,
             _mockCopilotStudioService.Object,
-            _mockLLMJudgeService.Object,
+            _mockLLMJudgeServiceFactory.Object,
             _mockLogger.Object);
     }
 

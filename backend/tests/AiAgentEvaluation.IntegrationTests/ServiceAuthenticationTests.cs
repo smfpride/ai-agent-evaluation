@@ -38,14 +38,18 @@ public class ServiceAuthenticationTests : IntegrationTestBase
     }
     
     [Fact]
-    public void LLMJudgeService_ShouldInitializeWithManagedIdentity()
+    public async Task LLMJudgeServiceFactory_ShouldInitializeWithManagedIdentity()
     {
         // Arrange & Act
-        var service = GetService<ILLMJudgeService>();
+        var factory = GetService<ILLMJudgeServiceFactory>();
+        Assert.NotNull(factory);
+        
+        // Create default judge service to verify initialization
+        var service = await factory.CreateJudgeServiceAsync(null, CancellationToken.None);
         
         // Assert
         Assert.NotNull(service);
-        Logger.LogInformation("LLMJudgeService initialized successfully");
+        Logger.LogInformation("LLMJudgeServiceFactory initialized successfully and created default judge service");
         
         // Note: We can't test Azure OpenAI connectivity without making actual API calls
         // which would require quota and might incur costs, so we just verify initialization
