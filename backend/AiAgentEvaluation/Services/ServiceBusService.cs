@@ -101,10 +101,7 @@ public class ServiceBusService : IServiceBusService, IDisposable
             // Add custom properties for routing and monitoring
             serviceBusMessage.ApplicationProperties.Add("EvaluationRunId", message.EvaluationRunId.ToString());
             serviceBusMessage.ApplicationProperties.Add("TestCaseId", message.TestCaseId.ToString());
-            if (message.EvaluatorTypeId.HasValue)
-            {
-                serviceBusMessage.ApplicationProperties.Add("EvaluatorTypeId", message.EvaluatorTypeId.Value.ToString());
-            }
+            serviceBusMessage.ApplicationProperties.Add("EvaluatorCount", message.EvaluatorTypeIds.Count);
             serviceBusMessage.ApplicationProperties.Add("RetryCount", message.RetryCount);
             serviceBusMessage.ApplicationProperties.Add("EnqueuedAt", DateTime.UtcNow);
 
@@ -160,10 +157,7 @@ public class ServiceBusService : IServiceBusService, IDisposable
                 // Add custom properties
                 serviceBusMessage.ApplicationProperties.Add("EvaluationRunId", message.EvaluationRunId.ToString());
                 serviceBusMessage.ApplicationProperties.Add("TestCaseId", message.TestCaseId.ToString());
-                if (message.EvaluatorTypeId.HasValue)
-                {
-                    serviceBusMessage.ApplicationProperties.Add("EvaluatorTypeId", message.EvaluatorTypeId.Value.ToString());
-                }
+                serviceBusMessage.ApplicationProperties.Add("EvaluatorCount", message.EvaluatorTypeIds.Count);
                 serviceBusMessage.ApplicationProperties.Add("RetryCount", message.RetryCount);
                 serviceBusMessage.ApplicationProperties.Add("EnqueuedAt", DateTime.UtcNow);
 

@@ -68,29 +68,30 @@ public class MultiTurnDurableActivities
     /// Can take many minutes without timeout
     /// </summary>
     [Function("ExecuteSingleTurn")]
-    public async Task<TurnExecutionResult> ExecuteSingleTurn(
+    public async Task<List<TurnExecutionResult>> ExecuteSingleTurn(
         [ActivityTrigger] ExecuteTurnInput input,
         CancellationToken cancellationToken)
     {
         var stopwatch = Stopwatch.StartNew();
+        var results = new List<TurnExecutionResult>();
         
-        _logger.LogInformation("Executing turn {Sequence} for test case {TestCaseId}",
-            input.Turn.Sequence, input.Turn.TestCaseId);
+        _logger.LogInformation("Executing turn {Sequence} for test case {TestCaseId} with {EvaluatorCount} evaluators",
+            input.Turn.Sequence, input.Turn.TestCaseId, input.EvaluatorTypeIds.Count);
 
         try
         {
-            // Check if NA scenario: evaluator requires expected response but turn doesn't have one
-            if (input.EvaluatorTypeId.HasValue)
+            // Check which evaluators are applicable (NA check)
+            var applicableEvaluators = new List<Guid>();
+            
+            foreach (var evaluatorTypeId in input.EvaluatorTypeIds)
             {
-                var evaluatorType = await _dataverseService.GetEvaluatorTypeAsync(input.EvaluatorTypeId.Value, cancellationToken);
+                var evaluatorType = await _dataverseService.GetEvaluatorTypeAsync(evaluatorTypeId, cancellationToken);
                 
                 if (evaluatorType != null && evaluatorType.RequiresExpectedResponse && 
                     string.IsNullOrWhiteSpace(input.Turn.ExpectedResponse))
                 {
                     _logger.LogInformation("Turn {Sequence} marked NA for evaluator {EvaluatorId} (missing expected response)",
-                        input.Turn.Sequence, input.EvaluatorTypeId.Value);
-                    
-                    stopwatch.Stop();
+                        input.Turn.Sequence, evaluatorTypeId);
                     
                     // Create NA result immediately
                     var naResultRequest = new CreateEvaluationResultRequest
@@ -98,7 +99,7 @@ public class MultiTurnDurableActivities
                         EvaluationRunId = input.TestRunId,
                         TestCaseId = input.Turn.TestCaseId,
                         TestCaseTurnId = input.Turn.Id,
-                        EvaluatorTypeId = input.EvaluatorTypeId,
+                        EvaluatorTypeId = evaluatorTypeId,
                         ConversationId = input.ConversationId,
                         ActualResponse = null,
                         Score = 0.0m,
@@ -117,7 +118,7 @@ public class MultiTurnDurableActivities
                         failed: false, 
                         cancellationToken);
 
-                    return new TurnExecutionResult
+                    results.Add(new TurnExecutionResult
                     {
                         ConversationId = input.ConversationId ?? string.Empty,
                         DirectLineToken = input.DirectLineToken,
@@ -127,11 +128,22 @@ public class MultiTurnDurableActivities
                         ExecutionTimeMs = (int)stopwatch.ElapsedMilliseconds,
                         EvaluationResultId = naResultId,
                         StatusCode = EvaluationResultStatus.NotApplicable
-                    };
+                    });
+                }
+                else
+                {
+                    applicableEvaluators.Add(evaluatorTypeId);
                 }
             }
             
-            // 1. Send message to agent (can take minutes)
+            // If all evaluators are NA, return early
+            if (applicableEvaluators.Count == 0)
+            {
+                _logger.LogInformation("All evaluators marked NA for turn {Sequence}", input.Turn.Sequence);
+                return results;
+            }
+            
+            // 1. Send message to agent ONCE (can take minutes)
             _logger.LogInformation("Sending message to Copilot Studio for turn {Sequence}", input.Turn.Sequence);
             
             var copilotResponse = await _copilotStudioService.SendMessageAsync(
@@ -146,78 +158,171 @@ public class MultiTurnDurableActivities
                 _logger.LogError("Copilot Studio error for turn {Sequence}: {Error}",
                     input.Turn.Sequence, copilotResponse.ErrorMessage);
                 
-                return CreateFailureResult(input, copilotResponse.ErrorMessage ?? "Copilot Studio request failed", stopwatch);
+                return CreateFailureResults(input, applicableEvaluators, copilotResponse.ErrorMessage ?? "Copilot Studio request failed", stopwatch);
             }
 
             _logger.LogInformation("Received response from Copilot Studio for turn {Sequence} in {Ms}ms",
                 input.Turn.Sequence, copilotResponse.ExecutionTimeMs);
 
-            // 2. Evaluate with LLM Judge (can take minutes, has retry logic)
-            _logger.LogInformation("Evaluating response with LLM Judge for turn {Sequence}", input.Turn.Sequence);
+            // 2. Evaluate with ALL evaluators using the same Copilot response
+            _logger.LogInformation("Evaluating turn {Sequence} response with {EvaluatorCount} evaluators", 
+                input.Turn.Sequence, applicableEvaluators.Count);
             
-            // Use factory to get the appropriate judge service based on evaluator configuration
-            var llmJudgeService = await _llmJudgeServiceFactory.CreateJudgeServiceAsync(
-                input.EvaluatorTypeId, cancellationToken);
-            
-            var judgeResponse = await llmJudgeService.EvaluateResponseAsync(
-                new LLMJudgeRequest
-                {
-                    EvaluatorTypeId = input.EvaluatorTypeId,
-                    UserInput = input.Turn.PromptText,
-                    ExpectedResponse = input.Turn.ExpectedResponse ?? string.Empty,
-                    ActualResponse = copilotResponse.Response,
-                    ConversationId = copilotResponse.ConversationId
-                },
-                cancellationToken);
-
-            if (!judgeResponse.Success)
+            foreach (var evaluatorTypeId in applicableEvaluators)
             {
-                _logger.LogError("LLM Judge error for turn {Sequence}: {Error}",
-                    input.Turn.Sequence, judgeResponse.ErrorMessage);
-                
-                return CreateFailureResult(input, judgeResponse.ErrorMessage ?? "LLM Judge evaluation failed", stopwatch);
+                try
+                {
+                    var evaluatorStopwatch = Stopwatch.StartNew();
+                    
+                    // Use factory to get the appropriate judge service
+                    var llmJudgeService = await _llmJudgeServiceFactory.CreateJudgeServiceAsync(
+                        evaluatorTypeId, cancellationToken);
+                    
+                    var judgeResponse = await llmJudgeService.EvaluateResponseAsync(
+                        new LLMJudgeRequest
+                        {
+                            EvaluatorTypeId = evaluatorTypeId,
+                            UserInput = input.Turn.PromptText,
+                            ExpectedResponse = input.Turn.ExpectedResponse ?? string.Empty,
+                            ActualResponse = copilotResponse.Response,
+                            ConversationId = copilotResponse.ConversationId
+                        },
+                        cancellationToken);
+
+                    if (!judgeResponse.Success)
+                    {
+                        _logger.LogError("LLM Judge error for turn {Sequence} with evaluator {EvaluatorId}: {Error}",
+                            input.Turn.Sequence, evaluatorTypeId, judgeResponse.ErrorMessage);
+                        
+                        // Create error result for this evaluator
+                        var errorResultRequest = new CreateEvaluationResultRequest
+                        {
+                            EvaluationRunId = input.TestRunId,
+                            TestCaseId = input.Turn.TestCaseId,
+                            TestCaseTurnId = input.Turn.Id,
+                            EvaluatorTypeId = evaluatorTypeId,
+                            ConversationId = copilotResponse.ConversationId,
+                            ActualResponse = copilotResponse.Response,
+                            Score = null,
+                            ErrorMessage = judgeResponse.ErrorMessage,
+                            ExecutionTimeMs = (int)evaluatorStopwatch.ElapsedMilliseconds,
+                            IsAggregate = false,
+                            StatusCode = EvaluationResultStatus.Errored
+                        };
+
+                        var errorResultId = await _dataverseService.CreateEvaluationResultAsync(errorResultRequest, cancellationToken);
+                        
+                        await _dataverseService.IncrementCompletedTestCasesAsync(
+                            input.TestRunId, 
+                            failed: true, 
+                            cancellationToken);
+
+                        results.Add(new TurnExecutionResult
+                        {
+                            ConversationId = copilotResponse.ConversationId,
+                            DirectLineToken = copilotResponse.DirectLineToken,
+                            Success = false,
+                            Score = 0,
+                            Passed = false,
+                            ErrorMessage = judgeResponse.ErrorMessage,
+                            ExecutionTimeMs = (int)evaluatorStopwatch.ElapsedMilliseconds,
+                            EvaluationResultId = errorResultId,
+                            StatusCode = EvaluationResultStatus.Errored
+                        });
+                        
+                        continue; // Continue with next evaluator
+                    }
+
+                    evaluatorStopwatch.Stop();
+                    
+                    _logger.LogInformation("LLM Judge evaluation for turn {Sequence} with evaluator {EvaluatorId}: Score={Score}, Passed={Passed}",
+                        input.Turn.Sequence, evaluatorTypeId, judgeResponse.Score, judgeResponse.Score >= input.PassingThreshold);
+
+                    // 3. Save result to Dataverse immediately
+                    var createResultRequest = new CreateEvaluationResultRequest
+                    {
+                        EvaluationRunId = input.TestRunId,
+                        TestCaseId = input.Turn.TestCaseId,
+                        TestCaseTurnId = input.Turn.Id,
+                        EvaluatorTypeId = evaluatorTypeId,
+                        ConversationId = copilotResponse.ConversationId,
+                        ActualResponse = copilotResponse.Response,
+                        Score = judgeResponse.Score,
+                        Passed = judgeResponse.Score >= input.PassingThreshold,
+                        Reasoning = judgeResponse.Reasoning,
+                        ExecutionTimeMs = (int)evaluatorStopwatch.ElapsedMilliseconds,
+                        IsAggregate = false,
+                        StatusCode = EvaluationResultStatus.Completed
+                    };
+
+                    var resultId = await _dataverseService.CreateEvaluationResultAsync(createResultRequest, cancellationToken);
+
+                    // Increment completion counter
+                    await _dataverseService.IncrementCompletedTestCasesAsync(
+                        input.TestRunId, 
+                        failed: false, 
+                        cancellationToken);
+
+                    results.Add(new TurnExecutionResult
+                    {
+                        ConversationId = copilotResponse.ConversationId,
+                        DirectLineToken = copilotResponse.DirectLineToken,
+                        Success = true,
+                        Score = judgeResponse.Score,
+                        Passed = judgeResponse.Score >= input.PassingThreshold,
+                        ExecutionTimeMs = (int)evaluatorStopwatch.ElapsedMilliseconds,
+                        EvaluationResultId = resultId,
+                        StatusCode = EvaluationResultStatus.Completed
+                    });
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error evaluating turn {Sequence} with evaluator {EvaluatorId}",
+                        input.Turn.Sequence, evaluatorTypeId);
+                    
+                    // Create error result
+                    var errorResultRequest = new CreateEvaluationResultRequest
+                    {
+                        EvaluationRunId = input.TestRunId,
+                        TestCaseId = input.Turn.TestCaseId,
+                        TestCaseTurnId = input.Turn.Id,
+                        EvaluatorTypeId = evaluatorTypeId,
+                        ConversationId = copilotResponse.ConversationId,
+                        ActualResponse = copilotResponse.Response,
+                        Score = null,
+                        ErrorMessage = $"Unexpected error: {ex.Message}",
+                        ExecutionTimeMs = (int)stopwatch.ElapsedMilliseconds,
+                        IsAggregate = false,
+                        StatusCode = EvaluationResultStatus.Errored
+                    };
+
+                    var errorResultId = await _dataverseService.CreateEvaluationResultAsync(errorResultRequest, cancellationToken);
+                    
+                    await _dataverseService.IncrementCompletedTestCasesAsync(
+                        input.TestRunId, 
+                        failed: true, 
+                        cancellationToken);
+
+                    results.Add(new TurnExecutionResult
+                    {
+                        ConversationId = copilotResponse.ConversationId,
+                        DirectLineToken = copilotResponse.DirectLineToken,
+                        Success = false,
+                        Score = 0,
+                        Passed = false,
+                        ErrorMessage = ex.Message,
+                        ExecutionTimeMs = (int)stopwatch.ElapsedMilliseconds,
+                        EvaluationResultId = errorResultId,
+                        StatusCode = EvaluationResultStatus.Errored
+                    });
+                }
             }
 
-            _logger.LogInformation("LLM Judge evaluation for turn {Sequence}: Score={Score}, Passed={Passed}",
-                input.Turn.Sequence, judgeResponse.Score, judgeResponse.Score >= input.PassingThreshold);
-
             stopwatch.Stop();
+            _logger.LogInformation("Successfully executed turn {Sequence} for test case {TestCaseId} with {EvaluatorCount} evaluators",
+                input.Turn.Sequence, input.Turn.TestCaseId, results.Count);
 
-            // 3. Save result to Dataverse immediately
-            _logger.LogInformation("Saving evaluation result for turn {Sequence}", input.Turn.Sequence);
-            
-            var createResultRequest = new CreateEvaluationResultRequest
-            {
-                EvaluationRunId = input.TestRunId,
-                TestCaseId = input.Turn.TestCaseId,
-                TestCaseTurnId = input.Turn.Id,
-                EvaluatorTypeId = input.EvaluatorTypeId,
-                ConversationId = copilotResponse.ConversationId,
-                ActualResponse = copilotResponse.Response,
-                Score = judgeResponse.Score,
-                Passed = judgeResponse.Score >= input.PassingThreshold,
-                Reasoning = judgeResponse.Reasoning,
-                ExecutionTimeMs = (int)stopwatch.ElapsedMilliseconds,
-                IsAggregate = false,
-                StatusCode = EvaluationResultStatus.Completed
-            };
-
-            var resultId = await _dataverseService.CreateEvaluationResultAsync(createResultRequest, cancellationToken);
-
-            _logger.LogInformation("Successfully executed turn {Sequence} for test case {TestCaseId}",
-                input.Turn.Sequence, input.Turn.TestCaseId);
-
-            return new TurnExecutionResult
-            {
-                ConversationId = copilotResponse.ConversationId,
-                DirectLineToken = copilotResponse.DirectLineToken,
-                Success = true,
-                Score = judgeResponse.Score,
-                Passed = judgeResponse.Score >= input.PassingThreshold,
-                ExecutionTimeMs = (int)stopwatch.ElapsedMilliseconds,
-                EvaluationResultId = resultId,
-                StatusCode = EvaluationResultStatus.Completed
-            };
+            return results;
         }
         catch (Exception ex)
         {
@@ -225,7 +330,7 @@ public class MultiTurnDurableActivities
             _logger.LogError(ex, "Unexpected error executing turn {Sequence} for test case {TestCaseId}",
                 input.Turn.Sequence, input.Turn.TestCaseId);
             
-            return CreateFailureResult(input, $"Unexpected error: {ex.Message}", stopwatch);
+            return CreateFailureResults(input, input.EvaluatorTypeIds, $"Unexpected error: {ex.Message}", stopwatch);
         }
     }
 
@@ -334,20 +439,27 @@ public class MultiTurnDurableActivities
     }
 
     /// <summary>
-    /// Helper method to create a failure result
+    /// Helper method to create failure results for multiple evaluators
     /// </summary>
-    private TurnExecutionResult CreateFailureResult(ExecuteTurnInput input, string errorMessage, Stopwatch stopwatch)
+    private List<TurnExecutionResult> CreateFailureResults(ExecuteTurnInput input, List<Guid> evaluatorTypeIds, string errorMessage, Stopwatch stopwatch)
     {
-        return new TurnExecutionResult
+        var results = new List<TurnExecutionResult>();
+        
+        foreach (var evaluatorTypeId in evaluatorTypeIds)
         {
-            ConversationId = input.ConversationId ?? string.Empty,
-            DirectLineToken = input.DirectLineToken,
-            Success = false,
-            Score = 0,
-            Passed = false,
-            ErrorMessage = errorMessage,
-            ExecutionTimeMs = (int)stopwatch.ElapsedMilliseconds,
-            StatusCode = EvaluationResultStatus.Errored
-        };
+            results.Add(new TurnExecutionResult
+            {
+                ConversationId = input.ConversationId ?? string.Empty,
+                DirectLineToken = input.DirectLineToken,
+                Success = false,
+                Score = 0,
+                Passed = false,
+                ErrorMessage = errorMessage,
+                ExecutionTimeMs = (int)stopwatch.ElapsedMilliseconds,
+                StatusCode = EvaluationResultStatus.Errored
+            });
+        }
+        
+        return results;
     }
 }
