@@ -148,12 +148,14 @@ public class OrchestratorFunction
             _logger.LogInformation("Test case breakdown: {SingleTurn} single-turn, {MultiTurn} multi-turn",
                 singleTurnTestCases.Count, multiTurnTestCases.Count);
 
-            // Enumerate all (TestCase × EvaluatorType) pairs
+            // Process single-turn test cases
             int naResultsCreated = 0;
             
-            // Process single-turn test cases
             foreach (var testCase in singleTurnTestCases)
             {
+                // Determine which evaluators are applicable for this test case
+                var applicableEvaluators = new List<Guid>();
+                
                 foreach (var evaluatorType in evaluatorTypes)
                 {
                     // Check if Not Applicable (NA) scenario
@@ -189,11 +191,17 @@ public class OrchestratorFunction
                         _logger.LogInformation(
                             "Test case {TestCaseId} marked NA for evaluator {EvaluatorId} (missing expected response)",
                             testCase.Id, evaluatorType.Id);
-                        
-                        continue; // Skip execution for this pair
                     }
-                    
-                    // Queue for execution
+                    else
+                    {
+                        // This evaluator is applicable
+                        applicableEvaluators.Add(evaluatorType.Id);
+                    }
+                }
+                
+                // If there are applicable evaluators, queue ONE message with all evaluator IDs
+                if (applicableEvaluators.Any())
+                {
                     var message = new ProcessTestCaseMessage
                     {
                         EvaluationRunId = request.EvaluationRunId,
@@ -201,7 +209,7 @@ public class OrchestratorFunction
                         DirectLineUrl = directLineUrl,
                         UserInput = testCase.UserInput,
                         ExpectedResponse = testCase.ExpectedResponse,
-                        EvaluatorTypeId = evaluatorType.Id,
+                        EvaluatorTypeIds = applicableEvaluators,
                         ConversationId = testCase.ConversationId,
                         PassingThreshold = passingThreshold,
                         RetryCount = 0,
@@ -215,7 +223,7 @@ public class OrchestratorFunction
             if (singleTurnTestCases.Any())
             {
                 _logger.LogInformation("Sent {Count} single-turn test case messages to Service Bus ({NACount} marked NA)",
-                    (singleTurnTestCases.Count * evaluatorTypes.Count) - naResultsCreated, naResultsCreated);
+                    singleTurnTestCases.Count, naResultsCreated);
             }
 
             // Start Durable Functions orchestrations for multi-turn test cases
@@ -223,28 +231,25 @@ public class OrchestratorFunction
             {
                 foreach (var testCase in multiTurnTestCases)
                 {
+                    // Check if orchestration already started (idempotency)
+                    var existingResult = await _dataverseService.GetAggregateResultForTestCaseAsync(
+                        request.EvaluationRunId, testCase.Id, cancellationToken);
+                    
+                    if (existingResult != null && 
+                        existingResult.StatusCode != EvaluationResultStatus.Errored)
+                    {
+                        _logger.LogInformation(
+                            "Test case {TestCaseId} already has aggregate result {ResultId} with status {Status}, skipping",
+                            testCase.Id, existingResult.Id, existingResult.StatusCode);
+                        continue; // Idempotent - don't start duplicate
+                    }
+                    
+                    // Create placeholder aggregate results for ALL evaluators
+                    var aggregateResultIds = new Dictionary<Guid, Guid>();
+                    var applicableEvaluators = new List<Guid>();
+                    
                     foreach (var evaluatorType in evaluatorTypes)
                     {
-                        // Check if orchestration already started (idempotency)
-                        // Note: With multi-evaluator, we check for aggregates with specific evaluatorTypeId
-                        var existingResult = await _dataverseService.GetAggregateResultForTestCaseAsync(
-                            request.EvaluationRunId, testCase.Id, cancellationToken);
-                        
-                        // For multi-evaluator, we need one aggregate per (testCase, evaluator) pair
-                        // Simple check: if any aggregate exists for this test case, skip for now
-                        // TODO: In future, check for specific evaluatorTypeId in aggregate
-                        if (existingResult != null && 
-                            existingResult.StatusCode != EvaluationResultStatus.Errored)
-                        {
-                            _logger.LogInformation(
-                                "Test case {TestCaseId} already has aggregate result {ResultId} with status {Status}, skipping multi-evaluator check",
-                                testCase.Id, existingResult.Id, existingResult.StatusCode);
-                            continue; // Idempotent - don't start duplicate
-                        }
-                        
-                        // Generate unique instance ID with evaluator context
-                        string instanceId = $"multiturn-{testCase.Id}-{evaluatorType.Id}-{Guid.NewGuid()}";
-                        
                         // Create placeholder aggregate result with Pending status
                         var placeholderRequest = new CreateEvaluationResultRequest
                         {
@@ -259,44 +264,50 @@ public class OrchestratorFunction
                         var resultId = await _dataverseService.CreateEvaluationResultAsync(
                             placeholderRequest, cancellationToken);
                         
+                        aggregateResultIds[evaluatorType.Id] = resultId;
+                        applicableEvaluators.Add(evaluatorType.Id);
+                        
                         _logger.LogInformation(
                             "Created placeholder aggregate result {ResultId} for test case {TestCaseId} with evaluator {EvaluatorId}",
                             resultId, testCase.Id, evaluatorType.Id);
-                        
-                        var orchestratorInput = new MultiTurnOrchestratorInput
-                        {
-                            TestCaseId = testCase.Id,
-                            TestRunId = request.EvaluationRunId,
-                            DirectLineUrl = directLineUrl,
-                            EvaluatorTypeId = evaluatorType.Id,
-                            PassingThreshold = passingThreshold,
-                            AggregateResultId = resultId // Track which result to update
-                        };
-                        
-                        try
-                        {
-                            await durableClient.ScheduleNewOrchestrationInstanceAsync(
-                                "MultiTurnTestCaseOrchestrator",
-                                orchestratorInput,
-                                new StartOrchestrationOptions 
-                                { 
-                                    InstanceId = instanceId 
-                                });
+                    }
+                    
+                    // Generate unique instance ID
+                    string instanceId = $"multiturn-{testCase.Id}";
+                    
+                    var orchestratorInput = new MultiTurnOrchestratorInput
+                    {
+                        TestCaseId = testCase.Id,
+                        TestRunId = request.EvaluationRunId,
+                        DirectLineUrl = directLineUrl,
+                        EvaluatorTypeIds = applicableEvaluators,
+                        PassingThreshold = passingThreshold,
+                        AggregateResultIds = aggregateResultIds // Map of evaluator -> aggregate result
+                    };
+                    
+                    try
+                    {
+                        await durableClient.ScheduleNewOrchestrationInstanceAsync(
+                            "MultiTurnTestCaseOrchestrator",
+                            orchestratorInput,
+                            new StartOrchestrationOptions 
+                            { 
+                                InstanceId = instanceId 
+                            });
 
-                            _logger.LogInformation("Started Durable Functions orchestration {InstanceId} for test case {TestCaseId} with evaluator {EvaluatorId} and aggregate result {ResultId}",
-                                instanceId, testCase.Id, evaluatorType.Id, resultId);
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogError(ex, "Failed to start orchestration for test case {TestCaseId} with evaluator {EvaluatorId}", 
-                                testCase.Id, evaluatorType.Id);
-                            // Continue with other test cases
-                        }
+                        _logger.LogInformation("Started Durable Functions orchestration {InstanceId} for test case {TestCaseId} with {EvaluatorCount} evaluators",
+                            instanceId, testCase.Id, applicableEvaluators.Count);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to start orchestration for test case {TestCaseId}", 
+                            testCase.Id);
+                        // Continue with other test cases
                     }
                 }
 
-                _logger.LogInformation("Started {Count} Durable Functions orchestrations for multi-turn test cases ({TestCaseCount} test cases × {EvaluatorCount} evaluators)",
-                    multiTurnTestCases.Count * evaluatorTypes.Count, multiTurnTestCases.Count, evaluatorTypes.Count);
+                _logger.LogInformation("Started {Count} Durable Functions orchestrations for multi-turn test cases",
+                    multiTurnTestCases.Count);
             }
 
             // Calculate estimated completion time
