@@ -119,6 +119,20 @@ HTTP Trigger → Orchestrator Function → Service Bus Queue → Worker Function
   - Key Fields: `mcicaps_testcaseid` (parent test case), `mcicaps_sequence` (turn order), `mcicaps_prompttext` (user input for this turn), `mcicaps_expectedresponse` (expected response for this turn)
   - Relationship: N:1 with mcicaps_testcases
 
+- **mcicaps_judgeagents**: Judge agent configuration (NEW - Story 11)
+  - Primary Key: `mcicaps_judgeagentid` (GUID)
+  - Key Fields:
+    - `mcicaps_name` (e.g., "GPT-4o Judge", "Finance Domain Judge")
+    - `mcicaps_description`
+    - `mcicaps_judgetype` (Choice: 778760000 = Azure OpenAI, 778760001 = Copilot Studio)
+    - `mcicaps_aoaiendpoint` (Azure OpenAI endpoint URL, required for Azure OpenAI judges)
+    - `mcicaps_aoaideploymentname` (deployment name like gpt-4o, required for Azure OpenAI judges)
+    - `mcicaps_directlineurl` (Direct Line token endpoint, required for Copilot Studio judges)
+    - `mcicaps_modelname` (optional, for Copilot Studio topic routing)
+  - **Purpose**: Configurable judge backend supporting both Azure OpenAI and Copilot Studio
+  - **Reusability**: Single judge agent can be used by multiple evaluator types
+  - **Model Routing** (Copilot Studio): If `mcicaps_modelname` is specified, system prefixes prompts with `MODEL: {modelname}\n\n` for topic-based routing
+
 - **mcicaps_evaluatortypes**: Evaluation type definitions (NEW)
   - Primary Key: `mcicaps_evaluatortypeid` (GUID)
   - Key Fields: 
@@ -126,9 +140,9 @@ HTTP Trigger → Orchestrator Function → Service Bus Queue → Worker Function
     - `mcicaps_description`
     - `mcicaps_prompttemplate` (LLM Judge prompt text)
     - `mcicaps_systemprompttemplate` (optional system prompt)
-    - `mcicaps_deploymentname` (optional Azure OpenAI deployment name - NEW)
+    - `mcicaps_judgeagentid` (lookup to Judge Agent - replaces mcicaps_deploymentname)
     - `mcicaps_requiresexpectedresponse` (Boolean)
-  - **Deployment Name Feature**: Evaluators can specify custom Azure OpenAI deployment names (e.g., `gpt-4o`, `gpt-4-turbo`, `gpt-35-turbo`) for cost/performance optimization. If not specified, falls back to system default deployment from configuration.
+  - **Judge Selection**: References Judge Agent via lookup field. Factory pattern selects appropriate judge service (Azure OpenAI or Copilot Studio) based on Judge Agent configuration. If NULL, falls back to system default Azure OpenAI from AppSettings.
   - Purpose: Stores evaluation criteria and prompts in Dataverse (replaces Azure Blob Storage approach)
 
 #### 3.2.2 Output Tables
@@ -182,20 +196,43 @@ HTTP Trigger → Orchestrator Function → Service Bus Queue → Worker Function
 - Handle conversation state management
 - Implement retry logic for API failures
 
-#### 3.3.3 Azure OpenAI Judge Integration
-- Evaluation prompts loaded from Dataverse EvaluatorType records (not Azure Blob Storage)
-- **Dynamic Deployment Name Selection**: Each evaluator type can specify its own Azure OpenAI deployment name in Dataverse (`mcicaps_deploymentname` field)
-  - Enables per-evaluator model selection (e.g., GPT-4o for complex reasoning, GPT-3.5-turbo for simple classification)
-  - Falls back to system default deployment (configured in `AppSettings.AzureOpenAI.DeploymentName`) when evaluator doesn't specify
-  - On-demand ChatClient creation per request using resolved deployment name
-  - Logged for observability (deployment source: evaluator-specific vs system default)
-- Structured prompt templates for consistent evaluation
-- Score normalization (0-1 scale) with type-specific criteria
-- Reasoning capture for transparency and debugging
-- Rate limiting and error handling with exponential backoff
-- **Managed Identity authentication** (Cognitive Services OpenAI User role)
-- **Cost Optimization**: Different evaluators can use different models based on task complexity
-- **Performance Tuning**: Match model capabilities to evaluation requirements
+#### 3.3.3 LLM Judge Integration (Configurable Backend)
+
+**Architecture**: Factory pattern with dynamic judge selection based on Dataverse configuration
+
+**Supported Judge Types**:
+1. **Azure OpenAI Judge** (JudgeType = 778760000)
+   - Evaluation prompts loaded from Dataverse EvaluatorType records
+   - Judge-specific endpoint and deployment name from Judge Agent record
+   - On-demand ChatClient creation using judge configuration
+   - Structured prompt templates for consistent evaluation
+   - Score normalization (0-1 scale) with type-specific criteria
+   - Reasoning capture for transparency and debugging
+   - Rate limiting and error handling with exponential backoff
+   - **Managed Identity authentication** (Cognitive Services OpenAI User role)
+   - Supports multiple Azure OpenAI instances via different Judge Agents
+
+2. **Copilot Studio Judge** (JudgeType = 778760001)
+   - Integration via Direct Line API
+   - Optional MODEL prefix injection for multi-model agent routing
+   - JSON response parsing with markdown cleanup
+   - Regex fallback for non-JSON responses
+   - Stateless execution (new conversation per evaluation)
+   - Domain-specific evaluation capabilities
+   - Token-based authentication via Direct Line endpoint
+
+**Factory Pattern**:
+- `LLMJudgeServiceFactory` fetches Judge Agent via EvaluatorType lookup
+- Validates configuration based on judge type
+- Creates appropriate service instance (Azure OpenAI or Copilot Studio)
+- Falls back to system default Azure OpenAI when Judge Agent is NULL
+- Supports health checks with null evaluatorTypeId parameter
+
+**Benefits**:
+- **Cost Optimization**: Choose between Azure OpenAI token pricing or Power Platform licensing
+- **Flexibility**: Use specialized Copilot Studio agents for domain evaluations
+- **Centralized Configuration**: Judge agents reusable across evaluator types
+- **No Code Changes**: Reconfigure judges in Dataverse without redeployment
 
 #### 3.3.4 Dataverse Prompt Template Integration
 - Centralized storage for evaluation prompt templates in EvaluatorType records

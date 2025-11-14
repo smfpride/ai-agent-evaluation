@@ -77,7 +77,7 @@ public abstract class IntegrationTestBase : IDisposable
         // Add services
         services.AddScoped<IDataverseService, DataverseService>();
         services.AddScoped<ICopilotStudioService, CopilotStudioService>();
-        services.AddScoped<ILLMJudgeService, LLMJudgeService>();
+        services.AddScoped<ILLMJudgeServiceFactory, LLMJudgeServiceFactory>();
         services.AddScoped<IServiceBusService, ServiceBusService>();
         services.AddScoped<IBlobStorageService, BlobStorageService>();
         

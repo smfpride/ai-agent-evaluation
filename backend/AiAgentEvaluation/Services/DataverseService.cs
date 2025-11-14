@@ -882,7 +882,7 @@ public class DataverseService : IDataverseService, IDisposable
                     "mcicaps_evaluatortypeid",
                     "mcicaps_name",
                     "mcicaps_evaluatorprompt",
-                    "mcicaps_requiresexpectedresponse",
+                    "mcicaps_judgeagentid",
                     "statecode",
                     "statuscode",
                     "createdon",
@@ -913,7 +913,9 @@ public class DataverseService : IDataverseService, IDisposable
                 Id = entity.Id,
                 Name = entity.GetAttributeValue<string>("mcicaps_name") ?? string.Empty,
                 EvaluatorPrompt = entity.GetAttributeValue<string>("mcicaps_evaluatorprompt") ?? string.Empty,
-                RequiresExpectedResponse = entity.GetAttributeValue<bool>("mcicaps_requiresexpectedresponse"),
+                JudgeAgentId = entity.Contains("mcicaps_judgeagentid") 
+                    ? entity.GetAttributeValue<EntityReference>("mcicaps_judgeagentid")?.Id 
+                    : null,
                 StateCode = GetIntValue(entity, "statecode"),
                 StatusCode = entity.GetAttributeValue<OptionSetValue>("statuscode")?.Value ?? 1,
                 CreatedOn = entity.GetAttributeValue<DateTime>("createdon"),
@@ -924,9 +926,9 @@ public class DataverseService : IDataverseService, IDisposable
         cancellationToken);
     }
 
-    public async Task<List<EvaluatorType>> GetEvaluatorTypesForRunAsync(Guid evaluationRunId, CancellationToken cancellationToken = default)
+    public async Task<JudgeAgent?> GetJudgeAgentAsync(Guid judgeAgentId, CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Getting evaluator types for evaluation run {EvaluationRunId}", evaluationRunId);
+        _logger.LogInformation("Getting judge agent {JudgeAgentId}", judgeAgentId);
         
         if (_serviceClient == null || !_serviceClient.IsReady)
         {
@@ -935,14 +937,17 @@ public class DataverseService : IDataverseService, IDisposable
 
         return await _resilientService.ExecuteAsync(async ct =>
         {
-            // Query the N:N join table to get evaluator types associated with this run
-            var query = new QueryExpression("mcicaps_evaluatortype")
+            var query = new QueryExpression("mcicaps_judgeagent")
             {
                 ColumnSet = new ColumnSet(
-                    "mcicaps_evaluatortypeid",
+                    "mcicaps_judgeagentid",
                     "mcicaps_name",
-                    "mcicaps_evaluatorprompt",
-                    "mcicaps_requiresexpectedresponse",
+                    "mcicaps_judgetype",
+                    "mcicaps_aoaiendpoint",
+                    "mcicaps_aoaideploymentname",
+                    "mcicaps_directlineurl",
+                    "mcicaps_modelname",
+                    "mcicaps_description",
                     "statecode",
                     "statuscode",
                     "createdon",
@@ -952,46 +957,38 @@ public class DataverseService : IDataverseService, IDisposable
                 {
                     Conditions =
                     {
+                        new ConditionExpression("mcicaps_judgeagentid", ConditionOperator.Equal, judgeAgentId),
                         new ConditionExpression("statecode", ConditionOperator.Equal, 0) // Active only
-                    }
-                },
-                LinkEntities =
-                {
-                    new LinkEntity
-                    {
-                        LinkFromEntityName = "mcicaps_evaluatortype",
-                        LinkFromAttributeName = "mcicaps_evaluatortypeid",
-                        LinkToEntityName = "mcicaps_evaluationrun_evaluatortype",
-                        LinkToAttributeName = "mcicaps_evaluatortypeid",
-                        JoinOperator = JoinOperator.Inner,
-                        LinkCriteria = new FilterExpression
-                        {
-                            Conditions =
-                            {
-                                new ConditionExpression("mcicaps_evaluationrunid", ConditionOperator.Equal, evaluationRunId)
-                            }
-                        }
                     }
                 }
             };
 
             var result = await Task.Run(() => _serviceClient.RetrieveMultiple(query), ct);
             
-            _logger.LogInformation("Found {Count} evaluator types for evaluation run {EvaluationRunId}", 
-                result.Entities.Count, evaluationRunId);
+            if (result.Entities.Count == 0)
+            {
+                _logger.LogWarning("Judge agent {JudgeAgentId} not found", judgeAgentId);
+                return null;
+            }
 
-            return result.Entities.Select(entity => new EvaluatorType
+            var entity = result.Entities[0];
+            
+            return new JudgeAgent
             {
                 Id = entity.Id,
                 Name = entity.GetAttributeValue<string>("mcicaps_name") ?? string.Empty,
-                EvaluatorPrompt = entity.GetAttributeValue<string>("mcicaps_evaluatorprompt") ?? string.Empty,
-                RequiresExpectedResponse = entity.GetAttributeValue<bool>("mcicaps_requiresexpectedresponse"),
+                JudgeType = entity.GetAttributeValue<OptionSetValue>("mcicaps_judgetype")?.Value ?? JudgeType.AzureOpenAI,
+                AoaiEndpoint = entity.GetAttributeValue<string>("mcicaps_aoaiendpoint"),
+                AoaiDeploymentName = entity.GetAttributeValue<string>("mcicaps_aoaideploymentname"),
+                DirectLineUrl = entity.GetAttributeValue<string>("mcicaps_directlineurl"),
+                ModelName = entity.GetAttributeValue<string>("mcicaps_modelname"),
+                Description = entity.GetAttributeValue<string>("mcicaps_description"),
                 StateCode = GetIntValue(entity, "statecode"),
                 StatusCode = entity.GetAttributeValue<OptionSetValue>("statuscode")?.Value ?? 1,
                 CreatedOn = entity.GetAttributeValue<DateTime>("createdon"),
                 ModifiedOn = entity.GetAttributeValue<DateTime>("modifiedon")
-            }).ToList();
-        }, "GetEvaluatorTypesForRun",
+            };
+        }, "GetJudgeAgent",
         exception => exception is FaultException<OrganizationServiceFault>,
         cancellationToken);
     }

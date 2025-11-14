@@ -17,6 +17,7 @@ public class WorkerFunctionTests
     private readonly Mock<IDataverseService> _mockDataverseService;
     private readonly Mock<ICopilotStudioService> _mockCopilotStudioService;
     private readonly Mock<ILLMJudgeService> _mockLLMJudgeService;
+    private readonly Mock<ILLMJudgeServiceFactory> _mockLLMJudgeServiceFactory;
     private readonly Mock<IServiceBusService> _mockServiceBusService;
     private readonly WorkerFunction _workerFunction;
 
@@ -26,13 +27,19 @@ public class WorkerFunctionTests
         _mockDataverseService = new Mock<IDataverseService>();
         _mockCopilotStudioService = new Mock<ICopilotStudioService>();
         _mockLLMJudgeService = new Mock<ILLMJudgeService>();
+        _mockLLMJudgeServiceFactory = new Mock<ILLMJudgeServiceFactory>();
         _mockServiceBusService = new Mock<IServiceBusService>();
+
+        // Setup factory to return mock judge service
+        _mockLLMJudgeServiceFactory
+            .Setup(x => x.CreateJudgeServiceAsync(It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(_mockLLMJudgeService.Object);
 
         _workerFunction = new WorkerFunction(
             _mockLogger.Object,
             _mockDataverseService.Object,
             _mockCopilotStudioService.Object,
-            _mockLLMJudgeService.Object,
+            _mockLLMJudgeServiceFactory.Object,
             _mockServiceBusService.Object);
     }
 

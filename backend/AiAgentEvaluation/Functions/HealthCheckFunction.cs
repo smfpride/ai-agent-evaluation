@@ -15,18 +15,18 @@ public class HealthCheckFunction
     private readonly ILogger<HealthCheckFunction> _logger;
     private readonly IDataverseService _dataverseService;
     private readonly IServiceBusService _serviceBusService;
-    private readonly ILLMJudgeService _llmJudgeService;
+    private readonly ILLMJudgeServiceFactory _llmJudgeServiceFactory;
 
     public HealthCheckFunction(
         ILogger<HealthCheckFunction> logger,
         IDataverseService dataverseService,
         IServiceBusService serviceBusService,
-        ILLMJudgeService llmJudgeService)
+        ILLMJudgeServiceFactory llmJudgeServiceFactory)
     {
         _logger = logger;
         _dataverseService = dataverseService;
         _serviceBusService = serviceBusService;
-        _llmJudgeService = llmJudgeService;
+        _llmJudgeServiceFactory = llmJudgeServiceFactory;
     }
 
     /// <summary>
@@ -45,7 +45,10 @@ public class HealthCheckFunction
             // Perform health checks for all dependencies in parallel
             var dataverseHealthTask = _dataverseService.CheckHealthAsync(cancellationToken);
             var serviceBusHealthTask = _serviceBusService.CheckHealthAsync(cancellationToken);
-            var azureOpenAIHealthTask = _llmJudgeService.CheckHealthAsync(cancellationToken);
+            
+            // Create default judge service for health check (no evaluator type needed)
+            var llmJudgeService = await _llmJudgeServiceFactory.CreateJudgeServiceAsync(null, cancellationToken);
+            var azureOpenAIHealthTask = llmJudgeService.CheckHealthAsync(cancellationToken);
 
             await Task.WhenAll(dataverseHealthTask, serviceBusHealthTask, azureOpenAIHealthTask);
 
