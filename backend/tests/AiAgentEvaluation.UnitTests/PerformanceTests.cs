@@ -24,6 +24,7 @@ public class PerformanceTests
     private readonly Mock<DurableTaskClient> _mockDurableClient;
     private readonly Mock<ICopilotStudioService> _mockCopilotStudioService;
     private readonly Mock<ILLMJudgeService> _mockLLMJudgeService;
+    private readonly Mock<ILLMJudgeServiceFactory> _mockLLMJudgeServiceFactory;
 
     public PerformanceTests()
     {
@@ -34,6 +35,12 @@ public class PerformanceTests
         _mockDurableClient = new Mock<DurableTaskClient>("test-client");
         _mockCopilotStudioService = new Mock<ICopilotStudioService>();
         _mockLLMJudgeService = new Mock<ILLMJudgeService>();
+        _mockLLMJudgeServiceFactory = new Mock<ILLMJudgeServiceFactory>();
+
+        // Setup factory to return mock judge service
+        _mockLLMJudgeServiceFactory
+            .Setup(x => x.CreateJudgeServiceAsync(It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(_mockLLMJudgeService.Object);
     }
 
     #region TC-PERF-001: Maximum Scale Evaluation Run (50K Test Cases)
@@ -232,7 +239,7 @@ public class PerformanceTests
             _mockWorkerLogger.Object,
             _mockDataverseService.Object,
             _mockCopilotStudioService.Object,
-            _mockLLMJudgeService.Object,
+            _mockLLMJudgeServiceFactory.Object,
             _mockServiceBusService.Object);
 
         var message = new ProcessTestCaseMessage
@@ -301,7 +308,7 @@ public class PerformanceTests
             _mockWorkerLogger.Object,
             _mockDataverseService.Object,
             _mockCopilotStudioService.Object,
-            _mockLLMJudgeService.Object,
+            _mockLLMJudgeServiceFactory.Object,
             _mockServiceBusService.Object);
 
         // Measure initial memory
@@ -375,7 +382,7 @@ public class PerformanceTests
                 _mockWorkerLogger.Object,
                 _mockDataverseService.Object,
                 _mockCopilotStudioService.Object,
-                _mockLLMJudgeService.Object,
+                _mockLLMJudgeServiceFactory.Object,
                 _mockServiceBusService.Object))
             .ToList();
 

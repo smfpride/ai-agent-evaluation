@@ -15,18 +15,18 @@ public class MultiTurnDurableActivities
     private readonly ILogger<MultiTurnDurableActivities> _logger;
     private readonly IDataverseService _dataverseService;
     private readonly ICopilotStudioService _copilotStudioService;
-    private readonly ILLMJudgeService _llmJudgeService;
+    private readonly ILLMJudgeServiceFactory _llmJudgeServiceFactory;
 
     public MultiTurnDurableActivities(
         ILogger<MultiTurnDurableActivities> logger,
         IDataverseService dataverseService,
         ICopilotStudioService copilotStudioService,
-        ILLMJudgeService llmJudgeService)
+        ILLMJudgeServiceFactory llmJudgeServiceFactory)
     {
         _logger = logger;
         _dataverseService = dataverseService;
         _copilotStudioService = copilotStudioService;
-        _llmJudgeService = llmJudgeService;
+        _llmJudgeServiceFactory = llmJudgeServiceFactory;
     }
 
     /// <summary>
@@ -103,7 +103,11 @@ public class MultiTurnDurableActivities
             // 2. Evaluate with LLM Judge (can take minutes, has retry logic)
             _logger.LogInformation("Evaluating response with LLM Judge for turn {Sequence}", input.Turn.Sequence);
             
-            var judgeResponse = await _llmJudgeService.EvaluateResponseAsync(
+            // Use factory to get the appropriate judge service based on evaluator configuration
+            var llmJudgeService = await _llmJudgeServiceFactory.CreateJudgeServiceAsync(
+                input.EvaluatorTypeId, cancellationToken);
+            
+            var judgeResponse = await llmJudgeService.EvaluateResponseAsync(
                 new LLMJudgeRequest
                 {
                     EvaluatorTypeId = input.EvaluatorTypeId,
