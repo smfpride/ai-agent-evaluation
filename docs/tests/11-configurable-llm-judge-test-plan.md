@@ -717,7 +717,7 @@ $similarityEvaluator = @{
     "mcicaps_name" = "Similarity - Azure OpenAI"
     "mcicaps_testtype" = "Similarity"
     "mcicaps_judgeagentid@odata.bind" = "/mcicaps_judgeagents($($aoaiJudge.mcicaps_judgeagentid))"
-    "mcicaps_prompttemplate" = "Evaluate semantic similarity..."
+    "mcicaps_evaluatorprompt" = "Evaluate semantic similarity..."
 }
 
 # Accuracy Evaluator (Copilot Studio)
@@ -725,7 +725,7 @@ $accuracyEvaluator = @{
     "mcicaps_name" = "Accuracy - Copilot Studio"
     "mcicaps_testtype" = "Accuracy"
     "mcicaps_judgeagentid@odata.bind" = "/mcicaps_judgeagents($($mcsJudgeNoModel.mcicaps_judgeagentid))"
-    "mcicaps_prompttemplate" = "Evaluate factual accuracy..."
+    "mcicaps_evaluatorprompt" = "Evaluate factual accuracy..."
 }
 ```
 
