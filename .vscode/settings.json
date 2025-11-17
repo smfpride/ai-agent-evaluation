@@ -1,3 +1,10 @@
 {
-    "chat.agent.maxRequests": 10000
+    "chat.agent.maxRequests": 10000,
+    "sarif-viewer.connectToGithubCodeScanning": "off",
+    "azureFunctions.projectSubpath": "backend\\AiAgentEvaluation",
+    "azureFunctions.deploySubpath": "backend\\AiAgentEvaluation/bin/Release/net8.0/publish",
+    "azureFunctions.projectLanguage": "C#",
+    "azureFunctions.projectRuntime": "~4",
+    "debug.internalConsoleOptions": "neverOpen",
+    "azureFunctions.preDeployTask": "publish (functions)"
 }
