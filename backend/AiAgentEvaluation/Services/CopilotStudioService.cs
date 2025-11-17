@@ -146,8 +146,8 @@ public class CopilotStudioService : ICopilotStudioService, IDisposable
 
     public async Task<CopilotDirectLineResponse> SendMessageAsync(string directLineSpeechUrl, string userInput, string? conversationId = null, string? directLineToken = null, CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Sending message in conversation {ConversationId} using endpoint {Endpoint}, tokenProvided={TokenProvided}", 
-            conversationId, directLineSpeechUrl, !string.IsNullOrEmpty(directLineToken));
+        _logger.LogInformation("Sending message in conversation {ConversationId} using endpoint {Endpoint}, tokenProvided={TokenProvided}, userInput={UserInput}", 
+            conversationId, directLineSpeechUrl, !string.IsNullOrEmpty(directLineToken), userInput);
         
         // Extract Direct Line base URL from the token endpoint
         var directLineBaseUrl = ExtractDirectLineBaseUrl(directLineSpeechUrl);
@@ -232,6 +232,9 @@ public class CopilotStudioService : ICopilotStudioService, IDisposable
 
         var json = JsonSerializer.Serialize(activity, _jsonOptions);
         var content = new StringContent(json, Encoding.UTF8, "application/json");
+        
+        _logger.LogWarning("SendActivityAsync: text parameter='{Text}', activity.Text='{ActivityText}', json={Json}", 
+            text, activity.Text, json);
 
         var fullUrl = $"{directLineBaseUrl}/v3/directline/conversations/{conversationId}/activities";
         

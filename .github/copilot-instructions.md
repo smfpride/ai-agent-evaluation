@@ -238,25 +238,50 @@ Documentation updates:
 
 **Infrastructure is already deployed** - only function code needs to be deployed for updates.
 
+#### MANDATORY: Update Version Before Every Deployment
+
+**CRITICAL**: Before deploying, you MUST update the deployment tracking in `HealthCheckFunction.cs`:
+
+1. Open `backend/AiAgentEvaluation/Functions/HealthCheckFunction.cs`
+2. Locate the static fields at the top of the class (around line 16-17):
+   ```csharp
+   private static readonly string BuildTimestamp = "YYYY-MM-DDTHH:MM:SSZ";
+   private static readonly string DeploymentVersion = "1.0.XX";
+   ```
+3. Update both values:
+   - `BuildTimestamp`: Current UTC time in ISO 8601 format
+   - `DeploymentVersion`: Increment the last number (e.g., `1.0.17` → `1.0.18`)
+
+**This is NOT optional** - it's how we verify deployments are actually taking effect.
+
+#### Deployment Steps
+
 ```powershell
 # Navigate to function app directory
 cd backend/AiAgentEvaluation
 
-# Build and test FIRST (mandatory)
+# 1. UPDATE VERSION IN HealthCheckFunction.cs FIRST (see above)
+
+# 2. Build and test (mandatory)
 dotnet build --configuration Release
 dotnet test ../tests/AiAgentEvaluation.UnitTests/AiAgentEvaluation.UnitTests.csproj
 
-# Deploy to Azure (staging environment)
+# 3. Deploy to Azure (staging environment)
 func azure functionapp publish func-aiestagingmbwc
+
+# 4. Verify deployment took effect
+curl https://func-aiestagingmbwc.azurewebsites.net/api/health/basic
+# Check that version and buildTimestamp match what you just set
 ```
 
 **Function app**: `func-aiestagingmbwc` (staging environment)
 **Resource group**: `rg-agent-eval-staging`
 
 **Post-deployment verification**:
+- **FIRST**: Check `/api/health/basic` endpoint shows correct version/timestamp
 - Check Application Insights for function startup logs
 - Verify all functions appear in Azure portal Functions list
-- Test health endpoint: `https://func-aiestagingmbwc.azurewebsites.net/api/health`
+- Test comprehensive health endpoint: `https://func-aiestagingmbwc.azurewebsites.net/api/health`
 
 See `docs/deployment/DEPLOYMENT_CHECKLIST.md` for complete validation steps.
 

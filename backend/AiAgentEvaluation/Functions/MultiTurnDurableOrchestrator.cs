@@ -123,6 +123,13 @@ public class MultiTurnDurableOrchestrator
             logger.LogInformation("Executing {TurnCount} turns for test case {TestCaseId} with {EvaluatorCount} evaluators",
                 testCase.Turns.Count, input.TestCaseId, input.EvaluatorTypeIds.Count);
 
+            // Log turn details for debugging
+            foreach (var t in testCase.Turns.OrderBy(x => x.Sequence))
+            {
+                logger.LogInformation("Turn {Sequence}: PromptText='{PromptText}', ExpectedResponse='{ExpectedResponse}'",
+                    t.Sequence, t.PromptText, t.ExpectedResponse);
+            }
+
             string? conversationId = null;
             string? directLineToken = null;
 
@@ -150,17 +157,26 @@ public class MultiTurnDurableOrchestrator
                     turnInput);
 
                 // Store conversation ID and DirectLine token from first turn
-                if (turn.Sequence == 1 && turnResults.Any() && !string.IsNullOrEmpty(turnResults[0].ConversationId))
+                // Find the first result with a non-empty conversation ID (some evaluators may return NA without calling Copilot)
+                if (turn.Sequence == 1 && turnResults.Any())
                 {
-                    conversationId = turnResults[0].ConversationId;
-                    directLineToken = turnResults[0].DirectLineToken;
-                    
-                    foreach (var ctx in executionContexts.Values)
+                    var resultWithConversation = turnResults.FirstOrDefault(r => !string.IsNullOrEmpty(r.ConversationId));
+                    if (resultWithConversation != null)
                     {
-                        ctx.ConversationId = conversationId;
+                        conversationId = resultWithConversation.ConversationId;
+                        directLineToken = resultWithConversation.DirectLineToken;
+                        
+                        foreach (var ctx in executionContexts.Values)
+                        {
+                            ctx.ConversationId = conversationId;
+                        }
+                        
+                        logger.LogInformation("Captured conversation ID and token from turn 1: {ConversationId}", conversationId);
                     }
-                    
-                    logger.LogInformation("Captured conversation ID and token from turn 1: {ConversationId}", conversationId);
+                    else
+                    {
+                        logger.LogWarning("Turn 1 completed but no conversation ID was captured - all evaluators may have returned NA");
+                    }
                 }
 
                 // Store results for each evaluator
@@ -198,7 +214,7 @@ public class MultiTurnDurableOrchestrator
                 // Optional: Add small delay between turns for rate limiting
                 if (turn.Sequence < testCase.Turns.Count)
                 {
-                    await context.CallActivityAsync("CreateTurnDelay", 2);
+                    await context.CreateTimer(context.CurrentUtcDateTime.AddSeconds(2), CancellationToken.None);
                 }
             }
 

@@ -16,6 +16,10 @@ public class HealthCheckFunction
     private readonly IDataverseService _dataverseService;
     private readonly IServiceBusService _serviceBusService;
     private readonly ILLMJudgeServiceFactory _llmJudgeServiceFactory;
+    
+    // Build timestamp to track deployments - updated with each build
+    private static readonly string BuildTimestamp = "2025-11-16T22:32:00Z";
+    private static readonly string DeploymentVersion = "1.0.17"; // Deployment #17
 
     public HealthCheckFunction(
         ILogger<HealthCheckFunction> logger,
@@ -71,7 +75,8 @@ public class HealthCheckFunction
             {
                 status = allHealthy ? "Healthy" : "Degraded",
                 timestamp = DateTime.UtcNow,
-                version = "1.0.0",
+                version = DeploymentVersion,
+                buildTimestamp = BuildTimestamp,
                 environment = Environment.GetEnvironmentVariable("AZURE_FUNCTIONS_ENVIRONMENT") ?? "Development",
                 services = new
                 {
@@ -186,6 +191,8 @@ public class HealthCheckFunction
         {
             status = "Alive",
             timestamp = DateTime.UtcNow,
+            version = DeploymentVersion,
+            buildTimestamp = BuildTimestamp,
             uptime = GetUptime()
         });
 
@@ -230,7 +237,8 @@ public class HealthCheckFunction
         {
             status = "Healthy",
             timestamp = DateTime.UtcNow,
-            version = "1.0.0",
+            version = DeploymentVersion,
+            buildTimestamp = BuildTimestamp,
             checks = checks
         });
 

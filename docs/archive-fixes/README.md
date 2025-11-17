@@ -13,6 +13,7 @@ This folder contains records of hotfixes and bug fixes that were deployed to add
 - **[IMPLEMENTATION_SUMMARY_rate-limit-fix.md](IMPLEMENTATION_SUMMARY_rate-limit-fix.md)** - Rate limit fix implementation summary
 
 ### Bug Fixes
+- **[n-n-relationship-dataverse-query-fix.md](n-n-relationship-dataverse-query-fix.md)** - N:N relationship Dataverse query fix (November 16, 2025)
 - **[dataverse-table-name-fix.md](dataverse-table-name-fix.md)** - Dataverse table name correction
 - **[multi-turn-queue-fix.md](multi-turn-queue-fix.md)** - Multi-turn queue configuration fix
 

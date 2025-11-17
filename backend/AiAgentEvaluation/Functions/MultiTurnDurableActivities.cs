@@ -75,6 +75,14 @@ public class MultiTurnDurableActivities
         var stopwatch = Stopwatch.StartNew();
         var results = new List<TurnExecutionResult>();
         
+        // CRITICAL DEBUG: Log the raw Turn object serialized
+        var turnJson = System.Text.Json.JsonSerializer.Serialize(input.Turn);
+        _logger.LogWarning("ExecuteSingleTurn START: Turn JSON = {TurnJson}", turnJson);
+        _logger.LogWarning("ExecuteSingleTurn START: PromptText property value = '{PromptText}'", input.Turn?.PromptText ?? "NULL");
+        
+        _logger.LogInformation("ExecuteSingleTurn RECEIVED: turn.Sequence={Sequence}, turn.PromptText='{PromptText}', turn.TestCaseId={TestCaseId}, conversationId={ConversationId}",
+            input.Turn.Sequence, input.Turn.PromptText, input.Turn.TestCaseId, input.ConversationId);
+        
         _logger.LogInformation("Executing turn {Sequence} for test case {TestCaseId} with {EvaluatorCount} evaluators",
             input.Turn.Sequence, input.Turn.TestCaseId, input.EvaluatorTypeIds.Count);
 
@@ -144,7 +152,8 @@ public class MultiTurnDurableActivities
             }
             
             // 1. Send message to agent ONCE (can take minutes)
-            _logger.LogInformation("Sending message to Copilot Studio for turn {Sequence}", input.Turn.Sequence);
+            _logger.LogInformation("Sending message to Copilot Studio for turn {Sequence}, promptText='{PromptText}', conversationId={ConversationId}", 
+                input.Turn.Sequence, input.Turn.PromptText, input.ConversationId);
             
             var copilotResponse = await _copilotStudioService.SendMessageAsync(
                 input.DirectLineUrl,

@@ -153,12 +153,11 @@ public class MultiTurnDurableOrchestratorTests
                 It.IsAny<TaskOptions>()),
             Times.Once);
 
-        // Verify CreateTurnDelay activity for delay between turns (called once after turn 1)
+        // Verify CreateTimer is called for delay between turns (called once after turn 1)
         mockContext.Verify(
-            x => x.CallActivityAsync(
-                "CreateTurnDelay",
-                It.IsAny<int>(),
-                It.IsAny<TaskOptions>()),
+            x => x.CreateTimer(
+                It.IsAny<DateTime>(),
+                It.IsAny<CancellationToken>()),
             Times.Once);
     }
 

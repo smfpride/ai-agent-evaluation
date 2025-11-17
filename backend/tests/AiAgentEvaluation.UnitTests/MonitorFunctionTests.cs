@@ -195,9 +195,9 @@ public class MonitorFunctionTests
         // Act
         await _monitorFunction.MonitorEvaluationRuns(timerInfo, CancellationToken.None);
 
-        // Assert - Verify progress updated with actual counts (3 completed, 1 failed)
+        // Assert - Verify progress updated with actual counts (3 completed, 1 failed, 0 not applicable)
         _mockDataverseService.Verify(x => x.UpdateEvaluationRunProgressAsync(
-            evaluationRunId, 3, 1, It.IsAny<CancellationToken>()), Times.Once);
+            evaluationRunId, 3, 1, 0, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     #endregion
@@ -239,9 +239,9 @@ public class MonitorFunctionTests
         // Act
         await _monitorFunction.MonitorEvaluationRuns(timerInfo, CancellationToken.None);
 
-        // Assert - Should count only 2 completed (StatusCode=778760002) and 1 failed (StatusCode=778760003)
+        // Assert - Should count only 2 completed (StatusCode=778760002), 1 failed (StatusCode=778760003), 0 not applicable
         _mockDataverseService.Verify(x => x.UpdateEvaluationRunProgressAsync(
-            evaluationRunId, 2, 1, It.IsAny<CancellationToken>()), Times.Once);
+            evaluationRunId, 2, 1, 0, It.IsAny<CancellationToken>()), Times.Once);
         
         // Should NOT mark as completed since only 3 of 5 are done
         _mockDataverseService.Verify(x => x.UpdateEvaluationRunCompletionAsync(
@@ -325,14 +325,72 @@ public class MonitorFunctionTests
         // Act
         await _monitorFunction.MonitorEvaluationRuns(timerInfo, CancellationToken.None);
 
-        // Assert - Should only count 1 as completed, 0 as failed
+        // Assert - Should only count 1 as completed, 0 as failed, 0 as not applicable
         _mockDataverseService.Verify(x => x.UpdateEvaluationRunProgressAsync(
-            evaluationRunId, 1, 0, It.IsAny<CancellationToken>()), Times.Once);
+            evaluationRunId, 1, 0, 0, It.IsAny<CancellationToken>()), Times.Once);
         
         // Should NOT complete the run
         _mockDataverseService.Verify(x => x.UpdateEvaluationRunCompletionAsync(
             It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<decimal?>(), 
             It.IsAny<bool?>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    #endregion
+
+    #region NotApplicable Score Filtering Tests
+
+    [Fact]
+    public async Task MonitorEvaluationRuns_ExcludesNotApplicableFromOverallScore()
+    {
+        // Arrange - Test that NotApplicable results are excluded from score calculation
+        var evaluationRunId = Guid.NewGuid();
+        var evaluationRun = new AiAgentEvaluation.Models.EvaluationRun
+        {
+            Id = evaluationRunId,
+            Name = "Test Run with NA",
+            StatusCode = EvaluationRunStatus.Running,
+            TotalTestCases = 5,
+            CompletedTestCases = 0,
+            FailedTestCases = 0,
+            StartTime = DateTime.UtcNow.AddMinutes(-10),
+            PassingThreshold = 0.7m
+        };
+
+        // 2 Completed (0.8 + 0.9 = 1.7 / 2 = 0.85 average)
+        // 2 NotApplicable (should be excluded from score calculation)
+        // 1 Errored (should be excluded from score calculation)
+        var results = new List<AiAgentEvaluation.Models.EvaluationResult>
+        {
+            new() { Id = Guid.NewGuid(), TestCaseId = Guid.NewGuid(), IsAggregate = false, StatusCode = 778760002, Score = 0.8m },  // Completed
+            new() { Id = Guid.NewGuid(), TestCaseId = Guid.NewGuid(), IsAggregate = false, StatusCode = 778760002, Score = 0.9m },  // Completed
+            new() { Id = Guid.NewGuid(), TestCaseId = Guid.NewGuid(), IsAggregate = false, StatusCode = 778760004, Score = 0.0m }, // NotApplicable - should be excluded
+            new() { Id = Guid.NewGuid(), TestCaseId = Guid.NewGuid(), IsAggregate = false, StatusCode = 778760004, Score = 0.0m }, // NotApplicable - should be excluded
+            new() { Id = Guid.NewGuid(), TestCaseId = Guid.NewGuid(), IsAggregate = false, StatusCode = 778760003, ErrorMessage = "Error" }  // Errored - should be excluded
+        };
+
+        _mockDataverseService.Setup(x => x.GetRunningEvaluationRunsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<AiAgentEvaluation.Models.EvaluationRun> { evaluationRun });
+        _mockDataverseService.Setup(x => x.GetEvaluationResultsAsync(evaluationRunId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(results);
+
+        var timerInfo = CreateTimerInfo(isPastDue: false);
+
+        // Act
+        await _monitorFunction.MonitorEvaluationRuns(timerInfo, CancellationToken.None);
+
+        // Assert - Should complete with score of 0.85 (average of 0.8 and 0.9), pass=true
+        // NotApplicable results should NOT affect the score
+        _mockDataverseService.Verify(x => x.UpdateEvaluationRunCompletionAsync(
+            evaluationRunId, 
+            EvaluationRunStatus.Completed, 
+            0.85m,  // Only completed results factored in: (0.8 + 0.9) / 2 = 0.85
+            true,   // 0.85 >= 0.7 threshold
+            It.IsAny<DateTime>(), 
+            It.IsAny<CancellationToken>()), Times.Once);
+
+        // Verify progress update shows correct counts: 2 completed, 1 failed, 2 not applicable
+        _mockDataverseService.Verify(x => x.UpdateEvaluationRunProgressAsync(
+            evaluationRunId, 2, 1, 2, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     #endregion

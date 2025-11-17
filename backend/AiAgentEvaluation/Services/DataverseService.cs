@@ -22,14 +22,9 @@ public class DataverseService : IDataverseService, IDisposable
     private bool _disposed;
 
     /// <summary>
-    /// Helper method to get table name with configured schema prefix
+    /// Helper method to add configured schema prefix to Dataverse logical names (tables, fields, etc.)
     /// </summary>
-    private string Table(string name) => $"{_settings.Dataverse.SchemaPrefixWithUnderscore}{name}";
-
-    /// <summary>
-    /// Helper method to get field name with configured schema prefix
-    /// </summary>
-    private string Field(string name) => $"{_settings.Dataverse.SchemaPrefixWithUnderscore}{name}";
+    private string Prefixed(string name) => $"{_settings.Dataverse.SchemaPrefixWithUnderscore}{name}";
 
     public DataverseService(ILogger<DataverseService> logger, IOptions<AppSettings> settings)
     {
@@ -158,22 +153,22 @@ public class DataverseService : IDataverseService, IDisposable
 
         return await _resilientService.ExecuteAsync(async ct =>
         {
-            var query = new QueryExpression(Table("evaluationruns"))
+            var query = new QueryExpression(Prefixed("evaluationruns"))
             {
                 ColumnSet = new ColumnSet(
-                    Field("evaluationrunsid"), 
-                    Field("runname"), 
-                    Field("testset"), 
-                    Field("agenttoeval"),
-                    Field("description"),
-                    Field("passingthreshold"),
-                    Field("overallpass"),
-                    Field("overallscore"),
-                    Field("totaltestcases"),
-                    Field("completedtestcases"),
-                    Field("failedtestcases"),
-                    Field("starttime"),
-                    Field("endtime"),
+                    Prefixed("evaluationrunsid"), 
+                    Prefixed("runname"), 
+                    Prefixed("testset"), 
+                    Prefixed("agenttoeval"),
+                    Prefixed("description"),
+                    Prefixed("passingthreshold"),
+                    Prefixed("overallpass"),
+                    Prefixed("overallscore"),
+                    Prefixed("totaltestcases"),
+                    Prefixed("completedtestcases"),
+                    Prefixed("failedtestcases"),
+                    Prefixed("starttime"),
+                    Prefixed("endtime"),
                     "statuscode",
                     "statecode",
                     "createdon"
@@ -182,7 +177,7 @@ public class DataverseService : IDataverseService, IDisposable
                 {
                     Conditions =
                     {
-                        new ConditionExpression(Field("evaluationrunsid"), ConditionOperator.Equal, evaluationRunId)
+                        new ConditionExpression(Prefixed("evaluationrunsid"), ConditionOperator.Equal, evaluationRunId)
                     }
                 }
             };
@@ -200,18 +195,18 @@ public class DataverseService : IDataverseService, IDisposable
             return new EvaluationRun
             {
                 Id = entity.Id,
-                Name = entity.GetAttributeValue<string>(Field("runname")) ?? string.Empty,
-                Description = entity.GetAttributeValue<string>(Field("description")),
-                TestSetId = entity.GetAttributeValue<EntityReference>(Field("testset"))?.Id,
-                AgentToEvalId = entity.GetAttributeValue<EntityReference>(Field("agenttoeval"))?.Id,
-                PassingThreshold = GetDecimalValue(entity, Field("passingthreshold")),
-                OverallScore = GetDecimalValue(entity, Field("overallscore")),
-                OverallPass = entity.GetAttributeValue<bool?>(Field("overallpass")),
-                TotalTestCases = entity.GetAttributeValue<int>(Field("totaltestcases")),
-                CompletedTestCases = entity.GetAttributeValue<int>(Field("completedtestcases")),
-                FailedTestCases = entity.GetAttributeValue<int>(Field("failedtestcases")),
-                StartTime = entity.GetAttributeValue<DateTime?>(Field("starttime")),
-                EndTime = entity.GetAttributeValue<DateTime?>(Field("endtime")),
+                Name = entity.GetAttributeValue<string>(Prefixed("runname")) ?? string.Empty,
+                Description = entity.GetAttributeValue<string>(Prefixed("description")),
+                TestSetId = entity.GetAttributeValue<EntityReference>(Prefixed("testset"))?.Id,
+                AgentToEvalId = entity.GetAttributeValue<EntityReference>(Prefixed("agenttoeval"))?.Id,
+                PassingThreshold = GetDecimalValue(entity, Prefixed("passingthreshold")),
+                OverallScore = GetDecimalValue(entity, Prefixed("overallscore")),
+                OverallPass = entity.GetAttributeValue<bool?>(Prefixed("overallpass")),
+                TotalTestCases = entity.GetAttributeValue<int>(Prefixed("totaltestcases")),
+                CompletedTestCases = entity.GetAttributeValue<int>(Prefixed("completedtestcases")),
+                FailedTestCases = entity.GetAttributeValue<int>(Prefixed("failedtestcases")),
+                StartTime = entity.GetAttributeValue<DateTime?>(Prefixed("starttime")),
+                EndTime = entity.GetAttributeValue<DateTime?>(Prefixed("endtime")),
                 StateCode = GetIntValue(entity, "statecode"),
                 StatusCode = entity.GetAttributeValue<OptionSetValue>("statuscode")?.Value ?? 1,
                 CreatedOn = entity.GetAttributeValue<DateTime>("createdon")
@@ -233,7 +228,7 @@ public class DataverseService : IDataverseService, IDisposable
         return await _resilientService.ExecuteAsync(async ct =>
         {
             // First, get the evaluation run to retrieve the test set
-            var evaluationRunResult = await Task.Run(() => _serviceClient.Retrieve(Table("evaluationruns"), evaluationRunId, new ColumnSet(Field("testset"))), ct);
+            var evaluationRunResult = await Task.Run(() => _serviceClient.Retrieve(Prefixed("evaluationruns"), evaluationRunId, new ColumnSet(Prefixed("testset"))), ct);
             
             if (evaluationRunResult == null)
             {
@@ -241,7 +236,7 @@ public class DataverseService : IDataverseService, IDisposable
                 return new List<TestCase>();
             }
 
-            var testSetReference = evaluationRunResult.GetAttributeValue<EntityReference>(Field("testset"));
+            var testSetReference = evaluationRunResult.GetAttributeValue<EntityReference>(Prefixed("testset"));
             
             if (testSetReference == null)
             {
@@ -250,22 +245,21 @@ public class DataverseService : IDataverseService, IDisposable
             }
 
             // Now query test cases by test set
-            var query = new QueryExpression(Table("testcases"))
+            var query = new QueryExpression(Prefixed("testcases"))
             {
                 ColumnSet = new ColumnSet(
-                    Field("testcasesid"),
-                    Field("testcasename"),
-                    Field("prompt"),
-                    Field("expectedresponse"),
-                    Field("evaluatortype"),
-                    Field("ismultiturn"),
+                    Prefixed("testcasesid"),
+                    Prefixed("testcasename"),
+                    Prefixed("prompt"),
+                    Prefixed("expectedresponse"),
+                    Prefixed("ismultiturn"),
                     "createdon"
                 ),
                 Criteria = new FilterExpression
                 {
                     Conditions =
                     {
-                        new ConditionExpression(Field("testset"), ConditionOperator.Equal, testSetReference.Id),
+                        new ConditionExpression(Prefixed("testset"), ConditionOperator.Equal, testSetReference.Id),
                         new ConditionExpression("statecode", ConditionOperator.Equal, 0) // Active only
                     }
                 },
@@ -286,18 +280,16 @@ public class DataverseService : IDataverseService, IDisposable
                 
                 foreach (var entity in result.Entities)
                 {
-                    var evaluatorTypeRef = entity.GetAttributeValue<EntityReference>(Field("evaluatortype"));
-                    
                     testCases.Add(new TestCase
                     {
                         Id = entity.Id,
-                        Name = entity.GetAttributeValue<string>(Field("testcasename")) ?? string.Empty,
+                        Name = entity.GetAttributeValue<string>(Prefixed("testcasename")) ?? string.Empty,
                         EvaluationRunId = evaluationRunId,
-                        UserInput = entity.GetAttributeValue<string>(Field("prompt")) ?? string.Empty,
-                        ExpectedResponse = entity.GetAttributeValue<string>(Field("expectedresponse")) ?? string.Empty,
-                        EvaluatorTypeId = evaluatorTypeRef?.Id,
+                        UserInput = entity.GetAttributeValue<string>(Prefixed("prompt")) ?? string.Empty,
+                        ExpectedResponse = entity.GetAttributeValue<string>(Prefixed("expectedresponse")) ?? string.Empty,
+                        EvaluatorTypeId = null, // Evaluator types are now fetched via GetEvaluatorTypesForRunAsync (N:N relationship)
                         ConversationId = null, // ConversationId is on EvaluationResult, not TestCase
-                        IsMultiTurn = entity.GetAttributeValue<bool>(Field("ismultiturn")),
+                        IsMultiTurn = entity.GetAttributeValue<bool>(Prefixed("ismultiturn")),
                         CreatedOn = entity.GetAttributeValue<DateTime>("createdon")
                     });
                 }
@@ -330,7 +322,7 @@ public class DataverseService : IDataverseService, IDisposable
 
         await _resilientService.ExecuteAsync(async ct =>
         {
-            var updateEntity = new Entity(Table("evaluationruns"), evaluationRunId);
+            var updateEntity = new Entity(Prefixed("evaluationruns"), evaluationRunId);
             updateEntity["statuscode"] = new OptionSetValue(statusCode);
             
             // Set state based on status
@@ -364,12 +356,12 @@ public class DataverseService : IDataverseService, IDisposable
 
         await _resilientService.ExecuteAsync(async ct =>
         {
-            var updateEntity = new Entity(Table("evaluationruns"), evaluationRunId);
-            updateEntity[Field("totaltestcases")] = totalTestCases;
+            var updateEntity = new Entity(Prefixed("evaluationruns"), evaluationRunId);
+            updateEntity[Prefixed("totaltestcases")] = totalTestCases;
             // Initialize counters to 0
-            updateEntity[Field("completedtestcases")] = 0;
-            updateEntity[Field("failedtestcases")] = 0;
-            updateEntity[Field("progresspercentage")] = 0.00m;
+            updateEntity[Prefixed("completedtestcases")] = 0;
+            updateEntity[Prefixed("failedtestcases")] = 0;
+            updateEntity[Prefixed("progresspercentage")] = 0.00m;
 
             await Task.Run(() => _serviceClient.Update(updateEntity), ct);
             
@@ -379,10 +371,30 @@ public class DataverseService : IDataverseService, IDisposable
         cancellationToken);
     }
 
-    public async Task UpdateEvaluationRunProgressAsync(Guid evaluationRunId, int completedTestCases, int failedTestCases, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Helper method to calculate test case counts from actual results
+    /// Only counts test case level results (not individual turns):
+    /// - Single-turn: TestCaseTurnId is null AND IsAggregate is false
+    /// - Multi-turn: IsAggregate is true (aggregate result for entire sequence)
+    /// </summary>
+    private (int completed, int failed, int notApplicable) CalculateTestCaseCounts(List<EvaluationResult> results)
     {
-        _logger.LogInformation("Updating evaluation run {EvaluationRunId} progress: completed={CompletedTestCases}, failed={FailedTestCases}", 
-            evaluationRunId, completedTestCases, failedTestCases);
+        var testCaseResults = results.Where(r => 
+            r.IsAggregate == true ||  // Multi-turn aggregate result
+            (r.TestCaseTurnId == null && r.IsAggregate == false)  // Single-turn result
+        ).ToList();
+        
+        var completed = testCaseResults.Count(r => r.StatusCode == 778760002);
+        var failed = testCaseResults.Count(r => r.StatusCode == 778760003);
+        var notApplicable = testCaseResults.Count(r => r.StatusCode == 778760004);
+        
+        return (completed, failed, notApplicable);
+    }
+
+    public async Task UpdateEvaluationRunProgressAsync(Guid evaluationRunId, int completedTestCases, int failedTestCases, int notApplicableTestCases, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Updating evaluation run {EvaluationRunId} progress: completed={CompletedTestCases}, failed={FailedTestCases}, notApplicable={NotApplicableTestCases}", 
+            evaluationRunId, completedTestCases, failedTestCases, notApplicableTestCases);
         
         if (_serviceClient == null || !_serviceClient.IsReady)
         {
@@ -392,14 +404,14 @@ public class DataverseService : IDataverseService, IDisposable
         await _resilientService.ExecuteAsync(async ct =>
         {
             // First retrieve the total test cases to calculate percentage
-            var query = new QueryExpression(Table("evaluationruns"))
+            var query = new QueryExpression(Prefixed("evaluationruns"))
             {
-                ColumnSet = new ColumnSet(Field("totaltestcases")),
+                ColumnSet = new ColumnSet(Prefixed("totaltestcases")),
                 Criteria = new FilterExpression
                 {
                     Conditions =
                     {
-                        new ConditionExpression(Field("evaluationrunsid"), ConditionOperator.Equal, evaluationRunId)
+                        new ConditionExpression(Prefixed("evaluationrunsid"), ConditionOperator.Equal, evaluationRunId)
                     }
                 }
             };
@@ -412,20 +424,22 @@ public class DataverseService : IDataverseService, IDisposable
                 return;
             }
 
-            var totalTestCases = result.Entities[0].GetAttributeValue<int>(Field("totaltestcases"));
+            var totalTestCases = result.Entities[0].GetAttributeValue<int>(Prefixed("totaltestcases"));
 
-            var updateEntity = new Entity(Table("evaluationruns"), evaluationRunId);
-            updateEntity[Field("completedtestcases")] = completedTestCases;
-            updateEntity[Field("failedtestcases")] = failedTestCases;
+            var updateEntity = new Entity(Prefixed("evaluationruns"), evaluationRunId);
+            updateEntity[Prefixed("completedtestcases")] = completedTestCases;
+            updateEntity[Prefixed("failedtestcases")] = failedTestCases;
+            updateEntity[Prefixed("natestcases")] = notApplicableTestCases;
 
-            // Calculate and update progress percentage
+            // Calculate and update progress percentage (include completed, failed, and not applicable)
             if (totalTestCases > 0)
             {
-                var progressPercentage = ((decimal)completedTestCases / totalTestCases) * 100;
-                updateEntity[Field("progresspercentage")] = Math.Round(progressPercentage, 2);
+                var totalProcessed = completedTestCases + failedTestCases + notApplicableTestCases;
+                var progressPercentage = ((decimal)totalProcessed / totalTestCases) * 100;
+                updateEntity[Prefixed("progresspercentage")] = Math.Round(progressPercentage, 2);
                 
-                _logger.LogInformation("Calculated progress percentage for {EvaluationRunId}: {ProgressPercentage}%", 
-                    evaluationRunId, Math.Round(progressPercentage, 2));
+                _logger.LogInformation("Calculated progress percentage for {EvaluationRunId}: {TotalProcessed}/{TotalTestCases} = {ProgressPercentage}%", 
+                    evaluationRunId, totalProcessed, totalTestCases, Math.Round(progressPercentage, 2));
             }
             else
             {
@@ -434,7 +448,7 @@ public class DataverseService : IDataverseService, IDisposable
             }
 
             // Update last progress timestamp
-            updateEntity[Field("lastprogressupdate")] = DateTime.UtcNow;
+            updateEntity[Prefixed("lastprogressupdate")] = DateTime.UtcNow;
 
             await Task.Run(() => _serviceClient.Update(updateEntity), ct);
             
@@ -455,11 +469,11 @@ public class DataverseService : IDataverseService, IDisposable
 
         await _resilientService.ExecuteAsync(async ct =>
         {
-            var updateEntity = new Entity(Table("evaluationruns"), evaluationRunId);
+            var updateEntity = new Entity(Prefixed("evaluationruns"), evaluationRunId);
             
             // Convert decimal to double for Float fields in Dataverse
             if (overallScore.HasValue)
-                updateEntity[Field("overallscore")] = Convert.ToDouble(overallScore.Value);
+                updateEntity[Prefixed("overallscore")] = Convert.ToDouble(overallScore.Value);
 
             await Task.Run(() => _serviceClient.Update(updateEntity), ct);
             
@@ -480,39 +494,39 @@ public class DataverseService : IDataverseService, IDisposable
 
         return await _resilientService.ExecuteAsync(async ct =>
         {
-            var resultEntity = new Entity(Table("evaluationresults"));
-            resultEntity[Field("testcase")] = new EntityReference(Table("testcases"), request.TestCaseId);
-            resultEntity[Field("evaluation")] = new EntityReference(Table("evaluationruns"), request.EvaluationRunId);
-            resultEntity[Field("actualresponse")] = request.ActualResponse;
+            var resultEntity = new Entity(Prefixed("evaluationresults"));
+            resultEntity[Prefixed("testcase")] = new EntityReference(Prefixed("testcases"), request.TestCaseId);
+            resultEntity[Prefixed("evaluation")] = new EntityReference(Prefixed("evaluationruns"), request.EvaluationRunId);
+            resultEntity[Prefixed("actualresponse")] = request.ActualResponse;
             
-            // Handle evaluator type field
+            // Set EvaluatorType on individual results for tracking which evaluator produced each result
             if (request.EvaluatorTypeId.HasValue)
-                resultEntity[Field("evaluatortype")] = new EntityReference(Table("evaluatortype"), request.EvaluatorTypeId.Value);
+                resultEntity[Prefixed("evaluatortypeid")] = new EntityReference(Prefixed("evaluatortype"), request.EvaluatorTypeId.Value);
             
             // Handle multi-turn fields
             if (request.TestCaseTurnId.HasValue)
-                resultEntity[Field("testcaseturnid")] = new EntityReference(Table("testcaseturn"), request.TestCaseTurnId.Value);
+                resultEntity[Prefixed("testcaseturnid")] = new EntityReference(Prefixed("testcaseturn"), request.TestCaseTurnId.Value);
             
-            resultEntity[Field("isaggregate")] = request.IsAggregate;
+            resultEntity[Prefixed("isaggregate")] = request.IsAggregate;
             
             // Convert decimal to double for Float field in Dataverse
             var scoreAsDouble = Convert.ToDouble(request.Score);
             _logger.LogInformation("DataverseService - Score conversion: decimal {DecimalScore} -> double {DoubleScore}", 
                 request.Score, scoreAsDouble);
             
-            resultEntity[Field("score")] = scoreAsDouble;
-            resultEntity[Field("passed")] = request.Passed;
-            resultEntity[Field("reasoning")] = request.Reasoning ?? string.Empty;
-            resultEntity[Field("executiontime")] = request.ExecutionTimeMs;
+            resultEntity[Prefixed("score")] = scoreAsDouble;
+            resultEntity[Prefixed("passed")] = request.Passed;
+            resultEntity[Prefixed("reasoning")] = request.Reasoning ?? string.Empty;
+            resultEntity[Prefixed("executiontime")] = request.ExecutionTimeMs;
             
             if (!string.IsNullOrEmpty(request.ConversationId))
-                resultEntity[Field("conversationid")] = request.ConversationId;
+                resultEntity[Prefixed("conversationid")] = request.ConversationId;
             
             if (!string.IsNullOrEmpty(request.ErrorMessage))
-                resultEntity[Field("errormessage")] = request.ErrorMessage;
+                resultEntity[Prefixed("errormessage")] = request.ErrorMessage;
             
             if (!string.IsNullOrEmpty(request.Metadata))
-                resultEntity[Field("metadata")] = request.Metadata;
+                resultEntity[Prefixed("metadata")] = request.Metadata;
 
             // Set StatusCode if provided (for lifecycle tracking)
             if (request.StatusCode.HasValue)
@@ -540,21 +554,20 @@ public class DataverseService : IDataverseService, IDisposable
 
         return await _resilientService.ExecuteAsync(async ct =>
         {
-            var query = new QueryExpression(Table("testcases"))
+            var query = new QueryExpression(Prefixed("testcases"))
             {
                 ColumnSet = new ColumnSet(
-                    Field("testcasesid"),
-                    Field("testcasename"),
-                    Field("prompt"),
-                    Field("expectedresponse"),
-                    Field("evaluatortype"),
+                    Prefixed("testcasesid"),
+                    Prefixed("testcasename"),
+                    Prefixed("prompt"),
+                    Prefixed("expectedresponse"),
                     "createdon"
                 ),
                 Criteria = new FilterExpression
                 {
                     Conditions =
                     {
-                        new ConditionExpression(Field("testcasesid"), ConditionOperator.Equal, testCaseId)
+                        new ConditionExpression(Prefixed("testcasesid"), ConditionOperator.Equal, testCaseId)
                     }
                 }
             };
@@ -568,16 +581,15 @@ public class DataverseService : IDataverseService, IDisposable
             }
 
             var entity = result.Entities[0];
-            var evaluatorTypeRef = entity.GetAttributeValue<EntityReference>(Field("evaluatortype"));
             
             return new TestCase
             {
                 Id = entity.Id,
-                Name = entity.GetAttributeValue<string>(Field("testcasename")) ?? string.Empty,
+                Name = entity.GetAttributeValue<string>(Prefixed("testcasename")) ?? string.Empty,
                 EvaluationRunId = Guid.Empty, // TestCase doesn't have direct link to EvaluationRun
-                UserInput = entity.GetAttributeValue<string>(Field("prompt")) ?? string.Empty,
-                ExpectedResponse = entity.GetAttributeValue<string>(Field("expectedresponse")) ?? string.Empty,
-                EvaluatorTypeId = evaluatorTypeRef?.Id,
+                UserInput = entity.GetAttributeValue<string>(Prefixed("prompt")) ?? string.Empty,
+                ExpectedResponse = entity.GetAttributeValue<string>(Prefixed("expectedresponse")) ?? string.Empty,
+                EvaluatorTypeId = null, // Evaluator types are now fetched via GetEvaluatorTypesForRunAsync (N:N relationship)
                 ConversationId = null, // ConversationId is on EvaluationResult, not TestCase
                 CreatedOn = entity.GetAttributeValue<DateTime>("createdon")
             };
@@ -597,8 +609,8 @@ public class DataverseService : IDataverseService, IDisposable
 
         await _resilientService.ExecuteAsync(async ct =>
         {
-            var updateEntity = new Entity(Table("evaluationruns"), evaluationRunId);
-            updateEntity[Field("starttime")] = startTime;
+            var updateEntity = new Entity(Prefixed("evaluationruns"), evaluationRunId);
+            updateEntity[Prefixed("starttime")] = startTime;
 
             await Task.Run(() => _serviceClient.Update(updateEntity), ct);
             
@@ -619,8 +631,8 @@ public class DataverseService : IDataverseService, IDisposable
 
         await _resilientService.ExecuteAsync(async ct =>
         {
-            var updateEntity = new Entity(Table("evaluationruns"), evaluationRunId);
-            updateEntity[Field("endtime")] = endTime;
+            var updateEntity = new Entity(Prefixed("evaluationruns"), evaluationRunId);
+            updateEntity[Prefixed("endtime")] = endTime;
 
             await Task.Run(() => _serviceClient.Update(updateEntity), ct);
             
@@ -641,20 +653,20 @@ public class DataverseService : IDataverseService, IDisposable
 
         return await _resilientService.ExecuteAsync(async ct =>
         {
-            var query = new QueryExpression(Table("evaluationruns"))
+            var query = new QueryExpression(Prefixed("evaluationruns"))
             {
                 ColumnSet = new ColumnSet(
-                    Field("evaluationrunsid"), 
-                    Field("runname"), 
-                    Field("passingthreshold"),
-                    Field("overallpass"),
-                    Field("overallscore"),
-                    Field("totaltestcases"),
-                    Field("completedtestcases"),
-                    Field("failedtestcases"),
-                    Field("starttime"),
-                    Field("endtime"),
-                    Field("lastprogressupdate"),
+                    Prefixed("evaluationrunsid"), 
+                    Prefixed("runname"), 
+                    Prefixed("passingthreshold"),
+                    Prefixed("overallpass"),
+                    Prefixed("overallscore"),
+                    Prefixed("totaltestcases"),
+                    Prefixed("completedtestcases"),
+                    Prefixed("failedtestcases"),
+                    Prefixed("starttime"),
+                    Prefixed("endtime"),
+                    Prefixed("lastprogressupdate"),
                     "statuscode",
                     "statecode",
                     "createdon"
@@ -677,16 +689,16 @@ public class DataverseService : IDataverseService, IDisposable
                 evaluationRuns.Add(new EvaluationRun
                 {
                     Id = entity.Id,
-                    Name = entity.GetAttributeValue<string>(Field("runname")) ?? string.Empty,
-                    PassingThreshold = GetDecimalValue(entity, Field("passingthreshold")),
-                    OverallScore = GetDecimalValue(entity, Field("overallscore")),
-                    OverallPass = entity.GetAttributeValue<bool?>(Field("overallpass")),
-                    TotalTestCases = entity.GetAttributeValue<int>(Field("totaltestcases")),
-                    CompletedTestCases = entity.GetAttributeValue<int>(Field("completedtestcases")),
-                    FailedTestCases = entity.GetAttributeValue<int>(Field("failedtestcases")),
-                    StartTime = entity.GetAttributeValue<DateTime?>(Field("starttime")),
-                    EndTime = entity.GetAttributeValue<DateTime?>(Field("endtime")),
-                    LastProgressUpdate = entity.GetAttributeValue<DateTime?>(Field("lastprogressupdate")),
+                    Name = entity.GetAttributeValue<string>(Prefixed("runname")) ?? string.Empty,
+                    PassingThreshold = GetDecimalValue(entity, Prefixed("passingthreshold")),
+                    OverallScore = GetDecimalValue(entity, Prefixed("overallscore")),
+                    OverallPass = entity.GetAttributeValue<bool?>(Prefixed("overallpass")),
+                    TotalTestCases = entity.GetAttributeValue<int>(Prefixed("totaltestcases")),
+                    CompletedTestCases = entity.GetAttributeValue<int>(Prefixed("completedtestcases")),
+                    FailedTestCases = entity.GetAttributeValue<int>(Prefixed("failedtestcases")),
+                    StartTime = entity.GetAttributeValue<DateTime?>(Prefixed("starttime")),
+                    EndTime = entity.GetAttributeValue<DateTime?>(Prefixed("endtime")),
+                    LastProgressUpdate = entity.GetAttributeValue<DateTime?>(Prefixed("lastprogressupdate")),
                     StateCode = GetIntValue(entity, "statecode"),
                     StatusCode = entity.GetAttributeValue<OptionSetValue>("statuscode")?.Value ?? 1,
                     CreatedOn = entity.GetAttributeValue<DateTime>("createdon")
@@ -712,22 +724,22 @@ public class DataverseService : IDataverseService, IDisposable
 
         return await _resilientService.ExecuteAsync(async ct =>
         {
-            var query = new QueryExpression(Table("evaluationresults"))
+            var query = new QueryExpression(Prefixed("evaluationresults"))
             {
                 ColumnSet = new ColumnSet(
-                    Field("evaluationresultsid"),
-                    Field("evaluationresultname"),
-                    Field("evaluation"),
-                    Field("testcase"),
-                    Field("testcaseturnid"),
-                    Field("isaggregate"),
-                    Field("actualresponse"),
-                    Field("score"),
-                    Field("reasoning"),
-                    Field("conversationid"),
-                    Field("executiontime"),
-                    Field("errormessage"),
-                    Field("metadata"),
+                    Prefixed("evaluationresultsid"),
+                    Prefixed("evaluationresultname"),
+                    Prefixed("evaluation"),
+                    Prefixed("testcase"),
+                    Prefixed("testcaseturnid"),
+                    Prefixed("isaggregate"),
+                    Prefixed("actualresponse"),
+                    Prefixed("score"),
+                    Prefixed("reasoning"),
+                    Prefixed("conversationid"),
+                    Prefixed("executiontime"),
+                    Prefixed("errormessage"),
+                    Prefixed("metadata"),
                     "statecode",
                     "statuscode",
                     "createdon"
@@ -736,7 +748,7 @@ public class DataverseService : IDataverseService, IDisposable
                 {
                     Conditions =
                     {
-                        new ConditionExpression(Field("evaluation"), ConditionOperator.Equal, evaluationRunId)
+                        new ConditionExpression(Prefixed("evaluation"), ConditionOperator.Equal, evaluationRunId)
                     }
                 }
             };
@@ -750,18 +762,18 @@ public class DataverseService : IDataverseService, IDisposable
                 evaluationResults.Add(new EvaluationResult
                 {
                     Id = entity.Id,
-                    Name = entity.GetAttributeValue<string>(Field("evaluationresultname")) ?? string.Empty,
-                    EvaluationRunId = entity.GetAttributeValue<EntityReference>(Field("evaluation"))?.Id ?? Guid.Empty,
-                    TestCaseId = entity.GetAttributeValue<EntityReference>(Field("testcase"))?.Id ?? Guid.Empty,
-                    TestCaseTurnId = entity.GetAttributeValue<EntityReference>(Field("testcaseturnid"))?.Id,
-                    IsAggregate = entity.GetAttributeValue<bool>(Field("isaggregate")),
-                    ActualResponse = entity.GetAttributeValue<string>(Field("actualresponse")),
-                    Score = GetDecimalValue(entity, Field("score")),
-                    Reasoning = entity.GetAttributeValue<string>(Field("reasoning")),
-                    ConversationId = entity.GetAttributeValue<string>(Field("conversationid")),
-                    ExecutionTimeMs = entity.GetAttributeValue<int?>(Field("executiontime")),
-                    ErrorMessage = entity.GetAttributeValue<string>(Field("errormessage")),
-                    Metadata = entity.GetAttributeValue<string>(Field("metadata")),
+                    Name = entity.GetAttributeValue<string>(Prefixed("evaluationresultname")) ?? string.Empty,
+                    EvaluationRunId = entity.GetAttributeValue<EntityReference>(Prefixed("evaluation"))?.Id ?? Guid.Empty,
+                    TestCaseId = entity.GetAttributeValue<EntityReference>(Prefixed("testcase"))?.Id ?? Guid.Empty,
+                    TestCaseTurnId = entity.GetAttributeValue<EntityReference>(Prefixed("testcaseturnid"))?.Id,
+                    IsAggregate = entity.GetAttributeValue<bool>(Prefixed("isaggregate")),
+                    ActualResponse = entity.GetAttributeValue<string>(Prefixed("actualresponse")),
+                    Score = GetDecimalValue(entity, Prefixed("score")),
+                    Reasoning = entity.GetAttributeValue<string>(Prefixed("reasoning")),
+                    ConversationId = entity.GetAttributeValue<string>(Prefixed("conversationid")),
+                    ExecutionTimeMs = entity.GetAttributeValue<int?>(Prefixed("executiontime")),
+                    ErrorMessage = entity.GetAttributeValue<string>(Prefixed("errormessage")),
+                    Metadata = entity.GetAttributeValue<string>(Prefixed("metadata")),
                     StateCode = GetIntValue(entity, "statecode"),
                     StatusCode = entity.GetAttributeValue<OptionSetValue>("statuscode")?.Value ?? 1,
                     CreatedOn = entity.GetAttributeValue<DateTime>("createdon")
@@ -789,16 +801,16 @@ public class DataverseService : IDataverseService, IDisposable
 
         await _resilientService.ExecuteAsync(async ct =>
         {
-            var updateEntity = new Entity(Table("evaluationruns"), evaluationRunId);
+            var updateEntity = new Entity(Prefixed("evaluationruns"), evaluationRunId);
             updateEntity["statuscode"] = new OptionSetValue(statusCode);
-            updateEntity[Field("endtime")] = endTime;
+            updateEntity[Prefixed("endtime")] = endTime;
             
             // Convert decimal to double for Float field in Dataverse
             if (overallScore.HasValue)
-                updateEntity[Field("overallscore")] = Convert.ToDouble(overallScore.Value);
+                updateEntity[Prefixed("overallscore")] = Convert.ToDouble(overallScore.Value);
                 
             if (overallPass.HasValue)
-                updateEntity[Field("overallpass")] = overallPass.Value;
+                updateEntity[Prefixed("overallpass")] = overallPass.Value;
 
             await Task.Run(() => _serviceClient.Update(updateEntity), ct);
             
@@ -810,8 +822,8 @@ public class DataverseService : IDataverseService, IDisposable
 
     public async Task IncrementCompletedTestCasesAsync(Guid evaluationRunId, bool failed, CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Incrementing completed test cases for evaluation run {EvaluationRunId}, failed={Failed}", 
-            evaluationRunId, failed);
+        _logger.LogInformation("Updating test case counts for evaluation run {EvaluationRunId} based on actual results", 
+            evaluationRunId);
         
         if (_serviceClient == null || !_serviceClient.IsReady)
         {
@@ -820,15 +832,24 @@ public class DataverseService : IDataverseService, IDisposable
 
         await _resilientService.ExecuteAsync(async ct =>
         {
-            // Retrieve current values
-            var query = new QueryExpression(Table("evaluationruns"))
+            // Get all evaluation results to calculate actual counts
+            var results = await GetEvaluationResultsAsync(evaluationRunId, ct);
+            
+            // Calculate counts from actual results using shared logic
+            var (completedCount, failedCount, notApplicableCount) = CalculateTestCaseCounts(results);
+            
+            _logger.LogInformation("Recalculated counts for {EvaluationRunId}: completed={Completed}, failed={Failed}, notApplicable={NotApplicable}", 
+                evaluationRunId, completedCount, failedCount, notApplicableCount);
+
+            // Retrieve total test cases for percentage calculation
+            var query = new QueryExpression(Prefixed("evaluationruns"))
             {
-                ColumnSet = new ColumnSet(Field("completedtestcases"), Field("failedtestcases"), Field("totaltestcases")),
+                ColumnSet = new ColumnSet(Prefixed("totaltestcases")),
                 Criteria = new FilterExpression
                 {
                     Conditions =
                     {
-                        new ConditionExpression(Field("evaluationrunsid"), ConditionOperator.Equal, evaluationRunId)
+                        new ConditionExpression(Prefixed("evaluationrunsid"), ConditionOperator.Equal, evaluationRunId)
                     }
                 }
             };
@@ -837,39 +858,36 @@ public class DataverseService : IDataverseService, IDisposable
             
             if (result.Entities.Count == 0)
             {
-                _logger.LogWarning("Evaluation run {EvaluationRunId} not found for progress increment", evaluationRunId);
+                _logger.LogWarning("Evaluation run {EvaluationRunId} not found for progress update", evaluationRunId);
                 return;
             }
 
-            var entity = result.Entities[0];
-            var completedTestCases = entity.GetAttributeValue<int>(Field("completedtestcases"));
-            var failedTestCases = entity.GetAttributeValue<int>(Field("failedtestcases"));
-            var totalTestCases = entity.GetAttributeValue<int>(Field("totaltestcases"));
+            var totalTestCases = result.Entities[0].GetAttributeValue<int>(Prefixed("totaltestcases"));
 
-            // Increment counters
-            var newCompletedCount = completedTestCases + 1;
-            var updateEntity = new Entity(Table("evaluationruns"), evaluationRunId);
-            updateEntity[Field("completedtestcases")] = newCompletedCount;
-            
-            if (failed)
-            {
-                updateEntity[Field("failedtestcases")] = failedTestCases + 1;
-            }
+            // Update with actual counts
+            var updateEntity = new Entity(Prefixed("evaluationruns"), evaluationRunId);
+            updateEntity[Prefixed("completedtestcases")] = completedCount;
+            updateEntity[Prefixed("failedtestcases")] = failedCount;
+            updateEntity[Prefixed("natestcases")] = notApplicableCount;
 
-            // Calculate and update progress percentage
+            // Calculate and update progress percentage (include all processed test cases)
             if (totalTestCases > 0)
             {
-                var progressPercentage = ((decimal)newCompletedCount / totalTestCases) * 100;
-                updateEntity[Field("progresspercentage")] = Math.Round(progressPercentage, 2);
+                var totalProcessed = completedCount + failedCount + notApplicableCount;
+                var progressPercentage = ((decimal)totalProcessed / totalTestCases) * 100;
+                updateEntity[Prefixed("progresspercentage")] = Math.Round(progressPercentage, 2);
+                
+                _logger.LogInformation("Progress for {EvaluationRunId}: {TotalProcessed}/{TotalTestCases} = {ProgressPercentage}%", 
+                    evaluationRunId, totalProcessed, totalTestCases, Math.Round(progressPercentage, 2));
             }
 
             // Update last progress timestamp
-            updateEntity[Field("lastprogressupdate")] = DateTime.UtcNow;
+            updateEntity[Prefixed("lastprogressupdate")] = DateTime.UtcNow;
 
             await Task.Run(() => _serviceClient.Update(updateEntity), ct);
             
-            _logger.LogInformation("Successfully incremented completed test cases for evaluation run {EvaluationRunId}: {CompletedCount}/{TotalCount}", 
-                evaluationRunId, newCompletedCount, totalTestCases);
+            _logger.LogInformation("Successfully updated test case counts for evaluation run {EvaluationRunId} from actual results", 
+                evaluationRunId);
         }, "IncrementCompletedTestCases",
         exception => exception is FaultException<OrganizationServiceFault>,
         cancellationToken);
@@ -886,14 +904,14 @@ public class DataverseService : IDataverseService, IDisposable
 
         return await _resilientService.ExecuteAsync(async ct =>
         {
-            var query = new QueryExpression(Table("evaluatortype"))
+            var query = new QueryExpression(Prefixed("evaluatortype"))
             {
                 ColumnSet = new ColumnSet(
-                    Field("evaluatortypeid"),
-                    Field("name"),
-                    Field("evaluatorprompt"),
-                    Field("requiresexpectedresponse"),
-                    Field("judgeagentid"),
+                    Prefixed("evaluatortypeid"),
+                    Prefixed("name"),
+                    Prefixed("evaluatorprompt"),
+                    Prefixed("requiresexpectedresponse"),
+                    Prefixed("judgeagentid"),
                     "statecode",
                     "statuscode",
                     "createdon",
@@ -903,7 +921,7 @@ public class DataverseService : IDataverseService, IDisposable
                 {
                     Conditions =
                     {
-                        new ConditionExpression(Field("evaluatortypeid"), ConditionOperator.Equal, evaluatorTypeId),
+                        new ConditionExpression(Prefixed("evaluatortypeid"), ConditionOperator.Equal, evaluatorTypeId),
                         new ConditionExpression("statecode", ConditionOperator.Equal, 0) // Active only
                     }
                 }
@@ -922,11 +940,11 @@ public class DataverseService : IDataverseService, IDisposable
             return new EvaluatorType
             {
                 Id = entity.Id,
-                Name = entity.GetAttributeValue<string>(Field("name")) ?? string.Empty,
-                EvaluatorPrompt = entity.GetAttributeValue<string>(Field("evaluatorprompt")) ?? string.Empty,
-                RequiresExpectedResponse = entity.GetAttributeValue<bool>(Field("requiresexpectedresponse")),
-                JudgeAgentId = entity.Contains(Field("judgeagentid")) 
-                    ? entity.GetAttributeValue<EntityReference>(Field("judgeagentid"))?.Id 
+                Name = entity.GetAttributeValue<string>(Prefixed("name")) ?? string.Empty,
+                EvaluatorPrompt = entity.GetAttributeValue<string>(Prefixed("evaluatorprompt")) ?? string.Empty,
+                RequiresExpectedResponse = entity.GetAttributeValue<bool>(Prefixed("requiresexpectedresponse")),
+                JudgeAgentId = entity.Contains(Prefixed("judgeagentid")) 
+                    ? entity.GetAttributeValue<EntityReference>(Prefixed("judgeagentid"))?.Id 
                     : null,
                 StateCode = GetIntValue(entity, "statecode"),
                 StatusCode = entity.GetAttributeValue<OptionSetValue>("statuscode")?.Value ?? 1,
@@ -950,14 +968,15 @@ public class DataverseService : IDataverseService, IDisposable
         return await _resilientService.ExecuteAsync(async ct =>
         {
             // Query the N:N join table to get evaluator types associated with this run
-            var query = new QueryExpression(Table("evaluatortype"))
+            // Note: N:N intersect table has schema prefix on table name but NOT on field names
+            var query = new QueryExpression(Prefixed("evaluatortype"))
             {
                 ColumnSet = new ColumnSet(
-                    Field("evaluatortypeid"),
-                    Field("name"),
-                    Field("evaluatorprompt"),
-                    Field("requiresexpectedresponse"),
-                    Field("judgeagentid"),
+                    Prefixed("evaluatortypeid"),
+                    Prefixed("name"),
+                    Prefixed("evaluatorprompt"),
+                    Prefixed("requiresexpectedresponse"),
+                    Prefixed("judgeagentid"),
                     "statecode",
                     "statuscode",
                     "createdon",
@@ -972,19 +991,24 @@ public class DataverseService : IDataverseService, IDisposable
                 },
                 LinkEntities =
                 {
+                    // First link: From evaluatortype to the N:N intersect table
                     new LinkEntity
                     {
-                        LinkFromEntityName = Field("evaluatortype"),
-                        LinkFromAttributeName = Field("evaluatortypeid"),
-                        // N:N relationship table name is auto-generated by Dataverse with schema prefix
-                        LinkToEntityName = Field("evaluationruns_mcicaps_evaluato"),
-                        LinkToAttributeName = Field("evaluatortypeid"),
+                        LinkFromEntityName = Prefixed("evaluatortype"),
+                        // Primary key column of evaluatortype table
+                        LinkFromAttributeName = Prefixed("evaluatortypeid"),
+                        // N:N intersect table name
+                        LinkToEntityName = Prefixed("evaluationruns_mcicaps_evaluato"),
+                        // Primary key column in intersect table (matches evaluatortype primary key)
+                        LinkToAttributeName = Prefixed("evaluatortypeid"),
                         JoinOperator = JoinOperator.Inner,
                         LinkCriteria = new FilterExpression
                         {
                             Conditions =
                             {
-                                new ConditionExpression(Field("evaluationrunid"), ConditionOperator.Equal, evaluationRunId)
+                                // Filter on evaluationruns primary key column in intersect table
+                                // Note: Uses "evaluationrunsid" (with 's') - the PRIMARY KEY column name
+                                new ConditionExpression(Prefixed("evaluationrunsid"), ConditionOperator.Equal, evaluationRunId)
                             }
                         }
                     }
@@ -999,11 +1023,11 @@ public class DataverseService : IDataverseService, IDisposable
             return result.Entities.Select(entity => new EvaluatorType
             {
                 Id = entity.Id,
-                Name = entity.GetAttributeValue<string>(Field("name")) ?? string.Empty,
-                EvaluatorPrompt = entity.GetAttributeValue<string>(Field("evaluatorprompt")) ?? string.Empty,
-                RequiresExpectedResponse = entity.GetAttributeValue<bool>(Field("requiresexpectedresponse")),
-                JudgeAgentId = entity.Contains(Field("judgeagentid")) 
-                    ? entity.GetAttributeValue<EntityReference>(Field("judgeagentid"))?.Id 
+                Name = entity.GetAttributeValue<string>(Prefixed("name")) ?? string.Empty,
+                EvaluatorPrompt = entity.GetAttributeValue<string>(Prefixed("evaluatorprompt")) ?? string.Empty,
+                RequiresExpectedResponse = entity.GetAttributeValue<bool>(Prefixed("requiresexpectedresponse")),
+                JudgeAgentId = entity.Contains(Prefixed("judgeagentid")) 
+                    ? entity.GetAttributeValue<EntityReference>(Prefixed("judgeagentid"))?.Id 
                     : null,
                 StateCode = GetIntValue(entity, "statecode"),
                 StatusCode = entity.GetAttributeValue<OptionSetValue>("statuscode")?.Value ?? 1,
@@ -1026,17 +1050,17 @@ public class DataverseService : IDataverseService, IDisposable
 
         return await _resilientService.ExecuteAsync(async ct =>
         {
-            var query = new QueryExpression(Table("judgeagent"))
+            var query = new QueryExpression(Prefixed("judgeagent"))
             {
                 ColumnSet = new ColumnSet(
-                    Field("judgeagentid"),
-                    Field("name"),
-                    Field("judgetype"),
-                    Field("aoaiendpoint"),
-                    Field("aoaideploymentname"),
-                    Field("directlineurl"),
-                    Field("modelname"),
-                    Field("description"),
+                    Prefixed("judgeagentid"),
+                    Prefixed("name"),
+                    Prefixed("judgetype"),
+                    Prefixed("aoaiendpoint"),
+                    Prefixed("aoaideploymentname"),
+                    Prefixed("directlineurl"),
+                    Prefixed("modelname"),
+                    Prefixed("description"),
                     "statecode",
                     "statuscode",
                     "createdon",
@@ -1046,7 +1070,7 @@ public class DataverseService : IDataverseService, IDisposable
                 {
                     Conditions =
                     {
-                        new ConditionExpression(Field("judgeagentid"), ConditionOperator.Equal, judgeAgentId),
+                        new ConditionExpression(Prefixed("judgeagentid"), ConditionOperator.Equal, judgeAgentId),
                         new ConditionExpression("statecode", ConditionOperator.Equal, 0) // Active only
                     }
                 }
@@ -1065,13 +1089,13 @@ public class DataverseService : IDataverseService, IDisposable
             return new JudgeAgent
             {
                 Id = entity.Id,
-                Name = entity.GetAttributeValue<string>(Field("name")) ?? string.Empty,
-                JudgeType = entity.GetAttributeValue<OptionSetValue>(Field("judgetype"))?.Value ?? JudgeType.AzureOpenAI,
-                AoaiEndpoint = entity.GetAttributeValue<string>(Field("aoaiendpoint")),
-                AoaiDeploymentName = entity.GetAttributeValue<string>(Field("aoaideploymentname")),
-                DirectLineUrl = entity.GetAttributeValue<string>(Field("directlineurl")),
-                ModelName = entity.GetAttributeValue<string>(Field("modelname")),
-                Description = entity.GetAttributeValue<string>(Field("description")),
+                Name = entity.GetAttributeValue<string>(Prefixed("name")) ?? string.Empty,
+                JudgeType = entity.GetAttributeValue<OptionSetValue>(Prefixed("judgetype"))?.Value ?? JudgeType.AzureOpenAI,
+                AoaiEndpoint = entity.GetAttributeValue<string>(Prefixed("aoaiendpoint")),
+                AoaiDeploymentName = entity.GetAttributeValue<string>(Prefixed("aoaideploymentname")),
+                DirectLineUrl = entity.GetAttributeValue<string>(Prefixed("directlineurl")),
+                ModelName = entity.GetAttributeValue<string>(Prefixed("modelname")),
+                Description = entity.GetAttributeValue<string>(Prefixed("description")),
                 StateCode = GetIntValue(entity, "statecode"),
                 StatusCode = entity.GetAttributeValue<OptionSetValue>("statuscode")?.Value ?? 1,
                 CreatedOn = entity.GetAttributeValue<DateTime>("createdon"),
@@ -1093,12 +1117,12 @@ public class DataverseService : IDataverseService, IDisposable
 
         return await _resilientService.ExecuteAsync(async ct =>
         {
-            var query = new QueryExpression(Table("agenttoeval"))
+            var query = new QueryExpression(Prefixed("agenttoeval"))
             {
                 ColumnSet = new ColumnSet(
-                    Field("agenttoevalid"),
-                    Field("name"),
-                    Field("directlinespeechurl"),
+                    Prefixed("agenttoevalid"),
+                    Prefixed("name"),
+                    Prefixed("directlinespeechurl"),
                     "statecode",
                     "statuscode",
                     "createdon",
@@ -1108,7 +1132,7 @@ public class DataverseService : IDataverseService, IDisposable
                 {
                     Conditions =
                     {
-                        new ConditionExpression(Field("agenttoevalid"), ConditionOperator.Equal, agentToEvalId),
+                        new ConditionExpression(Prefixed("agenttoevalid"), ConditionOperator.Equal, agentToEvalId),
                         new ConditionExpression("statecode", ConditionOperator.Equal, 0) // Active only
                     }
                 }
@@ -1127,8 +1151,8 @@ public class DataverseService : IDataverseService, IDisposable
             return new AgentToEval
             {
                 Id = entity.Id,
-                Name = entity.GetAttributeValue<string>(Field("name")) ?? string.Empty,
-                DirectLineSpeechUrl = entity.GetAttributeValue<string>(Field("directlinespeechurl")) ?? string.Empty,
+                Name = entity.GetAttributeValue<string>(Prefixed("name")) ?? string.Empty,
+                DirectLineSpeechUrl = entity.GetAttributeValue<string>(Prefixed("directlinespeechurl")) ?? string.Empty,
                 StateCode = GetIntValue(entity, "statecode"),
                 StatusCode = entity.GetAttributeValue<OptionSetValue>("statuscode")?.Value ?? 1,
                 CreatedOn = entity.GetAttributeValue<DateTime>("createdon"),
@@ -1173,15 +1197,15 @@ public class DataverseService : IDataverseService, IDisposable
 
         return await _resilientService.ExecuteAsync(async ct =>
         {
-            var query = new QueryExpression(Table("testcaseturn"))
+            var query = new QueryExpression(Prefixed("testcaseturn"))
             {
                 ColumnSet = new ColumnSet(
-                    Field("testcaseturnid"),
-                    Field("name"),
-                    Field("testcaseid"),
-                    Field("sequence"),
-                    Field("prompttext"),
-                    Field("expectedresponse"),
+                    Prefixed("testcaseturnid"),
+                    Prefixed("name"),
+                    Prefixed("testcaseid"),
+                    Prefixed("sequence"),
+                    Prefixed("prompttext"),
+                    Prefixed("expectedresponse"),
                     "createdon",
                     "modifiedon"
                 ),
@@ -1189,13 +1213,13 @@ public class DataverseService : IDataverseService, IDisposable
                 {
                     Conditions =
                     {
-                        new ConditionExpression(Field("testcaseid"), ConditionOperator.Equal, testCaseId),
+                        new ConditionExpression(Prefixed("testcaseid"), ConditionOperator.Equal, testCaseId),
                         new ConditionExpression("statecode", ConditionOperator.Equal, 0) // Active only
                     }
                 },
                 Orders =
                 {
-                    new OrderExpression(Field("sequence"), OrderType.Ascending)
+                    new OrderExpression(Prefixed("sequence"), OrderType.Ascending)
                 }
             };
 
@@ -1205,16 +1229,21 @@ public class DataverseService : IDataverseService, IDisposable
             
             foreach (var entity in result.Entities)
             {
-                var testCaseRef = entity.GetAttributeValue<EntityReference>(Field("testcaseid"));
+                var testCaseRef = entity.GetAttributeValue<EntityReference>(Prefixed("testcaseid"));
+                var promptText = entity.GetAttributeValue<string>(Prefixed("prompttext")) ?? string.Empty;
+                var sequence = entity.GetAttributeValue<int>(Prefixed("sequence"));
+                
+                _logger.LogInformation("Retrieved turn from Dataverse: sequence={Sequence}, promptText='{PromptText}'", 
+                    sequence, promptText);
                 
                 turns.Add(new TestCaseTurn
                 {
                     Id = entity.Id,
-                    Name = entity.GetAttributeValue<string>(Field("name")) ?? string.Empty,
+                    Name = entity.GetAttributeValue<string>(Prefixed("name")) ?? string.Empty,
                     TestCaseId = testCaseRef?.Id ?? testCaseId,
-                    Sequence = entity.GetAttributeValue<int>(Field("sequence")),
-                    PromptText = entity.GetAttributeValue<string>(Field("prompttext")) ?? string.Empty,
-                    ExpectedResponse = entity.GetAttributeValue<string>(Field("expectedresponse")),
+                    Sequence = sequence,
+                    PromptText = promptText,
+                    ExpectedResponse = entity.GetAttributeValue<string>(Prefixed("expectedresponse")),
                     CreatedOn = entity.GetAttributeValue<DateTime>("createdon"),
                     ModifiedOn = entity.GetAttributeValue<DateTime>("modifiedon")
                 });
@@ -1240,13 +1269,13 @@ public class DataverseService : IDataverseService, IDisposable
 
         return await _resilientService.ExecuteAsync(async ct =>
         {
-            var resultEntity = new Entity(Table("evaluationresults"));
-            resultEntity[Field("testcase")] = new EntityReference(Table("testcases"), context.TestCase.Id);
-            resultEntity[Field("evaluation")] = new EntityReference(Table("evaluationruns"), context.TestRunId);
-            resultEntity[Field("isaggregate")] = true;
+            var resultEntity = new Entity(Prefixed("evaluationresults"));
+            resultEntity[Prefixed("testcase")] = new EntityReference(Prefixed("testcases"), context.TestCase.Id);
+            resultEntity[Prefixed("evaluation")] = new EntityReference(Prefixed("evaluationruns"), context.TestRunId);
+            resultEntity[Prefixed("isaggregate")] = true;
             
             if (!string.IsNullOrEmpty(context.ConversationId))
-                resultEntity[Field("conversationid")] = context.ConversationId;
+                resultEntity[Prefixed("conversationid")] = context.ConversationId;
 
             // Calculate aggregate metrics
             var passRate = context.PassRate;
@@ -1264,12 +1293,12 @@ public class DataverseService : IDataverseService, IDisposable
             // Check if average score meets the passing threshold
             var passedOverall = averageScore >= Convert.ToDouble(context.PassingThreshold);
             
-            resultEntity[Field("score")] = averageScore;
-            resultEntity[Field("passed")] = passedOverall;
+            resultEntity[Prefixed("score")] = averageScore;
+            resultEntity[Prefixed("passed")] = passedOverall;
 
             // Create summary reasoning
             var summary = $"Multi-turn test case completed: {context.PassedTurns}/{context.TotalTurns} turns passed ({passRate:P0} pass rate), average score: {averageScore:F2}, threshold: {context.PassingThreshold:F2}, overall: {(passedOverall ? "PASSED" : "FAILED")}";
-            resultEntity[Field("reasoning")] = summary;
+            resultEntity[Prefixed("reasoning")] = summary;
 
             // Calculate average execution time
             var avgExecutionTime = context.TurnResults.Values
@@ -1277,7 +1306,7 @@ public class DataverseService : IDataverseService, IDisposable
                 .Select(r => r.ExecutionTimeMs!.Value)
                 .DefaultIfEmpty(0)
                 .Average();
-            resultEntity[Field("executiontime")] = (int)avgExecutionTime;
+            resultEntity[Prefixed("executiontime")] = (int)avgExecutionTime;
 
             var resultId = await Task.Run(() => _serviceClient.Create(resultEntity), ct);
             
@@ -1305,16 +1334,16 @@ public class DataverseService : IDataverseService, IDisposable
 
         return await _resilientService.ExecuteAsync(async ct =>
         {
-            var query = new QueryExpression(Table("evaluationresults"))
+            var query = new QueryExpression(Prefixed("evaluationresults"))
             {
                 ColumnSet = new ColumnSet(
-                    Field("evaluationresultsid"),
-                    Field("evaluationresultname"),
-                    Field("evaluation"),
-                    Field("testcase"),
-                    Field("isaggregate"),
-                    Field("score"),
-                    Field("passed"),
+                    Prefixed("evaluationresultsid"),
+                    Prefixed("evaluationresultname"),
+                    Prefixed("evaluation"),
+                    Prefixed("testcase"),
+                    Prefixed("isaggregate"),
+                    Prefixed("score"),
+                    Prefixed("passed"),
                     "statuscode",
                     "statecode",
                     "createdon"
@@ -1323,9 +1352,9 @@ public class DataverseService : IDataverseService, IDisposable
                 {
                     Conditions =
                     {
-                        new ConditionExpression(Field("evaluation"), ConditionOperator.Equal, evaluationRunId),
-                        new ConditionExpression(Field("testcase"), ConditionOperator.Equal, testCaseId),
-                        new ConditionExpression(Field("isaggregate"), ConditionOperator.Equal, true)
+                        new ConditionExpression(Prefixed("evaluation"), ConditionOperator.Equal, evaluationRunId),
+                        new ConditionExpression(Prefixed("testcase"), ConditionOperator.Equal, testCaseId),
+                        new ConditionExpression(Prefixed("isaggregate"), ConditionOperator.Equal, true)
                     }
                 },
                 TopCount = 1
@@ -1345,12 +1374,12 @@ public class DataverseService : IDataverseService, IDisposable
             var evaluationResult = new EvaluationResult
             {
                 Id = entity.Id,
-                Name = entity.GetAttributeValue<string>(Field("evaluationresultname")) ?? string.Empty,
-                EvaluationRunId = entity.GetAttributeValue<EntityReference>(Field("evaluation"))?.Id ?? Guid.Empty,
-                TestCaseId = entity.GetAttributeValue<EntityReference>(Field("testcase"))?.Id ?? Guid.Empty,
-                IsAggregate = entity.GetAttributeValue<bool>(Field("isaggregate")),
-                Score = GetDecimalValue(entity, Field("score")),
-                Passed = entity.GetAttributeValue<bool?>(Field("passed")),
+                Name = entity.GetAttributeValue<string>(Prefixed("evaluationresultname")) ?? string.Empty,
+                EvaluationRunId = entity.GetAttributeValue<EntityReference>(Prefixed("evaluation"))?.Id ?? Guid.Empty,
+                TestCaseId = entity.GetAttributeValue<EntityReference>(Prefixed("testcase"))?.Id ?? Guid.Empty,
+                IsAggregate = entity.GetAttributeValue<bool>(Prefixed("isaggregate")),
+                Score = GetDecimalValue(entity, Prefixed("score")),
+                Passed = entity.GetAttributeValue<bool?>(Prefixed("passed")),
                 StateCode = GetIntValue(entity, "statecode"),
                 StatusCode = entity.GetAttributeValue<OptionSetValue>("statuscode")?.Value ?? 1,
                 CreatedOn = entity.GetAttributeValue<DateTime>("createdon")
@@ -1384,13 +1413,13 @@ public class DataverseService : IDataverseService, IDisposable
 
         await _resilientService.ExecuteAsync(async ct =>
         {
-            var updateEntity = new Entity(Table("evaluationresults"), resultId);
+            var updateEntity = new Entity(Prefixed("evaluationresults"), resultId);
             
             // Convert decimal to double for Float field in Dataverse
-            updateEntity[Field("score")] = Convert.ToDouble(score);
-            updateEntity[Field("passed")] = passed;
-            updateEntity[Field("reasoning")] = reasoning;
-            updateEntity[Field("executiontime")] = executionTimeMs;
+            updateEntity[Prefixed("score")] = Convert.ToDouble(score);
+            updateEntity[Prefixed("passed")] = passed;
+            updateEntity[Prefixed("reasoning")] = reasoning;
+            updateEntity[Prefixed("executiontime")] = executionTimeMs;
             updateEntity["statuscode"] = new OptionSetValue(statusCode);
 
             await Task.Run(() => _serviceClient.Update(updateEntity), ct);

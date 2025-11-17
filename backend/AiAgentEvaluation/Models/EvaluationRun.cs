@@ -48,6 +48,9 @@ public class EvaluationRun
     [JsonPropertyName("mcicaps_failedtestcases")]
     public int FailedTestCases { get; set; }
 
+    [JsonPropertyName("mcicaps_natestcases")]
+    public int NotApplicableTestCases { get; set; }
+
     [JsonPropertyName("mcicaps_progresspercentage")]
     public decimal? ProgressPercentage { get; set; }
 

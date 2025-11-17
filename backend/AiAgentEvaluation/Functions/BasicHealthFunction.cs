@@ -12,6 +12,10 @@ namespace AiAgentEvaluation.Functions;
 public class BasicHealthFunction
 {
     private readonly ILogger<BasicHealthFunction> _logger;
+    
+    // Build timestamp to track deployments - updated with each build
+    private static readonly string BuildTimestamp = "2025-11-17T00:23:00Z";
+    private static readonly string DeploymentVersion = "1.0.21"; // Deployment #21 - Fixed entity name to evaluatortype (singular)
 
     public BasicHealthFunction(ILogger<BasicHealthFunction> logger)
     {
@@ -33,7 +37,8 @@ public class BasicHealthFunction
         {
             status = "Healthy",
             timestamp = DateTime.UtcNow,
-            version = "1.0.0",
+            version = DeploymentVersion,
+            buildTimestamp = BuildTimestamp,
             message = "Function app is running"
         });
 

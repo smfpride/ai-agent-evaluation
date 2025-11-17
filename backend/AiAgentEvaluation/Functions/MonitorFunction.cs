@@ -155,17 +155,18 @@ public class MonitorFunction
         // Only count results with StatusCode = 778760002 (Completed) as completed
         var completedCount = testCaseResults.Count(r => r.StatusCode == 778760002);
         var failedCount = testCaseResults.Count(r => r.StatusCode == 778760003);
+        var notApplicableCount = testCaseResults.Count(r => r.StatusCode == 778760004);
         var pendingCount = testCaseResults.Count(r => 
             r.StatusCode == 1 || r.StatusCode == 778760001);
 
-        _logger.LogInformation("Evaluation run {EvaluationRunId} progress: {CompletedCount} completed, {FailedCount} failed, {PendingCount} pending (excluding individual turn results)",
-            evaluationRun.Id, completedCount, failedCount, pendingCount);
+        _logger.LogInformation("Evaluation run {EvaluationRunId} progress: {CompletedCount} completed, {FailedCount} failed, {NotApplicableCount} not applicable, {PendingCount} pending (excluding individual turn results)",
+            evaluationRun.Id, completedCount, failedCount, notApplicableCount, pendingCount);
 
         // Update the counts in the evaluation run
-        await _dataverseService.UpdateEvaluationRunProgressAsync(evaluationRun.Id, completedCount, failedCount, cancellationToken);
+        await _dataverseService.UpdateEvaluationRunProgressAsync(evaluationRun.Id, completedCount, failedCount, notApplicableCount, cancellationToken);
 
-        // Check if all test cases are completed (include both completed and failed)
-        var totalCompleted = completedCount + failedCount;
+        // Check if all test cases are completed (include completed, failed, and not applicable)
+        var totalCompleted = completedCount + failedCount + notApplicableCount;
         if (totalCompleted < evaluationRun.TotalTestCases)
         {
             _logger.LogInformation("Evaluation run {EvaluationRunId} still in progress: {CompletedTestCases}/{TotalTestCases}",
@@ -176,9 +177,9 @@ public class MonitorFunction
         _logger.LogInformation("Evaluation run {EvaluationRunId} completed all test cases, calculating final metrics",
             evaluationRun.Id);
         
-        // Filter to only completed and failed results for metrics calculation
+        // Filter to only completed, failed, and not applicable results for metrics calculation
         var finalResults = testCaseResults.Where(r => 
-            r.StatusCode == 778760002 || r.StatusCode == 778760003).ToList();
+            r.StatusCode == 778760002 || r.StatusCode == 778760003 || r.StatusCode == 778760004).ToList();
         
         if (finalResults.Count == 0)
         {
@@ -226,8 +227,12 @@ public class MonitorFunction
     /// </summary>
     private EvaluationMetrics CalculateMetrics(List<EvaluationResult> results, EvaluationRun evaluationRun)
     {
-        // Filter out results with errors or null scores
-        var validResults = results.Where(r => r.Score.HasValue && string.IsNullOrEmpty(r.ErrorMessage)).ToList();
+        // Filter out results with errors, null scores, or NotApplicable status
+        // Only include Completed and Errored results in the overall score calculation
+        var validResults = results.Where(r => 
+            r.Score.HasValue && 
+            string.IsNullOrEmpty(r.ErrorMessage) &&
+            r.StatusCode != EvaluationResultStatus.NotApplicable).ToList();
         
         if (validResults.Count == 0)
         {
