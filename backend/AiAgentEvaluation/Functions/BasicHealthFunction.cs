@@ -14,8 +14,8 @@ public class BasicHealthFunction
     private readonly ILogger<BasicHealthFunction> _logger;
     
     // Build timestamp to track deployments - updated with each build
-    private static readonly string BuildTimestamp = "2025-11-17T00:23:00Z";
-    private static readonly string DeploymentVersion = "1.0.21"; // Deployment #21 - Fixed entity name to evaluatortype (singular)
+    private static readonly string BuildTimestamp = "2025-11-17T00:32:00Z";
+    private static readonly string DeploymentVersion = "1.0.22"; // Deployment #22 - Exclude NotApplicable from overall score calculation
 
     public BasicHealthFunction(ILogger<BasicHealthFunction> logger)
     {
