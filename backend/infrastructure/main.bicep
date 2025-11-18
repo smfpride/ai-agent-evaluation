@@ -115,6 +115,38 @@ resource testCaseProcessingQueue 'Microsoft.ServiceBus/namespaces/queues@2022-10
   }
 }
 
+// Phase 1: Agent Call Queue - for Copilot Studio agent calls
+resource agentCallQueue 'Microsoft.ServiceBus/namespaces/queues@2022-10-01-preview' = {
+  parent: serviceBusNamespace
+  name: 'agent-call-queue'
+  properties: {
+    maxSizeInMegabytes: 5120
+    defaultMessageTimeToLive: 'P14D'
+    deadLetteringOnMessageExpiration: true
+    duplicateDetectionHistoryTimeWindow: 'PT10M'
+    maxDeliveryCount: 10
+    lockDuration: 'PT5M'
+    enablePartitioning: false
+    requiresSession: false
+  }
+}
+
+// Phase 1: Evaluator Processing Queue - for LLM Judge evaluations
+resource evaluatorProcessingQueue 'Microsoft.ServiceBus/namespaces/queues@2022-10-01-preview' = {
+  parent: serviceBusNamespace
+  name: 'evaluator-processing-queue'
+  properties: {
+    maxSizeInMegabytes: 5120
+    defaultMessageTimeToLive: 'P14D'
+    deadLetteringOnMessageExpiration: true
+    duplicateDetectionHistoryTimeWindow: 'PT10M'
+    maxDeliveryCount: 10
+    lockDuration: 'PT5M'
+    enablePartitioning: false
+    requiresSession: false
+  }
+}
+
 // Deploy Key Vault
 resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   name: keyVaultNameValid

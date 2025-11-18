@@ -50,4 +50,16 @@ public interface IDataverseService
         string reasoning,
         int executionTimeMs,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets a single evaluation result by ID with related data (Phase 1 - New Architecture)
+    /// Used by EvaluatorWorkerFunction to retrieve pending result for evaluation
+    /// </summary>
+    Task<EvaluationResult?> GetEvaluationResultAsync(Guid resultId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Updates an existing evaluation result (Phase 1 - New Architecture)
+    /// Used by EvaluatorWorkerFunction to update pending results to Completed or Errored
+    /// </summary>
+    Task UpdateEvaluationResultAsync(Guid resultId, UpdateEvaluationResultRequest request, CancellationToken cancellationToken = default);
 }

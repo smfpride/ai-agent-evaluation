@@ -1444,6 +1444,129 @@ public class DataverseService : IDataverseService, IDisposable
         cancellationToken);
     }
 
+    /// <summary>
+    /// Gets a single evaluation result by ID (Phase 1 - New Architecture)
+    /// </summary>
+    public async Task<EvaluationResult?> GetEvaluationResultAsync(Guid resultId, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var query = new QueryExpression("mcicaps_evaluationresults")
+            {
+                ColumnSet = new ColumnSet(
+                    "mcicaps_evaluationresultsid",
+                    "mcicaps_evaluationresultname",
+                    "_mcicaps_evaluation_value",
+                    "_mcicaps_testcase_value",
+                    "_mcicaps_evaluatortype_value",
+                    "_mcicaps_testcaseturnid_value",
+                    "mcicaps_isaggregate",
+                    "mcicaps_actualresponse",
+                    "mcicaps_score",
+                    "mcicaps_passed",
+                    "mcicaps_reasoning",
+                    "mcicaps_conversationid",
+                    "mcicaps_executiontime",
+                    "mcicaps_mcsexecutiontime",
+                    "mcicaps_errormessage",
+                    "mcicaps_metadata",
+                    "statecode",
+                    "statuscode",
+                    "createdon",
+                    "modifiedon"
+                ),
+                Criteria = new FilterExpression
+                {
+                    Conditions =
+                    {
+                        new ConditionExpression("mcicaps_evaluationresultsid", ConditionOperator.Equal, resultId)
+                    }
+                }
+            };
+
+            var results = await _serviceClient.RetrieveMultipleAsync(query, cancellationToken);
+            
+            if (results.Entities.Count == 0)
+            {
+                _logger.LogWarning("Evaluation result {ResultId} not found", resultId);
+                return null;
+            }
+
+            var entity = results.Entities[0];
+            return new EvaluationResult
+            {
+                Id = entity.Id,
+                Name = entity.GetAttributeValue<string>(Prefixed("evaluationresultname")) ?? string.Empty,
+                EvaluationRunId = entity.GetAttributeValue<EntityReference>(Prefixed("evaluation"))?.Id ?? Guid.Empty,
+                TestCaseId = entity.GetAttributeValue<EntityReference>(Prefixed("testcase"))?.Id ?? Guid.Empty,
+                EvaluatorTypeId = entity.GetAttributeValue<EntityReference>(Prefixed("evaluatortype"))?.Id,
+                TestCaseTurnId = entity.GetAttributeValue<EntityReference>(Prefixed("testcaseturnid"))?.Id,
+                IsAggregate = entity.GetAttributeValue<bool>(Prefixed("isaggregate")),
+                ActualResponse = entity.GetAttributeValue<string>(Prefixed("actualresponse")),
+                Score = GetDecimalValue(entity, Prefixed("score")),
+                Passed = entity.GetAttributeValue<bool?>(Prefixed("passed")),
+                Reasoning = entity.GetAttributeValue<string>(Prefixed("reasoning")),
+                ConversationId = entity.GetAttributeValue<string>(Prefixed("conversationid")),
+                ExecutionTimeMs = entity.GetAttributeValue<int?>(Prefixed("executiontime")),
+                McsExecutionTimeMs = entity.GetAttributeValue<int?>(Prefixed("mcsexecutiontime")),
+                ErrorMessage = entity.GetAttributeValue<string>(Prefixed("errormessage")),
+                Metadata = entity.GetAttributeValue<string>(Prefixed("metadata")),
+                StateCode = GetIntValue(entity, "statecode"),
+                StatusCode = entity.GetAttributeValue<OptionSetValue>("statuscode")?.Value ?? 1,
+                CreatedOn = entity.GetAttributeValue<DateTime>("createdon"),
+                ModifiedOn = entity.GetAttributeValue<DateTime>("modifiedon")
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving evaluation result {ResultId}", resultId);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Updates an existing evaluation result (Phase 1 - New Architecture)
+    /// </summary>
+    public async Task UpdateEvaluationResultAsync(Guid resultId, UpdateEvaluationResultRequest request, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var entity = new Entity("mcicaps_evaluationresults")
+            {
+                Id = resultId
+            };
+
+            entity["statuscode"] = request.StatusCode;
+
+            if (request.Score.HasValue)
+                entity["mcicaps_score"] = request.Score.Value;
+
+            if (request.Passed.HasValue)
+                entity["mcicaps_passed"] = request.Passed.Value;
+
+            if (!string.IsNullOrWhiteSpace(request.Reasoning))
+                entity["mcicaps_reasoning"] = request.Reasoning;
+
+            if (request.ExecutionTimeMs.HasValue)
+                entity["mcicaps_executiontime"] = request.ExecutionTimeMs.Value;
+
+            if (!string.IsNullOrWhiteSpace(request.ErrorMessage))
+                entity["mcicaps_errormessage"] = request.ErrorMessage;
+
+            await _serviceClient.UpdateAsync(entity, cancellationToken);
+            
+            _logger.LogInformation(
+                "Updated evaluation result {ResultId} to status {StatusCode}",
+                resultId,
+                EvaluationResultStatus.GetName(request.StatusCode));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error updating evaluation result {ResultId}", resultId);
+            throw;
+        }
+    }
+
     public void Dispose()
     {
         Dispose(true);
