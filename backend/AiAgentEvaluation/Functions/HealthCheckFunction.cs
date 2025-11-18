@@ -18,8 +18,8 @@ public class HealthCheckFunction
     private readonly ILLMJudgeServiceFactory _llmJudgeServiceFactory;
     
     // Build timestamp to track deployments - updated with each build
-    private static readonly string BuildTimestamp = "2025-11-16T22:32:00Z";
-    private static readonly string DeploymentVersion = "1.0.17"; // Deployment #17
+    private static readonly string BuildTimestamp = "2025-11-18T19:45:00Z";
+    private static readonly string DeploymentVersion = "1.0.18"; // Deployment #18 - Added MCS execution time tracking
 
     public HealthCheckFunction(
         ILogger<HealthCheckFunction> logger,
