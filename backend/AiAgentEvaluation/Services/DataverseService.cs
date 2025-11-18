@@ -518,6 +518,7 @@ public class DataverseService : IDataverseService, IDisposable
             resultEntity[Prefixed("passed")] = request.Passed;
             resultEntity[Prefixed("reasoning")] = request.Reasoning ?? string.Empty;
             resultEntity[Prefixed("executiontime")] = request.ExecutionTimeMs;
+            resultEntity[Prefixed("mcsexecutiontime")] = request.McsExecutionTimeMs;
             
             if (!string.IsNullOrEmpty(request.ConversationId))
                 resultEntity[Prefixed("conversationid")] = request.ConversationId;

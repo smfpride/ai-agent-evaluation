@@ -130,6 +130,7 @@ public class WorkerFunction
                                 Score = null,
                                 ErrorMessage = judgeResponse.ErrorMessage ?? "LLM Judge evaluation failed",
                                 ExecutionTimeMs = (int)evaluatorStopwatch.ElapsedMilliseconds,
+                                McsExecutionTimeMs = copilotResponse.ExecutionTimeMs,
                                 Metadata = copilotResponse.RawActivityJson,
                                 StatusCode = EvaluationResultStatus.Errored
                             }, 
@@ -163,6 +164,7 @@ public class WorkerFunction
                         Reasoning = judgeResponse.Reasoning,
                         ConversationId = copilotResponse.ConversationId,
                         ExecutionTimeMs = (int)evaluatorStopwatch.ElapsedMilliseconds,
+                        McsExecutionTimeMs = copilotResponse.ExecutionTimeMs,
                         Metadata = copilotResponse.RawActivityJson,  // Store raw Direct Line activity for debugging
                         StatusCode = EvaluationResultStatus.Completed
                     };
@@ -195,6 +197,7 @@ public class WorkerFunction
                             EvaluatorTypeId = evaluatorTypeId,
                             Score = null,
                             ErrorMessage = $"Unexpected error: {ex.Message}",
+                            McsExecutionTimeMs = copilotResponse.ExecutionTimeMs,
                             Metadata = copilotResponse.RawActivityJson,
                             StatusCode = EvaluationResultStatus.Errored
                         }, 

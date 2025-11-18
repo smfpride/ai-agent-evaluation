@@ -124,7 +124,8 @@ public class MultiTurnExecutionService : IMultiTurnExecutionService
                         ConversationId = context.ConversationId,
                         Passed = false,
                         ErrorMessage = copilotResponse.ErrorMessage ?? "Copilot Studio call failed",
-                        ExecutionTimeMs = copilotResponse.ExecutionTimeMs
+                        ExecutionTimeMs = copilotResponse.ExecutionTimeMs,
+                        McsExecutionTimeMs = copilotResponse.ExecutionTimeMs
                     };
 
                     failureResult.Id = await _dataverseService.CreateEvaluationResultAsync(
@@ -182,7 +183,8 @@ public class MultiTurnExecutionService : IMultiTurnExecutionService
                         ActualResponse = copilotResponse.Response,
                         Passed = false,
                         ErrorMessage = judgeResponse.ErrorMessage ?? "LLM Judge evaluation failed",
-                        ExecutionTimeMs = copilotResponse.ExecutionTimeMs
+                        ExecutionTimeMs = copilotResponse.ExecutionTimeMs,
+                        McsExecutionTimeMs = copilotResponse.ExecutionTimeMs
                     };
 
                     failureResult.Id = await _dataverseService.CreateEvaluationResultAsync(
@@ -230,6 +232,7 @@ public class MultiTurnExecutionService : IMultiTurnExecutionService
                     Score = judgeResponse.Score,
                     Reasoning = judgeResponse.Reasoning,
                     ExecutionTimeMs = copilotResponse.ExecutionTimeMs,
+                    McsExecutionTimeMs = copilotResponse.ExecutionTimeMs,
                     Metadata = copilotResponse.RawActivityJson
                 };
 

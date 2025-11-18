@@ -113,6 +113,8 @@ public class CreateEvaluationResultRequest
 
     public int? ExecutionTimeMs { get; set; }
 
+    public int? McsExecutionTimeMs { get; set; }
+
     public string? ErrorMessage { get; set; }
 
     public string? Metadata { get; set; }

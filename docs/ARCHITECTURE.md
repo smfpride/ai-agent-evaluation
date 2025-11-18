@@ -547,7 +547,8 @@ Fields:
   - mcicaps_conversationid (Text): Direct Line conversation ID
   - mcicaps_isaggregate (Boolean): Aggregate result flag
   - mcicaps_evaluatortypeid (Lookup): Evaluator type used for this result (required for all results including aggregates)
-  - mcicaps_executiontime (Integer): Execution time in milliseconds
+  - mcicaps_executiontime (Integer): Total evaluation execution time in milliseconds (includes Copilot Studio + LLM Judge time)
+  - mcicaps_mcsexecutiontime (Integer): Copilot Studio execution time in milliseconds (Direct Line API response time)
   - mcicaps_errormessage (Text): Error details if failed
   - statuscode (Choice/OptionSet): Result lifecycle status
     - 1: Pending (placeholder created, not started)
@@ -556,6 +557,13 @@ Fields:
   - 778760003: Errored (finished with error)
   - 778760004: Not Applicable (evaluator requires expected response but none provided; evaluation skipped, score set to 0.0)
 ```
+
+**Performance Metrics**:
+- `mcicaps_executiontime`: Measures total evaluation time including both Copilot Studio API call and LLM Judge evaluation
+- `mcicaps_mcsexecutiontime`: Measures only the Copilot Studio (Direct Line API) response time, useful for:
+  - Identifying performance bottlenecks (is it MCS or the judge?)
+  - Tracking agent response time trends over time
+  - Separate SLA monitoring for Copilot Studio vs evaluation infrastructure
 
 **Orchestration Idempotency Pattern** (Story 08):
 - **Multi-Turn:** Before starting Durable Functions orchestration, create placeholder aggregate result with `statuscode = 1` (Pending)

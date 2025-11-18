@@ -47,6 +47,8 @@ See `Program.cs` lines 74+ for credential setup and service registration with tr
 - `testcaseturn`: Individual turns for multi-turn tests (sequence, prompttext, expectedresponse)
 - `evaluatortypes`: Evaluation prompt templates (Similarity, Accuracy, Relevancy, or custom) with placeholder support
 - `evaluationresults`: Individual test results with `mcicaps_isaggregate` flag for multi-turn summaries
+  - `mcicaps_executiontime`: Total evaluation time (Copilot Studio + LLM Judge + overhead)
+  - `mcicaps_mcsexecutiontime`: Copilot Studio execution time only (from `CopilotDirectLineResponse.ExecutionTimeMs`)
 
 **Key relationships**:
 - EvaluationRun → N TestCases via TestSet
