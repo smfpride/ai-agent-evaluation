@@ -59,6 +59,9 @@ public class EvaluationResult
     [JsonPropertyName("mcicaps_executiontime")]
     public int? ExecutionTimeMs { get; set; }
 
+    [JsonPropertyName("mcicaps_mcsexecutiontime")]
+    public int? McsExecutionTimeMs { get; set; }
+
     [JsonPropertyName("mcicaps_errormessage")]
     public string? ErrorMessage { get; set; }
 

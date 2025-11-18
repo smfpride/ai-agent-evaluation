@@ -81,8 +81,8 @@ public class WorkerFunction
                 return;
             }
 
-            _logger.LogInformation("Received response from Copilot Studio for test case {TestCaseId} in {ExecutionTime}ms", 
-                message.TestCaseId, copilotResponse.ExecutionTimeMs);
+            _logger.LogInformation("Received response from Copilot Studio for test case {TestCaseId} in {ExecutionTime}ms (MCS ExecutionTime: {McsExecutionTime}ms)", 
+                message.TestCaseId, copilotResponse.ExecutionTimeMs, copilotResponse.ExecutionTimeMs);
             
             // Log the actual response for debugging
             _logger.LogInformation("Copilot Response Details - TestCaseId: {TestCaseId}, UserInput: '{UserInput}', ActualResponse: '{ActualResponse}', ConversationId: {ConversationId}", 

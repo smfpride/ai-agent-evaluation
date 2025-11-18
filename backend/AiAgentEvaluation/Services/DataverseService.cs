@@ -518,7 +518,18 @@ public class DataverseService : IDataverseService, IDisposable
             resultEntity[Prefixed("passed")] = request.Passed;
             resultEntity[Prefixed("reasoning")] = request.Reasoning ?? string.Empty;
             resultEntity[Prefixed("executiontime")] = request.ExecutionTimeMs;
-            resultEntity[Prefixed("mcsexecutiontime")] = request.McsExecutionTimeMs;
+            
+            // Set MCS execution time if value is provided
+            if (request.McsExecutionTimeMs.HasValue)
+            {
+                resultEntity[Prefixed("mcsexecutiontime")] = request.McsExecutionTimeMs.Value;
+                _logger.LogInformation("DataverseService - Setting McsExecutionTime: {McsExecutionTimeMs}ms for TestCase {TestCaseId}", 
+                    request.McsExecutionTimeMs.Value, request.TestCaseId);
+            }
+            else
+            {
+                _logger.LogWarning("DataverseService - McsExecutionTimeMs is null for TestCase {TestCaseId}", request.TestCaseId);
+            }
             
             if (!string.IsNullOrEmpty(request.ConversationId))
                 resultEntity[Prefixed("conversationid")] = request.ConversationId;
@@ -739,6 +750,7 @@ public class DataverseService : IDataverseService, IDisposable
                     Prefixed("reasoning"),
                     Prefixed("conversationid"),
                     Prefixed("executiontime"),
+                    Prefixed("mcsexecutiontime"),
                     Prefixed("errormessage"),
                     Prefixed("metadata"),
                     "statecode",
@@ -773,6 +785,7 @@ public class DataverseService : IDataverseService, IDisposable
                     Reasoning = entity.GetAttributeValue<string>(Prefixed("reasoning")),
                     ConversationId = entity.GetAttributeValue<string>(Prefixed("conversationid")),
                     ExecutionTimeMs = entity.GetAttributeValue<int?>(Prefixed("executiontime")),
+                    McsExecutionTimeMs = entity.GetAttributeValue<int?>(Prefixed("mcsexecutiontime")),
                     ErrorMessage = entity.GetAttributeValue<string>(Prefixed("errormessage")),
                     Metadata = entity.GetAttributeValue<string>(Prefixed("metadata")),
                     StateCode = GetIntValue(entity, "statecode"),
