@@ -47,6 +47,7 @@ public class MultiTurnExecutionService : IMultiTurnExecutionService
         // Execute each turn in sequence
         foreach (var turn in context.Turns)
         {
+            var turnStopwatch = System.Diagnostics.Stopwatch.StartNew();
             try
             {
                 _logger.LogInformation(
@@ -124,7 +125,7 @@ public class MultiTurnExecutionService : IMultiTurnExecutionService
                         ConversationId = context.ConversationId,
                         Passed = false,
                         ErrorMessage = copilotResponse.ErrorMessage ?? "Copilot Studio call failed",
-                        ExecutionTimeMs = copilotResponse.ExecutionTimeMs,
+                        ExecutionTimeMs = (int)turnStopwatch.ElapsedMilliseconds,
                         McsExecutionTimeMs = copilotResponse.ExecutionTimeMs
                     };
 
@@ -183,7 +184,7 @@ public class MultiTurnExecutionService : IMultiTurnExecutionService
                         ActualResponse = copilotResponse.Response,
                         Passed = false,
                         ErrorMessage = judgeResponse.ErrorMessage ?? "LLM Judge evaluation failed",
-                        ExecutionTimeMs = copilotResponse.ExecutionTimeMs,
+                        ExecutionTimeMs = (int)turnStopwatch.ElapsedMilliseconds,
                         McsExecutionTimeMs = copilotResponse.ExecutionTimeMs
                     };
 
@@ -231,7 +232,7 @@ public class MultiTurnExecutionService : IMultiTurnExecutionService
                     Passed = passed,
                     Score = judgeResponse.Score,
                     Reasoning = judgeResponse.Reasoning,
-                    ExecutionTimeMs = copilotResponse.ExecutionTimeMs,
+                    ExecutionTimeMs = (int)turnStopwatch.ElapsedMilliseconds,
                     McsExecutionTimeMs = copilotResponse.ExecutionTimeMs,
                     Metadata = copilotResponse.RawActivityJson
                 };

@@ -215,7 +215,7 @@ public class MultiTurnDurableActivities
                             ActualResponse = copilotResponse.Response,
                             Score = null,
                             ErrorMessage = judgeResponse.ErrorMessage,
-                            ExecutionTimeMs = (int)evaluatorStopwatch.ElapsedMilliseconds,
+                            ExecutionTimeMs = (int)stopwatch.ElapsedMilliseconds,
                             McsExecutionTimeMs = copilotResponse.ExecutionTimeMs,
                             Metadata = copilotResponse.RawActivityJson,
                             IsAggregate = false,
@@ -237,7 +237,7 @@ public class MultiTurnDurableActivities
                             Score = 0,
                             Passed = false,
                             ErrorMessage = judgeResponse.ErrorMessage,
-                            ExecutionTimeMs = (int)evaluatorStopwatch.ElapsedMilliseconds,
+                            ExecutionTimeMs = (int)stopwatch.ElapsedMilliseconds,
                             EvaluationResultId = errorResultId,
                             StatusCode = EvaluationResultStatus.Errored
                         };
@@ -260,7 +260,7 @@ public class MultiTurnDurableActivities
                         Score = judgeResponse.Score,
                         Passed = judgeResponse.Score >= input.PassingThreshold,
                         Reasoning = judgeResponse.Reasoning,
-                        ExecutionTimeMs = (int)evaluatorStopwatch.ElapsedMilliseconds,
+                        ExecutionTimeMs = (int)stopwatch.ElapsedMilliseconds,
                         McsExecutionTimeMs = copilotResponse.ExecutionTimeMs,
                         Metadata = copilotResponse.RawActivityJson,
                         IsAggregate = false,
