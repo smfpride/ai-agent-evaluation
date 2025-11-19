@@ -162,3 +162,90 @@ public class LLMJudgeResponse
     [JsonPropertyName("executionTimeMs")]
     public int ExecutionTimeMs { get; set; }
 }
+
+/// <summary>
+/// Service Bus message for agent call processing (Phase 1 - New Architecture)
+/// Queued to agent-call-queue by OrchestratorFunction
+/// </summary>
+public class AgentCallMessage
+{
+    [Required]
+    [JsonPropertyName("evaluationRunId")]
+    public Guid EvaluationRunId { get; set; }
+
+    [Required]
+    [JsonPropertyName("testCaseId")]
+    public Guid TestCaseId { get; set; }
+
+    [JsonPropertyName("directLineUrl")]
+    public string DirectLineUrl { get; set; } = string.Empty;
+
+    [JsonPropertyName("userInput")]
+    public string UserInput { get; set; } = string.Empty;
+
+    [JsonPropertyName("expectedResponse")]
+    public string ExpectedResponse { get; set; } = string.Empty;
+
+    /// <summary>
+    /// List of evaluator type IDs to use for evaluation.
+    /// AgentWorker will create pending results for each evaluator and queue evaluator jobs.
+    /// </summary>
+    [JsonPropertyName("evaluatorTypeIds")]
+    public List<Guid> EvaluatorTypeIds { get; set; } = new();
+
+    [JsonPropertyName("conversationId")]
+    public string? ConversationId { get; set; }
+
+    [JsonPropertyName("directLineToken")]
+    public string? DirectLineToken { get; set; }
+
+    [JsonPropertyName("passingThreshold")]
+    public decimal PassingThreshold { get; set; } = 0.7m;
+
+    /// <summary>
+    /// Turn ID for multi-turn tests (null for single-turn)
+    /// </summary>
+    [JsonPropertyName("testCaseTurnId")]
+    public Guid? TestCaseTurnId { get; set; }
+}
+
+/// <summary>
+/// Service Bus message for evaluator job processing (Phase 1 - New Architecture)
+/// Queued to evaluator-processing-queue by AgentWorkerFunction
+/// </summary>
+public class EvaluatorJobMessage
+{
+    [Required]
+    [JsonPropertyName("evaluationResultId")]
+    public Guid EvaluationResultId { get; set; }
+
+    [Required]
+    [JsonPropertyName("evaluationRunId")]
+    public Guid EvaluationRunId { get; set; }
+
+    /// <summary>
+    /// Number of retry attempts for this message (used for exponential backoff)
+    /// </summary>
+    [JsonPropertyName("retryCount")]
+    public int RetryCount { get; set; } = 0;
+}
+
+/// <summary>
+/// Data Transfer Object for updating evaluation results (Phase 1 - New Architecture)
+/// Used by EvaluatorWorkerFunction to update pending results to Completed or Errored
+/// </summary>
+public class UpdateEvaluationResultRequest
+{
+    [Required]
+    public int StatusCode { get; set; }
+
+    public decimal? Score { get; set; }
+
+    public bool? Passed { get; set; }
+
+    public string? Reasoning { get; set; }
+
+    public int? ExecutionTimeMs { get; set; }
+
+    public string? ErrorMessage { get; set; }
+}

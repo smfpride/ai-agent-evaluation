@@ -14,20 +14,29 @@
 
 ## Overview
 
-The AI Agent Evaluation System is a cloud-native, serverless solution built on Azure that automates the testing and evaluation of Copilot Studio agents. It uses an LLM-as-a-Judge approach with Azure OpenAI to assess agent responses against expected outcomes across three evaluation types: Similarity, Accuracy, and Relevancy.
+The AI Agent Evaluation System is a cloud-native, serverless solution built on Azure that automates the testing and evaluation of Copilot Studio agents. It uses an LLM-as-a-Judge approach with Azure OpenAI to assess agent responses against expected outcomes across multiple evaluation dimensions.
+
+**Architecture Version**: 2.0 (Async Multi-Evaluator)  
+**Last Updated**: November 2025  
+**Implementation Status**: Phase 1 & 2 Complete
 
 ### Key Capabilities
 - **Automated Testing**: Execute test cases against Copilot Studio agents via Direct Line API
 - **LLM-Based Evaluation**: Use Azure OpenAI (GPT-4o) to score responses with human-like judgment
+- **Multi-Evaluator Support**: Evaluate each test case across multiple evaluators (Similarity, Accuracy, Relevancy, custom) in parallel
+- **Async Architecture**: Decouple agent calls from evaluations for 3-5× throughput improvement
 - **Multi-Turn Conversations**: Support for complex conversation scenarios with context preservation via Durable Functions
-- **Scalable Processing**: Handle up to 50,000 test cases per evaluation run
-- **Comprehensive Results**: Store detailed results, reasoning, and metrics in Dataverse
+- **Scalable Processing**: Handle up to 50,000 test cases per evaluation run with parallel evaluator processing
+- **Comprehensive Results**: Store detailed results, reasoning, and metrics in Dataverse with pending/completed status tracking
 - **Flexible Evaluation Types**: Extensible evaluator type system stored in Dataverse
-- **Hybrid Execution**: Service Bus workers for single-turn, Durable Functions orchestration for multi-turn
+- **Hybrid Execution**: Async queue-based workers for both single-turn and multi-turn scenarios
 
 ---
 
 ## Architecture Diagram
+
+**Version 2.0**: Async Multi-Evaluator Architecture (Phase 1 & 2 Complete)
+
 <!-- ![](./images/ArchitectureDiagram.png) -->
 ```mermaid
 flowchart TB
@@ -40,13 +49,14 @@ flowchart TB
         ORCH["Orchestrator Function<br>StartEvaluationRun"]
         HEALTH["Health Check Function"]
     end
-    subgraph subGraph2["Service Bus Triggered"]
-        WORKER["Worker Function<br>ProcessTestCase<br>Single-Turn Only"]
+    subgraph subGraph2["Service Bus Triggered - Async Workers"]
+        AGENT_WORKER["AgentWorkerFunction<br>ProcessAgentCall<br>(Single &amp; Multi-Turn)"]
+        EVAL_WORKER["EvaluatorWorkerFunction<br>ProcessEvaluatorJob<br>(Parallel Processing)"]
     end
     subgraph subGraph3["Durable Functions (Multi-Turn)"]
         DORCH["Durable Orchestrator<br>MultiTurnTestCaseOrchestrator<br>Unlimited Runtime"]
         ACT1["Activity:<br>GetTestCaseWithTurns"]
-        ACT2["Activity:<br>ExecuteSingleTurn"]
+        ACT2["Activity:<br>ExecuteSingleTurn<br>(Creates Pending + Polls)"]
         ACT3["Activity:<br>CreateAggregateResult"]
     end
     subgraph subGraph4["Timer Triggered"]
@@ -59,7 +69,7 @@ flowchart TB
         subGraph4
     end
     subgraph subGraph6["Azure Services"]
-        SBUS["Azure Service Bus<br>1 Queue:<br>- test-case-processing<br>(single-turn only)"]
+        SBUS["Azure Service Bus<br>2 Queues:<br>- agent-call-queue<br>- evaluator-processing-queue"]
         AOAI["Azure OpenAI<br>GPT-4o Model<br>LLM Judge"]
         KV["Azure Key Vault<br>Secrets Management"]
         AI["Application Insights<br>Logging &amp; Metrics"]
@@ -69,32 +79,42 @@ flowchart TB
         TR["Test Run<br>mcicaps_evaluationruns"]
         TC["Test Case<br>mcicaps_testcases"]
         TURN["Test Case Turn<br>mcicaps_testcaseturn"]
-        RES["Evaluation Result<br>mcicaps_evaluationresults"]
+        RES["Evaluation Result<br>mcicaps_evaluationresults<br><b>StatusCode: Pending/Completed/Errored</b>"]
         EVAL["Evaluator Type<br>mcicaps_evaluatortypes"]
         AGENT["Agent To Eval<br>mcicaps_agenttoevals"]
     end
-    USER -- 1: POST /api/orchestrator --> ORCH
+    USER -- 1: POST /api/evaluations/start --> ORCH
     ORCH -- 2: Fetch Test Cases --> DV
     DV -- 3: Test Cases + Turns --> ORCH
-    ORCH -- 4a: Queue Single-Turn --> SBUS
+    ORCH -- 4a: Queue AgentCallMessage --> SBUS
     ORCH -- 4b: Start Durable Orch<br>(Multi-Turn) --> DORCH
-    SBUS -- 5a: Single-Turn Messages --> WORKER
+    SBUS -- 5a: agent-call-queue --> AGENT_WORKER
     DORCH -- 5b: Call Activity --> ACT1
     ACT1 -- Fetch Data --> DV
     DORCH -- 5c: Call Activity --> ACT2
-    ACT2 -- Execute Turn --> CS
-    ACT2 -- Evaluate --> AOAI
+    ACT2 -- 5c1: Call Agent --> CS
+    CS -- 5c2: Agent Response --> ACT2
+    ACT2 -- 5c3: Create Pending Results --> DV
+    ACT2 -- 5c4: Queue EvaluatorJobMessages --> SBUS
+    SBUS -- 5c5: evaluator-processing-queue --> EVAL_WORKER
+    EVAL_WORKER -- 5c6: Retrieve Pending Result --> DV
+    EVAL_WORKER -- 5c7: Evaluate --> AOAI
+    AOAI -- 5c8: Score & Reasoning --> EVAL_WORKER
+    EVAL_WORKER -- 5c9: Update to Completed --> DV
+    ACT2 -- 5c10: Poll Until Complete --> DV
     DORCH -- 5d: Call Activity --> ACT3
     ACT3 -- Save Aggregate --> DV
-    WORKER -- 6: Execute Test --> CS
-    CS -- 7a: Agent Response --> WORKER
-    CS -- 7b: Turn Responses --> ACT2
-    WORKER -- 8: Evaluate Response --> AOAI
-    AOAI -- 9a: Score & Reasoning --> WORKER
-    AOAI -- 9b: Turn Scores --> ACT2
-    WORKER -- 10: Save Result --> DV
-    MONITOR -- 11: Check Progress --> DV
-    MONITOR -- 12: Update Run Status --> DV
+    AGENT_WORKER -- 6: Call Agent --> CS
+    CS -- 7: Agent Response --> AGENT_WORKER
+    AGENT_WORKER -- 8a: Create Pending Results<br>(StatusCode=1) --> DV
+    AGENT_WORKER -- 8b: Queue N Evaluator Jobs --> SBUS
+    SBUS -- 9: evaluator-processing-queue<br>(Parallel) --> EVAL_WORKER
+    EVAL_WORKER -- 10: Retrieve Pending --> DV
+    EVAL_WORKER -- 11: Evaluate --> AOAI
+    AOAI -- 12: Score & Reasoning --> EVAL_WORKER
+    EVAL_WORKER -- 13: Update to Completed --> DV
+    MONITOR -- 14: Check Progress --> DV
+    MONITOR -- 15: Update Run Status --> DV
     DORCH -.-> STORAGE
     STORAGE -.-> DORCH
   TR -- 1:N --> TC
@@ -146,7 +166,8 @@ flowchart TB
 - Receive evaluation run requests with run ID
 - Fetch test cases from Dataverse (including multi-turn tests)
 - Update evaluation run status to "Running"
-- Queue test case messages to Service Bus
+- Queue agent call messages to Service Bus (`agent-call-queue`)
+- Start Durable Functions orchestrations for multi-turn tests
 - Return HTTP 202 Accepted with tracking information
 
 **Key Features**:
@@ -154,35 +175,70 @@ flowchart TB
 - Supports up to 50,000 test cases per run
 - Fast response time (< 30 seconds for large runs)
 - Idempotent operation support
+- Async architecture: queues `AgentCallMessage` per test case
 
-#### 1.2 Worker Function (Single-Turn)
-**Trigger**: Service Bus Queue (`test-case-processing`)  
+**Architecture Change (v2.0)**:
+- Previously: Queued `ProcessTestCaseMessage` to `test-case-processing`
+- Now: Queues `AgentCallMessage` to `agent-call-queue` (decouples agent call from evaluation)
+
+#### 1.2 AgentWorkerFunction (Agent Call Processing)
+**Trigger**: Service Bus Queue (`agent-call-queue`)  
 **Runtime**: .NET 8 Isolated  
-**Purpose**: Execute individual single-turn test cases
+**Purpose**: Call Copilot Studio agent and create pending evaluation results
 
 **Responsibilities**:
-- Receive test case message from queue
-- Send prompt to Copilot Studio via Direct Line API
+- Receive agent call message from queue
+- Send prompt to Copilot Studio via Direct Line API with retry logic
 - Collect agent response
-- Use `LLMJudgeServiceFactory` to get appropriate judge (Azure OpenAI or Copilot Studio)
-- Evaluate response using selected judge
-- Save evaluation result to Dataverse
+- Create **pending** evaluation results (StatusCode=1) for each evaluator type
+- Queue evaluator job messages to `evaluator-processing-queue` (parallel fan-out)
+- Handle NA scenarios (evaluators requiring expected response)
 
 **Key Features**:
 - Stateless execution for horizontal scaling
-- Retry logic for transient failures
-- Type-specific evaluation (Similarity, Accuracy, Relevancy)
-- Dynamic judge selection via factory pattern
-- Response time tracking
+- Exponential backoff retry for agent calls
+- Creates N pending results for N evaluators (1 agent call → N evaluations)
+- Automatic NA result creation without queuing
+- Error handling: Creates error results for all evaluators if agent fails
 
-#### 1.3 Monitor Function
+**Performance Impact**:
+- Single agent call per test case (shared across all evaluators)
+- Parallel evaluator processing (3-5× throughput improvement)
+
+#### 1.3 EvaluatorWorkerFunction (Evaluation Processing)
+**Trigger**: Service Bus Queue (`evaluator-processing-queue`)  
+**Runtime**: .NET 8 Isolated  
+**Purpose**: Evaluate pending results using LLM Judge
+
+**Responsibilities**:
+- Receive evaluator job message from queue
+- Retrieve pending evaluation result from Dataverse
+- Check idempotency (skip if already completed)
+- Use `LLMJudgeServiceFactory` to get appropriate judge (Azure OpenAI or Copilot Studio)
+- Evaluate response using selected judge
+- Update result to **Completed** or **Errored** in Dataverse
+- Increment completion counter
+
+**Key Features**:
+- Stateless execution for horizontal scaling
+- Idempotent via status check (Pending → Completed/Errored)
+- Retry logic for transient LLM failures
+- Type-specific evaluation (Similarity, Accuracy, Relevancy, custom)
+- Dynamic judge selection via factory pattern
+- Supports both single-turn and multi-turn scenarios
+
+**Performance Impact**:
+- Parallel processing of evaluators (up to 1000 concurrent workers)
+- Independent scaling from agent call volume
+
+#### 1.4 Monitor Function
 **Trigger**: Timer (every 1 minute)  
 **Runtime**: .NET 8 Isolated  
 **Purpose**: Track evaluation run progress and update completion status
 
 **Responsibilities**:
 - Query active evaluation runs (status = "Running")
-- Check completion based on test case count vs results count
+- Check completion based on total evaluation units vs completed results count
 - Calculate overall metrics (average score, pass/fail rate)
 - Update run status to "Completed" or "Errored"
 - Detect stalls (no progress for 30+ minutes or runtime > 120 minutes)
@@ -192,16 +248,22 @@ flowchart TB
 - Automatic progress tracking
 - No user intervention required
 - Handles both single-turn and multi-turn result aggregation
+- Tracks evaluation units (TestCase × EvaluatorType pairs)
 
-#### 1.4 Durable Functions Orchestrator (Multi-Turn Execution)
+**Architecture Change (v2.0)**:
+- Previously: Tracked test cases
+- Now: Tracks evaluation units (1 test × 5 evaluators = 5 units)
+
+#### 1.5 Durable Functions Orchestrator (Multi-Turn Execution)
 **Trigger**: Started by Orchestrator Function  
 **Runtime**: .NET 8 Isolated (Durable Functions)  
-**Purpose**: Long-running orchestration for multi-turn test cases
+**Purpose**: Long-running orchestration for multi-turn test cases with async evaluations
 
 **Responsibilities**:
 - Execute multi-turn conversations with unlimited execution time
 - Call activities sequentially for turn execution
 - Maintain conversation state and context
+- Poll for evaluation completion after each turn
 - Create aggregate results after all turns complete
 - Support pause/resume and retry logic
 
@@ -209,22 +271,32 @@ flowchart TB
 - No 5-minute timeout limitation
 - Supports very long conversations (10+ turns)
 - Fault-tolerant with automatic state management
+- Async evaluation with polling mechanism
 - Primary multi-turn execution path
 
 **Activities**:
 - `GetTestCaseWithTurns`: Fetch test case and turns from Dataverse
-- `ExecuteSingleTurn`: Execute one turn with conversation context
+- `ExecuteSingleTurn`: Execute one turn with async evaluation (v2.0 updated)
 - `CreateAggregateResult`: Generate final multi-turn evaluation result
 
-**Flow**:
+**Flow (v2.0 Async Architecture)**:
 1. Orchestrator Function calls `durableClient.ScheduleNewOrchestrationInstanceAsync` for multi-turn cases
 2. Durable Orchestrator retrieves test case with all turns
 3. For each turn sequentially:
-   - Execute turn with conversation context
-   - Update conversation history
+   - Call Copilot Studio to get agent response
+   - Create pending evaluation results (StatusCode=1) for each evaluator
+   - Queue evaluator job messages to `evaluator-processing-queue`
+   - **Poll Dataverse** until all evaluators complete (max 10 minutes)
+   - Update conversation context with results
 4. After all turns complete, create aggregate result in Dataverse
 
-**Implementation Note**: This is the PRIMARY execution path for all multi-turn test cases. The orchestrator does NOT use Service Bus queuing for multi-turn execution.
+**Architecture Change (v2.0)**:
+- Previously: Inline evaluation in `ExecuteSingleTurn` activity
+- Now: Creates pending results, queues jobs, polls for completion
+- Polling: Exponential backoff (2s → 10s), 10-minute timeout
+- Timeout handling: Marks incomplete results as Errored
+
+**Implementation Note**: This is the PRIMARY execution path for all multi-turn test cases. Multi-turn now uses the same async evaluator architecture as single-turn.
 
 #### 1.5 Health Check Function
 **Trigger**: HTTP GET  
@@ -240,58 +312,74 @@ flowchart TB
 
 ### 2. Azure Service Bus (Message Queue)
 
-**Purpose**: Decouple orchestration from execution and enable massive scaling for single-turn test cases
+**Purpose**: Decouple agent calls from evaluations and enable massive parallel scaling
 
-**Note**: Multi-turn test cases use Durable Functions orchestration instead of Service Bus queuing.
+**Architecture Version**: 2.0 (Async Multi-Evaluator)
 
 #### Queue Configuration
 
-##### 2.1 test-case-processing (Single-Turn Queue)
+##### 2.1 agent-call-queue (Phase 1 - Agent Calls)
 - **Max Size**: 5 GB
 - **Message TTL**: 14 days
 - **Dead Letter**: Enabled
 - **Max Delivery Count**: 10
 - **Lock Duration**: 5 minutes
 - **Session Support**: No
-- **Status**: Active - used by Worker Function
+- **Status**: Active - used by AgentWorkerFunction
+- **Purpose**: Queue agent call messages for both single-turn and multi-turn (via activity)
 
-##### 2.2 multi-turn-test-case-processing (Legacy Queue)
+**Flow**: 
+- OrchestratorFunction → agent-call-queue → AgentWorkerFunction
+- Multi-turn: ExecuteSingleTurn activity also uses this queue
+
+##### 2.2 evaluator-processing-queue (Phase 1 - Evaluations)
 - **Max Size**: 5 GB
 - **Message TTL**: 14 days
 - **Dead Letter**: Enabled
 - **Max Delivery Count**: 10
 - **Lock Duration**: 5 minutes
 - **Session Support**: No
-- **Status**: UNUSED - Created by infrastructure but no messages are sent to this queue. Multi-turn execution uses Durable Functions orchestration instead.
+- **Status**: Active - used by EvaluatorWorkerFunction
+- **Purpose**: Queue evaluator jobs for parallel processing
+
+**Flow**: 
+- AgentWorkerFunction → evaluator-processing-queue → EvaluatorWorkerFunction (×N parallel)
+- 1 agent call → N evaluator jobs (fan-out pattern)
+
+##### 2.3 test-case-processing (Legacy - Phase 3 Cleanup)
+- **Status**: To be removed in Phase 3 hard cutover
+- **Note**: Old single-turn queue, replaced by agent-call-queue + evaluator-processing-queue
 
 #### Message Schema
 
-**Single-Turn Message**:
+**AgentCallMessage** (v2.0):
 ```json
 {
   "evaluationRunId": "guid",
   "testCaseId": "guid",
-  "testCaseName": "string",
-  "prompt": "string",
+  "directLineUrl": "string",
+  "userInput": "string",
   "expectedResponse": "string",
-  "testType": 778760000,
-  "retryCount": 0,
-  "enqueuedAt": "2025-11-10T10:00:00Z"
+  "evaluatorTypeIds": ["guid1", "guid2", "guid3"],
+  "conversationId": "string",
+  "directLineToken": "string",
+  "passingThreshold": 0.7,
+  "testCaseTurnId": "guid (null for single-turn)"
 }
 ```
 
-**Multi-Turn Message**:
+**EvaluatorJobMessage** (v2.0):
 ```json
 {
-  "evaluationRunId": "guid",
-  "testCaseId": "guid",
-  "testCaseName": "string",
-  "isMultiTurn": true,
-  "testType": 778760000,
-  "retryCount": 0,
-  "enqueuedAt": "2025-11-10T10:00:00Z"
+  "evaluationResultId": "guid",
+  "evaluationRunId": "guid"
 }
 ```
+
+**Architecture Change (v2.0)**:
+- Previously: 1 message per test case (inline evaluation)
+- Now: 1 agent message + N evaluator messages (async fan-out)
+- Result: 3-5× throughput improvement via parallel evaluator processing
 
 ---
 
@@ -399,6 +487,104 @@ The system supports custom domain-specific evaluators (e.g., fashion, healthcare
 ```
 
 **Note**: The `passed` and `evaluation` fields are calculated/generated by the worker function based on the score and passing threshold.
+
+---
+
+## Data Flow
+
+### Single-Turn Evaluation Flow (v2.0 Async Architecture)
+
+```
+1. User → POST /api/evaluations/start → OrchestratorFunction
+2. OrchestratorFunction:
+   - Fetches test cases from Dataverse
+   - Updates run status to Running
+   - For each test case:
+     * Creates AgentCallMessage with all evaluator IDs
+     * Queues to agent-call-queue
+3. AgentWorkerFunction (triggered by agent-call-queue):
+   - Calls Copilot Studio (with retry)
+   - Gets agent response
+   - For each evaluator:
+     * Creates pending result (StatusCode=1) in Dataverse
+     * Queues EvaluatorJobMessage to evaluator-processing-queue
+   - Handles NA scenarios inline
+4. EvaluatorWorkerFunction (×N parallel, triggered by evaluator-processing-queue):
+   - Retrieves pending result from Dataverse
+   - Checks idempotency (skip if completed)
+   - Calls LLM Judge (Azure OpenAI or Copilot Studio)
+   - Updates result to Completed (StatusCode=778760003) or Errored
+   - Increments completion counter
+5. MonitorFunction (timer every 1 min):
+   - Checks if all evaluation units completed
+   - Updates run status to Completed
+```
+
+**Performance Characteristics**:
+- 1 agent call per test case (shared across N evaluators)
+- N parallel evaluator workers (3-5× faster than sequential)
+- Max throughput: 1000 concurrent agent calls, unlimited evaluator workers
+
+### Multi-Turn Evaluation Flow (v2.0 Async Architecture)
+
+```
+1. User → POST /api/evaluations/start → OrchestratorFunction
+2. OrchestratorFunction:
+   - Fetches multi-turn test cases
+   - For each multi-turn test case:
+     * Creates placeholder aggregate results
+     * Starts Durable Functions orchestration
+3. MultiTurnDurableOrchestrator:
+   - Calls GetTestCaseWithTurns activity
+   - For each turn sequentially:
+     * Calls ExecuteSingleTurn activity
+4. ExecuteSingleTurn Activity (v2.0 async):
+   - Calls Copilot Studio (with retry)
+   - Gets agent response
+   - For each evaluator:
+     * Creates pending result (StatusCode=1) in Dataverse
+     * Queues EvaluatorJobMessage to evaluator-processing-queue
+   - Polls Dataverse until all evaluators complete:
+     * Exponential backoff: 2s → 10s
+     * Timeout: 10 minutes
+     * Marks timed-out results as Errored
+   - Returns completed results to orchestrator
+5. EvaluatorWorkerFunction (×N parallel):
+   - Same as single-turn flow
+6. MultiTurnDurableOrchestrator (after all turns):
+   - Calls CreateAggregateResult activity
+   - Calculates overall scores across turns
+7. MonitorFunction:
+   - Checks if all evaluation units completed
+   - Updates run status to Completed
+```
+
+**Performance Characteristics**:
+- Conversation context preserved across turns
+- Each turn: 1 agent call → N parallel evaluators
+- Polling prevents orchestrator timeout (no 5-min limit)
+- Max turn processing time: 10 minutes per turn
+
+### Evaluation Result State Machine (v2.0)
+
+```
+StatusCode Values:
+  1 (Pending) → Created by AgentWorker, waiting for evaluation
+  778760003 (Completed) → Evaluation successful
+  778760004 (Errored) → Evaluation failed or timed out
+  778760005 (NotApplicable) → NA scenario (no expected response)
+```
+
+**State Transitions**:
+```
+[Created by AgentWorker]
+   ↓
+Pending (1)
+   ↓ [EvaluatorWorker processes]
+   ├→ Completed (778760003) [LLM Judge success]
+   ├→ Errored (778760004) [LLM Judge failure or timeout]
+   └→ NotApplicable (778760005) [Created directly, no queuing]
+```
 
 ---
 
@@ -550,12 +736,13 @@ Fields:
   - mcicaps_executiontime (Integer): Total evaluation execution time in milliseconds (includes Copilot Studio + LLM Judge time)
   - mcicaps_mcsexecutiontime (Integer): Copilot Studio execution time in milliseconds (Direct Line API response time)
   - mcicaps_errormessage (Text): Error details if failed
-  - statuscode (Choice/OptionSet): Result lifecycle status
-    - 1: Pending (placeholder created, not started)
+  - statuscode (Choice/OptionSet): Result lifecycle status (v2.0 async architecture)
+    - 1: Pending (created by AgentWorker, waiting for EvaluatorWorker processing)
     - 778760001: Running (reserved for future use)
-    - 778760002: Completed (successfully finished with score)
-  - 778760003: Errored (finished with error)
-  - 778760004: Not Applicable (evaluator requires expected response but none provided; evaluation skipped, score set to 0.0)
+    - 778760002: Completed (successfully finished with score - LEGACY, updated to 778760003)
+    - 778760003: Completed (successfully finished with score)
+    - 778760004: Errored (finished with error or timeout)
+    - 778760005: Not Applicable (evaluator requires expected response but none provided; evaluation skipped, score set to 0.0)
 ```
 
 **Performance Metrics**:
@@ -583,24 +770,33 @@ mcicaps_testcases (1) ←→ (N) mcicaps_testcaseturn
 mcicaps_testcaseturn (1) ←→ (N) mcicaps_evaluationresults
 ```
 
-#### Multi-Evaluator Architecture (Story 09)
+#### Multi-Evaluator Architecture (Story 09 + Phase 1 & 2)
 
 **Overview**: The system supports N:N relationships between evaluation runs and evaluator types, enabling a single test case to be evaluated with multiple evaluators (Similarity, Accuracy, Relevancy, etc.) in a single run.
 
+**Architecture Version**: 2.0 (Async Multi-Evaluator)
+
 **Key Design Principles**:
 1. **Test Cases are Evaluator-Agnostic**: No evaluator type stored on test case - selection happens at run level
-2. **Optimized API Calls**: Copilot Studio called once per test case, response evaluated by all evaluators
-3. **Concurrent Evaluation**: All evaluators run in parallel using `Task.WhenAll` for maximum performance
-4. **NA Handling**: Evaluators requiring expected responses skip execution when data missing
+2. **Optimized Agent Calls**: Copilot Studio called once per test case, response evaluated by all evaluators
+3. **Async Parallel Evaluation**: All evaluators process independently via Service Bus queue workers
+4. **NA Handling**: Evaluators requiring expected responses create NA results without queuing
+5. **Pending State**: Results created with StatusCode=1 (Pending), updated to Completed/Errored by EvaluatorWorker
 
-**Architecture Flow**:
+**Architecture Flow (v2.0)**:
 ```
 1. Orchestrator fetches evaluator types from N:N join (GetEvaluatorTypesForRunAsync)
 2. For each test case:
-   - Create 1 message/orchestration with all evaluator IDs (not N separate messages)
-   - Worker/Activity calls Copilot Studio once
-   - Worker/Activity evaluates concurrently with all evaluators using Task.WhenAll
-   - Each evaluator creates its own result with evaluatorTypeId
+   - Create 1 AgentCallMessage with all evaluator IDs
+   - Queue to agent-call-queue
+3. AgentWorkerFunction:
+   - Calls Copilot Studio once (shared response)
+   - Creates N pending results (StatusCode=1) in Dataverse
+   - Queues N EvaluatorJobMessages to evaluator-processing-queue
+4. EvaluatorWorkerFunction (×N parallel):
+   - Retrieves pending result from Dataverse
+   - Calls LLM Judge independently
+   - Updates result to Completed (778760003) or Errored (778760004)
 ```
 
 **Efficiency Gains**:
@@ -608,9 +804,12 @@ mcicaps_testcaseturn (1) ←→ (N) mcicaps_evaluationresults
   - 3 evaluators: 67% fewer calls
   - 5 evaluators: 80% fewer calls  
   - 10 evaluators: 90% fewer calls
-- **Evaluation Time**: Reduced by concurrent execution
+- **Evaluation Time**: Reduced by async parallel execution (v2.0)
   - 3 evaluators @ 2s each: 6s → 2s (67% faster)
   - 5 evaluators @ 2s each: 10s → 2s (80% faster)
+  - **NEW (v2.0)**: Evaluators process independently, no blocking
+  - **NEW (v2.0)**: Retry failures don't impact other evaluators
+  - **NEW (v2.0)**: 3-5× overall throughput improvement
 
 **Progress Tracking Formula**:
 ```

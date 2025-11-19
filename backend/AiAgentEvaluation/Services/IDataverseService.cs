@@ -50,4 +50,32 @@ public interface IDataverseService
         string reasoning,
         int executionTimeMs,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets a single evaluation result by ID with related data (Phase 1 - New Architecture)
+    /// Used by EvaluatorWorkerFunction to retrieve pending result for evaluation
+    /// </summary>
+    Task<EvaluationResult?> GetEvaluationResultAsync(Guid resultId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Updates an existing evaluation result (Phase 1 - New Architecture)
+    /// Used by EvaluatorWorkerFunction to update pending results to Completed or Errored
+    /// </summary>
+    Task UpdateEvaluationResultAsync(Guid resultId, UpdateEvaluationResultRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets all pending aggregate evaluation results (where IsAggregate = true and StatusCode = Pending)
+    /// Used by AggregateEvaluationProcessorFunction to find aggregates ready for completion
+    /// </summary>
+    Task<List<EvaluationResult>> GetPendingAggregateResultsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets all turn results for a specific test case, evaluation run, and evaluator type
+    /// Used by AggregateEvaluationProcessorFunction to check if all turns are completed
+    /// </summary>
+    Task<List<EvaluationResult>> GetTurnResultsForTestCaseAsync(
+        Guid testCaseId,
+        Guid evaluationRunId,
+        Guid evaluatorTypeId,
+        CancellationToken cancellationToken = default);
 }

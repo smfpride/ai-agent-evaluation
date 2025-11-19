@@ -240,6 +240,105 @@ public class ServiceBusService : IServiceBusService, IDisposable
         }
     }
 
+    /// <summary>
+    /// Sends agent call message to agent-call-queue (Phase 1 - New Architecture)
+    /// </summary>
+    public async Task SendAgentCallMessageAsync(AgentCallMessage message, CancellationToken cancellationToken = default)
+    {
+        await _resilientService.ExecuteAsync(
+            async (ct) =>
+            {
+                if (_serviceBusClient == null)
+                {
+                    throw new InvalidOperationException("Service Bus client not initialized. Check configuration.");
+                }
+
+                await using var sender = _serviceBusClient.CreateSender("agent-call-queue");
+                var messageBody = JsonSerializer.Serialize(message, _jsonOptions);
+                var serviceBusMessage = new ServiceBusMessage(Encoding.UTF8.GetBytes(messageBody))
+                {
+                    ContentType = "application/json",
+                    MessageId = Guid.NewGuid().ToString()
+                };
+
+                await sender.SendMessageAsync(serviceBusMessage, ct);
+                
+                _logger.LogInformation(
+                    "Sent agent call message to queue: TestCase={TestCaseId}, Run={EvaluationRunId}",
+                    message.TestCaseId,
+                    message.EvaluationRunId);
+            },
+            "SendAgentCallMessage",
+            null,
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Sends evaluator job message to evaluator-processing-queue (Phase 1 - New Architecture)
+    /// </summary>
+    public async Task SendEvaluatorJobMessageAsync(EvaluatorJobMessage message, CancellationToken cancellationToken = default)
+    {
+        await _resilientService.ExecuteAsync(
+            async (ct) =>
+            {
+                if (_serviceBusClient == null)
+                {
+                    throw new InvalidOperationException("Service Bus client not initialized. Check configuration.");
+                }
+
+                await using var sender = _serviceBusClient.CreateSender("evaluator-processing-queue");
+                var messageBody = JsonSerializer.Serialize(message, _jsonOptions);
+                var serviceBusMessage = new ServiceBusMessage(Encoding.UTF8.GetBytes(messageBody))
+                {
+                    ContentType = "application/json",
+                    MessageId = Guid.NewGuid().ToString()
+                };
+
+                await sender.SendMessageAsync(serviceBusMessage, ct);
+                
+                _logger.LogInformation(
+                    "Sent evaluator job message to queue: Result={EvaluationResultId}, Run={EvaluationRunId}",
+                    message.EvaluationResultId,
+                    message.EvaluationRunId);
+            },
+            "SendEvaluatorJobMessage",
+            null,
+            cancellationToken);
+    }
+
+    public async Task SendEvaluatorJobMessageAsync(EvaluatorJobMessage message, DateTimeOffset scheduledEnqueueTime, CancellationToken cancellationToken = default)
+    {
+        await _resilientService.ExecuteAsync(
+            async (ct) =>
+            {
+                if (_serviceBusClient == null)
+                {
+                    throw new InvalidOperationException("Service Bus client not initialized. Check configuration.");
+                }
+
+                await using var sender = _serviceBusClient.CreateSender("evaluator-processing-queue");
+                var messageBody = JsonSerializer.Serialize(message, _jsonOptions);
+                var serviceBusMessage = new ServiceBusMessage(Encoding.UTF8.GetBytes(messageBody))
+                {
+                    ContentType = "application/json",
+                    MessageId = Guid.NewGuid().ToString(),
+                    ScheduledEnqueueTime = scheduledEnqueueTime
+                };
+
+                await sender.SendMessageAsync(serviceBusMessage, ct);
+                
+                _logger.LogInformation(
+                    "Sent evaluator job message to queue with scheduled enqueue time {ScheduledTime}: Result={EvaluationResultId}, Run={EvaluationRunId}, RetryCount={RetryCount}",
+                    scheduledEnqueueTime,
+                    message.EvaluationResultId,
+                    message.EvaluationRunId,
+                    message.RetryCount);
+            },
+            "SendEvaluatorJobMessageScheduled",
+            null,
+            cancellationToken);
+    }
+
     public void Dispose()
     {
         Dispose(true);

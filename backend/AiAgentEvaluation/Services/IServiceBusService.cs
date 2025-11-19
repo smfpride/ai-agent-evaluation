@@ -10,4 +10,19 @@ public interface IServiceBusService
     Task SendTestCaseMessageAsync(ProcessTestCaseMessage message, CancellationToken cancellationToken = default);
     Task SendBatchTestCaseMessagesAsync(IEnumerable<ProcessTestCaseMessage> messages, CancellationToken cancellationToken = default);
     Task<bool> CheckHealthAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Sends agent call message to agent-call-queue (Phase 1 - New Architecture)
+    /// </summary>
+    Task SendAgentCallMessageAsync(AgentCallMessage message, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Sends evaluator job message to evaluator-processing-queue (Phase 1 - New Architecture)
+    /// </summary>
+    Task SendEvaluatorJobMessageAsync(EvaluatorJobMessage message, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Sends evaluator job message to evaluator-processing-queue with scheduled enqueue time (Phase 1 - Retry with exponential backoff)
+    /// </summary>
+    Task SendEvaluatorJobMessageAsync(EvaluatorJobMessage message, DateTimeOffset scheduledEnqueueTime, CancellationToken cancellationToken = default);
 }

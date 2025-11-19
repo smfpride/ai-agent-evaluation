@@ -145,82 +145,33 @@ public class OrchestratorFunction
             _logger.LogInformation("Test case breakdown: {SingleTurn} single-turn, {MultiTurn} multi-turn",
                 singleTurnTestCases.Count, multiTurnTestCases.Count);
 
-            // Process single-turn test cases
-            int naResultsCreated = 0;
-            
+            // Process single-turn test cases (Phase 1: New Architecture)
+            // Queue to agent-call-queue instead of test-case-processing queue
             foreach (var testCase in singleTurnTestCases)
             {
-                // Determine which evaluators are applicable for this test case
-                var applicableEvaluators = new List<Guid>();
+                // Get all evaluator type IDs for this test case
+                var evaluatorTypeIds = evaluatorTypes.Select(e => e.Id).ToList();
                 
-                foreach (var evaluatorType in evaluatorTypes)
+                // Queue agent call message (NA handling moved to AgentWorkerFunction)
+                var message = new AgentCallMessage
                 {
-                    // Check if Not Applicable (NA) scenario
-                    bool isNA = evaluatorType.RequiresExpectedResponse && 
-                                string.IsNullOrWhiteSpace(testCase.ExpectedResponse);
-                    
-                    if (isNA)
-                    {
-                        // Short-circuit: Create NA result immediately
-                        await _dataverseService.CreateEvaluationResultAsync(
-                            new CreateEvaluationResultRequest
-                            {
-                                EvaluationRunId = request.EvaluationRunId,
-                                TestCaseId = testCase.Id,
-                                EvaluatorTypeId = evaluatorType.Id,
-                                StatusCode = EvaluationResultStatus.NotApplicable,
-                                Score = 0.0m,
-                                Passed = false,
-                                Reasoning = $"Evaluator '{evaluatorType.Name}' requires expected response but none provided",
-                                ActualResponse = null,
-                                ConversationId = null
-                            }, 
-                            cancellationToken);
-                        
-                        // Increment completion counter (NA counts as completed)
-                        await _dataverseService.IncrementCompletedTestCasesAsync(
-                            request.EvaluationRunId, 
-                            failed: false,
-                            cancellationToken);
-                        
-                        naResultsCreated++;
-                        
-                        _logger.LogInformation(
-                            "Test case {TestCaseId} marked NA for evaluator {EvaluatorId} (missing expected response)",
-                            testCase.Id, evaluatorType.Id);
-                    }
-                    else
-                    {
-                        // This evaluator is applicable
-                        applicableEvaluators.Add(evaluatorType.Id);
-                    }
-                }
+                    EvaluationRunId = request.EvaluationRunId,
+                    TestCaseId = testCase.Id,
+                    DirectLineUrl = directLineUrl,
+                    UserInput = testCase.UserInput,
+                    ExpectedResponse = testCase.ExpectedResponse ?? string.Empty,
+                    EvaluatorTypeIds = evaluatorTypeIds,
+                    ConversationId = testCase.ConversationId,
+                    PassingThreshold = passingThreshold
+                };
                 
-                // If there are applicable evaluators, queue ONE message with all evaluator IDs
-                if (applicableEvaluators.Any())
-                {
-                    var message = new ProcessTestCaseMessage
-                    {
-                        EvaluationRunId = request.EvaluationRunId,
-                        TestCaseId = testCase.Id,
-                        DirectLineUrl = directLineUrl,
-                        UserInput = testCase.UserInput,
-                        ExpectedResponse = testCase.ExpectedResponse,
-                        EvaluatorTypeIds = applicableEvaluators,
-                        ConversationId = testCase.ConversationId,
-                        PassingThreshold = passingThreshold,
-                        RetryCount = 0,
-                        MaxRetries = 3
-                    };
-                    
-                    await _serviceBusService.SendTestCaseMessageAsync(message, cancellationToken);
-                }
+                await _serviceBusService.SendAgentCallMessageAsync(message, cancellationToken);
             }
             
             if (singleTurnTestCases.Any())
             {
-                _logger.LogInformation("Sent {Count} single-turn test case messages to Service Bus ({NACount} marked NA)",
-                    singleTurnTestCases.Count, naResultsCreated);
+                _logger.LogInformation("Sent {Count} single-turn agent call messages to agent-call-queue",
+                    singleTurnTestCases.Count);
             }
 
             // Start Durable Functions orchestrations for multi-turn test cases
