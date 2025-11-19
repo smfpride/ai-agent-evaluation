@@ -99,22 +99,6 @@ resource serviceBusNamespace 'Microsoft.ServiceBus/namespaces@2022-10-01-preview
   }
 }
 
-// Create Service Bus Queue for single-turn test cases
-resource testCaseProcessingQueue 'Microsoft.ServiceBus/namespaces/queues@2022-10-01-preview' = {
-  parent: serviceBusNamespace
-  name: 'test-case-processing'
-  properties: {
-    maxSizeInMegabytes: 5120
-    defaultMessageTimeToLive: 'P14D'
-    deadLetteringOnMessageExpiration: true
-    duplicateDetectionHistoryTimeWindow: 'PT10M'
-    maxDeliveryCount: 10
-    lockDuration: 'PT5M'
-    enablePartitioning: false
-    requiresSession: false
-  }
-}
-
 // Phase 1: Agent Call Queue - for Copilot Studio agent calls
 resource agentCallQueue 'Microsoft.ServiceBus/namespaces/queues@2022-10-01-preview' = {
   parent: serviceBusNamespace
@@ -274,10 +258,6 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
         {
           name: 'ServiceBus__Namespace'
           value: '${serviceBusNamespace.name}.servicebus.windows.net'
-        }
-        {
-          name: 'ServiceBus__QueueName'
-          value: 'test-case-processing'
         }
         {
           name: 'AzureOpenAIEndpoint'

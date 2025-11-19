@@ -45,48 +45,6 @@ public class StartEvaluationRunResponse
 }
 
 /// <summary>
-/// Service Bus message for processing individual test cases
-/// </summary>
-public class ProcessTestCaseMessage
-{
-    [Required]
-    [JsonPropertyName("evaluationRunId")]
-    public Guid EvaluationRunId { get; set; }
-
-    [Required]
-    [JsonPropertyName("testCaseId")]
-    public Guid TestCaseId { get; set; }
-
-    [JsonPropertyName("directLineUrl")]
-    public string DirectLineUrl { get; set; } = string.Empty;
-
-    [JsonPropertyName("userInput")]
-    public string UserInput { get; set; } = string.Empty;
-
-    [JsonPropertyName("expectedResponse")]
-    public string ExpectedResponse { get; set; } = string.Empty;
-
-    /// <summary>
-    /// List of evaluator type IDs to use for evaluation.
-    /// The Copilot Studio agent will be called once, and the response will be evaluated by all evaluators.
-    /// </summary>
-    [JsonPropertyName("evaluatorTypeIds")]
-    public List<Guid> EvaluatorTypeIds { get; set; } = new();
-
-    [JsonPropertyName("conversationId")]
-    public string? ConversationId { get; set; }
-
-    [JsonPropertyName("passingThreshold")]
-    public decimal PassingThreshold { get; set; } = 0.7m;
-
-    [JsonPropertyName("retryCount")]
-    public int RetryCount { get; set; } = 0;
-
-    [JsonPropertyName("maxRetries")]
-    public int MaxRetries { get; set; } = 3;
-}
-
-/// <summary>
 /// Response from Copilot Studio Direct Line API
 /// </summary>
 public class CopilotDirectLineResponse

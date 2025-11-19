@@ -105,8 +105,8 @@ public class OrchestratorFunctionTests
             evaluationRunId, 2, It.IsAny<CancellationToken>()), Times.Once);
         
         // Verify messages sent to Service Bus (1 message per test case with all evaluator IDs)
-        _mockServiceBusService.Verify(x => x.SendTestCaseMessageAsync(
-            It.IsAny<ProcessTestCaseMessage>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
+        _mockServiceBusService.Verify(x => x.SendAgentCallMessageAsync(
+            It.IsAny<AgentCallMessage>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
     }
 
     #endregion
@@ -163,8 +163,8 @@ public class OrchestratorFunctionTests
             evaluationRunId, 50000, It.IsAny<CancellationToken>()), Times.Once);
         
         // Verify all 50K messages sent (1 per test case)
-        _mockServiceBusService.Verify(x => x.SendTestCaseMessageAsync(
-            It.IsAny<ProcessTestCaseMessage>(), It.IsAny<CancellationToken>()), Times.Exactly(50000));
+        _mockServiceBusService.Verify(x => x.SendAgentCallMessageAsync(
+            It.IsAny<AgentCallMessage>(), It.IsAny<CancellationToken>()), Times.Exactly(50000));
     }
 
     #endregion
@@ -195,8 +195,8 @@ public class OrchestratorFunctionTests
         // Verify no status updates or messages sent
         _mockDataverseService.Verify(x => x.UpdateEvaluationRunStatusAsync(
             It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
-        _mockServiceBusService.Verify(x => x.SendBatchTestCaseMessagesAsync(
-            It.IsAny<List<ProcessTestCaseMessage>>(), It.IsAny<CancellationToken>()), Times.Never);
+        _mockServiceBusService.Verify(x => x.SendAgentCallMessageAsync(
+            It.IsAny<AgentCallMessage>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     #endregion
@@ -232,8 +232,8 @@ public class OrchestratorFunctionTests
         Assert.Equal(HttpStatusCode.BadRequest, result.StatusCode);
         
         // Verify no messages sent
-        _mockServiceBusService.Verify(x => x.SendBatchTestCaseMessagesAsync(
-            It.IsAny<List<ProcessTestCaseMessage>>(), It.IsAny<CancellationToken>()), Times.Never);
+        _mockServiceBusService.Verify(x => x.SendAgentCallMessageAsync(
+            It.IsAny<AgentCallMessage>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     #endregion
@@ -276,8 +276,8 @@ public class OrchestratorFunctionTests
             evaluationRunId, EvaluationRunStatus.Completed, It.IsAny<CancellationToken>()), Times.Once);
         
         // Verify no messages sent
-        _mockServiceBusService.Verify(x => x.SendBatchTestCaseMessagesAsync(
-            It.IsAny<List<ProcessTestCaseMessage>>(), It.IsAny<CancellationToken>()), Times.Never);
+        _mockServiceBusService.Verify(x => x.SendAgentCallMessageAsync(
+            It.IsAny<AgentCallMessage>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     #endregion
@@ -315,8 +315,8 @@ public class OrchestratorFunctionTests
             .ReturnsAsync(testCases);
         _mockDataverseService.Setup(x => x.GetEvaluatorTypesForRunAsync(evaluationRunId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<EvaluatorType> { new() { Id = Guid.NewGuid(), Name = "Similarity", RequiresExpectedResponse = false } });
-        _mockServiceBusService.Setup(x => x.SendTestCaseMessageAsync(
-            It.IsAny<ProcessTestCaseMessage>(), It.IsAny<CancellationToken>()))
+        _mockServiceBusService.Setup(x => x.SendAgentCallMessageAsync(
+            It.IsAny<AgentCallMessage>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("Service Bus unavailable"));
 
         var httpRequestData = CreateMockHttpRequestData(request);

@@ -14,8 +14,8 @@ public class BasicHealthFunction
     private readonly ILogger<BasicHealthFunction> _logger;
     
     // Build timestamp to track deployments - updated with each build
-    private static readonly string BuildTimestamp = "2025-11-18T22:00:00Z";
-    private static readonly string DeploymentVersion = "1.0.19"; // Deployment #19 - Fixed execution time to measure total time instead of LLM Judge only
+    private static readonly string BuildTimestamp = "2025-11-19T03:43:00Z";
+    private static readonly string DeploymentVersion = "1.0.20"; // Deployment #20 - Phase 3 hard cutover: Removed old WorkerFunction, ProcessTestCaseMessage, test-case-processing queue
 
     public BasicHealthFunction(ILogger<BasicHealthFunction> logger)
     {

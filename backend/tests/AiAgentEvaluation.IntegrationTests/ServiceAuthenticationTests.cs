@@ -22,12 +22,15 @@ public class ServiceAuthenticationTests : IntegrationTestBase
         // Test basic connectivity (this will fail gracefully if not properly configured)
         try
         {
-            await service.SendTestCaseMessageAsync(new Models.ProcessTestCaseMessage 
+            await service.SendAgentCallMessageAsync(new Models.AgentCallMessage 
             { 
                 TestCaseId = Guid.NewGuid(),
                 EvaluationRunId = Guid.NewGuid(),
+                DirectLineUrl = "https://test.example.com",
                 UserInput = "Test",
-                ExpectedResponse = "Test"
+                ExpectedResponse = "Test",
+                EvaluatorTypeIds = new List<Guid> { Guid.NewGuid() },
+                PassingThreshold = 0.7m
             }, CancellationToken.None);
             Logger.LogInformation("ServiceBusService connectivity test completed");
         }

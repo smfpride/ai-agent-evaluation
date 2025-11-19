@@ -271,7 +271,18 @@ public class MultiEvaluatorSupportTests
         // Assert
         Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
 
-        // Verify NA result was created
+        // NEW ARCHITECTURE: NA detection moved to AgentWorkerFunction
+        // Orchestrator should still queue the message, and AgentWorkerFunction will handle NA scenario
+        _mockServiceBusService.Verify(x => x.SendAgentCallMessageAsync(
+            It.Is<AgentCallMessage>(m =>
+                m.EvaluationRunId == evaluationRunId &&
+                m.TestCaseId == testCaseId &&
+                m.EvaluatorTypeIds.Contains(evaluatorTypeId)),
+            It.IsAny<CancellationToken>()), 
+            Times.Once);
+
+        // NEW ARCHITECTURE: NA result NOT created by Orchestrator anymore
+        // AgentWorkerFunction will detect empty expectedResponse and create NA result
         _mockDataverseService.Verify(x => x.CreateEvaluationResultAsync(
             It.Is<CreateEvaluationResultRequest>(r => 
                 r.StatusCode == EvaluationResultStatus.NotApplicable && 
@@ -280,20 +291,15 @@ public class MultiEvaluatorSupportTests
                 r.TestCaseId == testCaseId &&
                 r.Reasoning!.Contains("requires expected response")),
             It.IsAny<CancellationToken>()), 
-            Times.Once);
+            Times.Never); // Changed from Once to Never
 
-        // Verify progress was incremented
+        // NEW ARCHITECTURE: Progress NOT incremented by Orchestrator for NA scenarios
+        // AgentWorkerFunction will increment after creating NA result
         _mockDataverseService.Verify(x => x.IncrementCompletedTestCasesAsync(
             evaluationRunId, 
             false, 
             It.IsAny<CancellationToken>()), 
-            Times.Once);
-
-        // Should NOT queue message to Service Bus
-        _mockServiceBusService.Verify(x => x.SendTestCaseMessageAsync(
-            It.IsAny<ProcessTestCaseMessage>(), 
-            It.IsAny<CancellationToken>()), 
-            Times.Never);
+            Times.Never); // Changed from Once to Never
     }
 
     [Fact]
@@ -358,20 +364,15 @@ public class MultiEvaluatorSupportTests
         // Assert
         Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
 
-        // Verify NA result was created once (for Accuracy only)
-        _mockDataverseService.Verify(x => x.CreateEvaluationResultAsync(
-            It.Is<CreateEvaluationResultRequest>(r => 
-                r.StatusCode == EvaluationResultStatus.NotApplicable &&
-                r.EvaluatorTypeId == accuracyEvaluatorId),
-            It.IsAny<CancellationToken>()), 
-            Times.Once);
-
-        // Verify 1 message queued with 2 evaluator IDs (for Similarity and Relevancy)
-        _mockServiceBusService.Verify(x => x.SendTestCaseMessageAsync(
-            It.Is<ProcessTestCaseMessage>(m => 
+        // NEW ARCHITECTURE: Orchestrator queues message with ALL evaluator IDs
+        // AgentWorkerFunction will determine which are NA and handle accordingly
+        // Verify 1 message queued with all 3 evaluator IDs
+        _mockServiceBusService.Verify(x => x.SendAgentCallMessageAsync(
+            It.Is<AgentCallMessage>(m => 
+                m.EvaluatorTypeIds.Contains(accuracyEvaluatorId) &&
                 m.EvaluatorTypeIds.Contains(similarityEvaluatorId) && 
                 m.EvaluatorTypeIds.Contains(relevancyEvaluatorId) &&
-                m.EvaluatorTypeIds.Count == 2), 
+                m.EvaluatorTypeIds.Count == 3), 
             It.IsAny<CancellationToken>()), 
             Times.Once);
     }

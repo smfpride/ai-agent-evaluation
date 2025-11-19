@@ -22,6 +22,7 @@ public class MultiTurnDurableActivitiesTests
     private readonly Mock<ICopilotStudioService> _mockCopilotStudioService;
     private readonly Mock<ILLMJudgeService> _mockLLMJudgeService;
     private readonly Mock<ILLMJudgeServiceFactory> _mockLLMJudgeServiceFactory;
+    private readonly Mock<IServiceBusService> _mockServiceBusService;
     private readonly MultiTurnDurableActivities _activities;
 
     public MultiTurnDurableActivitiesTests()
@@ -31,7 +32,7 @@ public class MultiTurnDurableActivitiesTests
         _mockCopilotStudioService = new Mock<ICopilotStudioService>();
         _mockLLMJudgeService = new Mock<ILLMJudgeService>();
         _mockLLMJudgeServiceFactory = new Mock<ILLMJudgeServiceFactory>();
-        var _mockServiceBusService = new Mock<IServiceBusService>();
+        _mockServiceBusService = new Mock<IServiceBusService>();
 
         // Setup factory to return mock judge service
         _mockLLMJudgeServiceFactory
@@ -190,19 +191,27 @@ public class MultiTurnDurableActivitiesTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(resultId);
 
+        // Mock Service Bus for evaluator job queueing
+        _mockServiceBusService
+            .Setup(x => x.SendEvaluatorJobMessageAsync(
+                It.IsAny<EvaluatorJobMessage>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
         // Act
         var results = await _activities.ExecuteSingleTurn(input, CancellationToken.None);
 
-        // Assert
+        // Assert - NEW ARCHITECTURE: Returns pending results immediately
         Assert.NotNull(results);
         Assert.Single(results);
         var result = results[0];
-        Assert.True(result.Success);
+        Assert.False(result.Success); // Pending, not yet evaluated
         Assert.Equal("conv-123", result.ConversationId);
-        Assert.Equal(0.85m, result.Score);
-        Assert.True(result.Passed);
+        Assert.Equal(0m, result.Score); // Pending results have 0 score
+        Assert.False(result.Passed); // Pending results not yet passed
         Assert.Equal(resultId, result.EvaluationResultId);
         Assert.Null(result.ErrorMessage);
+        Assert.Equal(EvaluationResultStatus.Pending, result.StatusCode);
 
         // Verify all services were called
         _mockCopilotStudioService.Verify(
@@ -214,11 +223,13 @@ public class MultiTurnDurableActivitiesTests
                 It.IsAny<CancellationToken>()),
             Times.Once);
 
+        // NEW ARCHITECTURE: LLM Judge is NOT called from ExecuteSingleTurn anymore
+        // It's handled by EvaluatorWorkerFunction when processing the queued job
         _mockLLMJudgeServiceFactory.Verify(
             x => x.CreateJudgeServiceAsync(
                 It.IsAny<Guid?>(),
                 It.IsAny<CancellationToken>()),
-            Times.Once);
+            Times.Never); // Changed from Once to Never
 
         _mockLLMJudgeService.Verify(
             x => x.EvaluateResponseAsync(
@@ -228,17 +239,26 @@ public class MultiTurnDurableActivitiesTests
                     r.ActualResponse == copilotResponse.Response &&
                     r.ConversationId == copilotResponse.ConversationId),
                 It.IsAny<CancellationToken>()),
-            Times.Once);
+            Times.Never); // Changed from Once to Never - evaluation happens in EvaluatorWorkerFunction
 
+        // NEW ARCHITECTURE: Verify pending result is created (StatusCode=Pending)
         _mockDataverseService.Verify(
             x => x.CreateEvaluationResultAsync(
                 It.Is<CreateEvaluationResultRequest>(r =>
                     r.EvaluationRunId == testRunId &&
                     r.TestCaseId == testCaseId &&
                     r.TestCaseTurnId == turnId &&
-                    r.Score == 0.85m &&
-                    r.Passed == true &&
+                    r.StatusCode == (int)EvaluationResultStatus.Pending && // StatusCode=1
                     r.IsAggregate == false),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        // NEW ARCHITECTURE: Verify evaluator job is queued for asynchronous processing
+        _mockServiceBusService.Verify(
+            x => x.SendEvaluatorJobMessageAsync(
+                It.Is<EvaluatorJobMessage>(m =>
+                    m.EvaluationResultId == resultId &&
+                    m.EvaluationRunId == testRunId),
                 It.IsAny<CancellationToken>()),
             Times.Once);
     }
@@ -279,6 +299,12 @@ public class MultiTurnDurableActivitiesTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(copilotResponse);
 
+        _mockDataverseService
+            .Setup(x => x.CreateEvaluationResultAsync(
+                It.IsAny<CreateEvaluationResultRequest>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Guid.NewGuid());
+
         // Act
         var results = await _activities.ExecuteSingleTurn(input, CancellationToken.None);
 
@@ -290,6 +316,7 @@ public class MultiTurnDurableActivitiesTests
         Assert.Equal(0, result.Score);
         Assert.False(result.Passed);
         Assert.Contains("Copilot timeout", result.ErrorMessage);
+        Assert.Equal(EvaluationResultStatus.Errored, result.StatusCode);
 
         // Verify LLM Judge was NOT called
         _mockLLMJudgeServiceFactory.Verify(
@@ -303,12 +330,13 @@ public class MultiTurnDurableActivitiesTests
                 It.IsAny<CancellationToken>()),
             Times.Never);
 
-        // Verify Dataverse CreateEvaluationResult was NOT called (failures not saved)
+        // NEW ARCHITECTURE: Error results ARE created (CreateErrorResultsForAllEvaluators)
         _mockDataverseService.Verify(
             x => x.CreateEvaluationResultAsync(
-                It.IsAny<CreateEvaluationResultRequest>(),
+                It.Is<CreateEvaluationResultRequest>(r =>
+                    r.StatusCode == EvaluationResultStatus.Errored),
                 It.IsAny<CancellationToken>()),
-            Times.Never);
+            Times.Once);
     }
 
     [Fact]
@@ -346,6 +374,10 @@ public class MultiTurnDurableActivitiesTests
             ErrorMessage = "Rate limit exceeded"
         };
 
+        // NOTE: This test is no longer relevant in the new architecture
+        // ExecuteSingleTurn no longer calls LLM Judge - that's handled by EvaluatorWorkerFunction
+        // This test now validates that ExecuteSingleTurn creates pending results and queues jobs
+        
         _mockCopilotStudioService
             .Setup(x => x.SendMessageAsync(
                 It.IsAny<string>(),
@@ -355,42 +387,50 @@ public class MultiTurnDurableActivitiesTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(copilotResponse);
 
-        _mockLLMJudgeServiceFactory
-            .Setup(x => x.CreateJudgeServiceAsync(
-                It.IsAny<Guid?>(),
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(_mockLLMJudgeService.Object);
-
-        _mockLLMJudgeService
-            .Setup(x => x.EvaluateResponseAsync(
-                It.IsAny<LLMJudgeRequest>(),
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(judgeResponse);
-
         _mockDataverseService
             .Setup(x => x.CreateEvaluationResultAsync(
                 It.IsAny<CreateEvaluationResultRequest>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(Guid.NewGuid());
 
+        _mockServiceBusService
+            .Setup(x => x.SendEvaluatorJobMessageAsync(
+                It.IsAny<EvaluatorJobMessage>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
         // Act
         var results = await _activities.ExecuteSingleTurn(input, CancellationToken.None);
 
-        // Assert
+        // Assert - NEW ARCHITECTURE: Returns pending result, EvaluatorWorker will handle evaluation
         Assert.NotNull(results);
         Assert.Single(results);
         var result = results[0];
-        Assert.False(result.Success);
-        Assert.Equal(0, result.Score);
-        Assert.False(result.Passed);
-        Assert.Contains("Rate limit exceeded", result.ErrorMessage);
+        Assert.False(result.Success); // Pending, not yet evaluated
+        Assert.Equal(0m, result.Score); // Pending result has 0 score
+        Assert.False(result.Passed); // Not yet evaluated
+        Assert.Equal(EvaluationResultStatus.Pending, result.StatusCode);
+        Assert.Null(result.ErrorMessage); // No error - just pending
 
-        // Verify Dataverse CreateEvaluationResult WAS called (error results are saved)
+        // LLM Judge NOT called in ExecuteSingleTurn (happens in EvaluatorWorker)
+        _mockLLMJudgeServiceFactory.Verify(
+            x => x.CreateJudgeServiceAsync(
+                It.IsAny<Guid?>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        // Verify pending result was created
         _mockDataverseService.Verify(
             x => x.CreateEvaluationResultAsync(
                 It.Is<CreateEvaluationResultRequest>(r => 
-                    r.ErrorMessage != null &&
-                    r.StatusCode == EvaluationResultStatus.Errored),
+                    r.StatusCode == EvaluationResultStatus.Pending),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+        
+        // Verify evaluator job was queued
+        _mockServiceBusService.Verify(
+            x => x.SendEvaluatorJobMessageAsync(
+                It.IsAny<EvaluatorJobMessage>(),
                 It.IsAny<CancellationToken>()),
             Times.Once);
     }
@@ -458,22 +498,36 @@ public class MultiTurnDurableActivitiesTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(Guid.NewGuid());
 
+        _mockServiceBusService
+            .Setup(x => x.SendEvaluatorJobMessageAsync(
+                It.IsAny<EvaluatorJobMessage>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
         // Act
         var results = await _activities.ExecuteSingleTurn(input, CancellationToken.None);
 
-        // Assert
+        // Assert - NEW ARCHITECTURE: Returns pending result, evaluator worker will process it
         Assert.NotNull(results);
         Assert.Single(results);
         var result = results[0];
-        Assert.True(result.Success); // Execution succeeded
-        Assert.Equal(0.5m, result.Score);
-        Assert.False(result.Passed); // But test failed due to low score
+        Assert.False(result.Success); // Pending, evaluation happens async in EvaluatorWorker
+        Assert.Equal(0m, result.Score); // Pending result has 0 score
+        Assert.False(result.Passed); // Not yet evaluated
+        Assert.Equal(EvaluationResultStatus.Pending, result.StatusCode);
 
-        // Verify result was saved with Passed = false
+        // Verify pending result was created (score/passed set later by EvaluatorWorker)
         _mockDataverseService.Verify(
             x => x.CreateEvaluationResultAsync(
                 It.Is<CreateEvaluationResultRequest>(r =>
-                    r.Score == 0.5m && r.Passed == false),
+                    r.StatusCode == EvaluationResultStatus.Pending),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+        
+        // Verify evaluator job was queued
+        _mockServiceBusService.Verify(
+            x => x.SendEvaluatorJobMessageAsync(
+                It.IsAny<EvaluatorJobMessage>(),
                 It.IsAny<CancellationToken>()),
             Times.Once);
     }

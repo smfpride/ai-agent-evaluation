@@ -53,22 +53,22 @@ public class WorkflowIntegrationTests : IntegrationTestBase
     {
         // Arrange
         var serviceBusService = GetService<IServiceBusService>();
-        var testMessage = new ProcessTestCaseMessage
+        var testMessage = new AgentCallMessage
         {
             TestCaseId = Guid.NewGuid(),
             EvaluationRunId = Guid.NewGuid(),
             DirectLineUrl = "https://test.powerplatform.com/powervirtualagents/botsbyschema/test/directline/token",
             UserInput = "What is the capital of France?",
             ExpectedResponse = "Paris",
-            AgentId = "test-bot-123",
-            MaxRetries = 3
+            EvaluatorTypeIds = new List<Guid> { Guid.NewGuid() },
+            PassingThreshold = 0.7m
         };
         
         // Act & Assert
         try
         {
-            // Try to send a message
-            await serviceBusService.SendTestCaseMessageAsync(testMessage, CancellationToken.None);
+            // Try to send a message to the new agent-call-queue
+            await serviceBusService.SendAgentCallMessageAsync(testMessage, CancellationToken.None);
             Logger.LogInformation("Successfully sent Service Bus message for test case: {TestCaseId}", testMessage.TestCaseId);
             
             // Note: We can't easily test receiving without setting up a full processor
