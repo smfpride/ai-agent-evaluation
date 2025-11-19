@@ -18,6 +18,7 @@ public class EvaluatorWorkerFunctionTests
     private readonly Mock<IDataverseService> _mockDataverseService;
     private readonly Mock<ILLMJudgeService> _mockLLMJudgeService;
     private readonly Mock<ILLMJudgeServiceFactory> _mockLLMJudgeServiceFactory;
+    private readonly Mock<IServiceBusService> _mockServiceBusService;
     private readonly EvaluatorWorkerFunction _evaluatorWorker;
 
     public EvaluatorWorkerFunctionTests()
@@ -26,6 +27,7 @@ public class EvaluatorWorkerFunctionTests
         _mockDataverseService = new Mock<IDataverseService>();
         _mockLLMJudgeService = new Mock<ILLMJudgeService>();
         _mockLLMJudgeServiceFactory = new Mock<ILLMJudgeServiceFactory>();
+        _mockServiceBusService = new Mock<IServiceBusService>();
 
         _mockLLMJudgeServiceFactory
             .Setup(x => x.CreateJudgeServiceAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
@@ -34,7 +36,8 @@ public class EvaluatorWorkerFunctionTests
         _evaluatorWorker = new EvaluatorWorkerFunction(
             _mockLogger.Object,
             _mockDataverseService.Object,
-            _mockLLMJudgeServiceFactory.Object);
+            _mockLLMJudgeServiceFactory.Object,
+            _mockServiceBusService.Object);
     }
 
     [Fact]
@@ -306,7 +309,7 @@ public class EvaluatorWorkerFunctionTests
     }
 
     [Fact]
-    public async Task ProcessEvaluatorJob_LLMJudgeFailure_UpdatesResultToErrored()
+    public async Task ProcessEvaluatorJob_LLMJudgeFailure_RequeuesWithRetry()
     {
         // Arrange
         var resultId = Guid.NewGuid();
@@ -317,7 +320,8 @@ public class EvaluatorWorkerFunctionTests
         var message = new EvaluatorJobMessage
         {
             EvaluationResultId = resultId,
-            EvaluationRunId = evaluationRunId
+            EvaluationRunId = evaluationRunId,
+            RetryCount = 0
         };
 
         var pendingResult = new EvaluationResult
@@ -361,13 +365,92 @@ public class EvaluatorWorkerFunctionTests
             .Setup(x => x.GetEvaluatorTypeAsync(evaluatorTypeId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(evaluatorType);
 
+        _mockLLMJudgeService
+            .Setup(x => x.EvaluateResponseAsync(It.IsAny<LLMJudgeRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(judgeResponse);
+
+        _mockServiceBusService
+            .Setup(x => x.SendEvaluatorJobMessageAsync(It.IsAny<EvaluatorJobMessage>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var messageBody = JsonSerializer.Serialize(message);
+
+        // Act
+        await _evaluatorWorker.ProcessEvaluatorJob(messageBody, CancellationToken.None);
+
+        // Assert - Message re-queued with incremented retry count
+        _mockServiceBusService.Verify(
+            x => x.SendEvaluatorJobMessageAsync(
+                It.Is<EvaluatorJobMessage>(m =>
+                    m.EvaluationResultId == resultId &&
+                    m.EvaluationRunId == evaluationRunId &&
+                    m.RetryCount == 1),
+                It.IsAny<DateTimeOffset>(),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        // Assert - Result NOT updated to Errored (will retry)
+        _mockDataverseService.Verify(
+            x => x.UpdateEvaluationResultAsync(It.IsAny<Guid>(), It.IsAny<UpdateEvaluationResultRequest>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ProcessEvaluatorJob_LLMJudgeFailure_MaxRetriesExceeded_UpdatesResultToErrored()
+    {
+        // Arrange
+        var resultId = Guid.NewGuid();
+        var evaluationRunId = Guid.NewGuid();
+        var testCaseId = Guid.NewGuid();
+        var evaluatorTypeId = Guid.NewGuid();
+
+        var message = new EvaluatorJobMessage
+        {
+            EvaluationResultId = resultId,
+            EvaluationRunId = evaluationRunId,
+            RetryCount = 3 // Max retries exceeded
+        };
+
+        var pendingResult = new EvaluationResult
+        {
+            Id = resultId,
+            EvaluationRunId = evaluationRunId,
+            TestCaseId = testCaseId,
+            EvaluatorTypeId = evaluatorTypeId,
+            StatusCode = EvaluationResultStatus.Pending,
+            ActualResponse = "Product X is an advanced AI solution"
+        };
+
+        var testCase = new TestCase
+        {
+            Id = testCaseId,
+            UserInput = "What is Product X?",
+            ExpectedResponse = "Product X is an AI solution"
+        };
+
+        var evaluatorType = new EvaluatorType
+        {
+            Id = evaluatorTypeId,
+            Name = "Relevancy"
+        };
+
+        var judgeResponse = new LLMJudgeResponse
+        {
+            Success = false,
+            ErrorMessage = "Rate limit exceeded"
+        };
+
         _mockDataverseService
-            .Setup(x => x.GetEvaluationRunAsync(evaluationRunId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new EvaluationRun
-            {
-                Id = evaluationRunId,
-                PassingThreshold = 0.7m
-            });
+            .Setup(x => x.GetEvaluationResultAsync(resultId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(pendingResult);
+
+        _mockDataverseService
+            .Setup(x => x.GetTestCaseAsync(testCaseId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(testCase);
+
+        _mockDataverseService
+            .Setup(x => x.GetEvaluatorTypeAsync(evaluatorTypeId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(evaluatorType);
 
         _mockLLMJudgeService
             .Setup(x => x.EvaluateResponseAsync(It.IsAny<LLMJudgeRequest>(), It.IsAny<CancellationToken>()))
@@ -386,13 +469,13 @@ public class EvaluatorWorkerFunctionTests
         // Act
         await _evaluatorWorker.ProcessEvaluatorJob(messageBody, CancellationToken.None);
 
-        // Assert - Result updated to Errored
+        // Assert - Result updated to Errored after max retries
         _mockDataverseService.Verify(
             x => x.UpdateEvaluationResultAsync(
                 resultId,
                 It.Is<UpdateEvaluationResultRequest>(r =>
                     r.StatusCode == EvaluationResultStatus.Errored &&
-                    r.ErrorMessage == judgeResponse.ErrorMessage),
+                    r.ErrorMessage!.Contains("after 3 retries")),
                 It.IsAny<CancellationToken>()),
             Times.Once);
 
@@ -400,6 +483,11 @@ public class EvaluatorWorkerFunctionTests
         _mockDataverseService.Verify(
             x => x.IncrementCompletedTestCasesAsync(evaluationRunId, true, It.IsAny<CancellationToken>()),
             Times.Once);
+
+        // Assert - Message NOT re-queued
+        _mockServiceBusService.Verify(
+            x => x.SendEvaluatorJobMessageAsync(It.IsAny<EvaluatorJobMessage>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]

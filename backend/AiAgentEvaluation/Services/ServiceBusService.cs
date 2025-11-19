@@ -306,6 +306,39 @@ public class ServiceBusService : IServiceBusService, IDisposable
             cancellationToken);
     }
 
+    public async Task SendEvaluatorJobMessageAsync(EvaluatorJobMessage message, DateTimeOffset scheduledEnqueueTime, CancellationToken cancellationToken = default)
+    {
+        await _resilientService.ExecuteAsync(
+            async (ct) =>
+            {
+                if (_serviceBusClient == null)
+                {
+                    throw new InvalidOperationException("Service Bus client not initialized. Check configuration.");
+                }
+
+                await using var sender = _serviceBusClient.CreateSender("evaluator-processing-queue");
+                var messageBody = JsonSerializer.Serialize(message, _jsonOptions);
+                var serviceBusMessage = new ServiceBusMessage(Encoding.UTF8.GetBytes(messageBody))
+                {
+                    ContentType = "application/json",
+                    MessageId = Guid.NewGuid().ToString(),
+                    ScheduledEnqueueTime = scheduledEnqueueTime
+                };
+
+                await sender.SendMessageAsync(serviceBusMessage, ct);
+                
+                _logger.LogInformation(
+                    "Sent evaluator job message to queue with scheduled enqueue time {ScheduledTime}: Result={EvaluationResultId}, Run={EvaluationRunId}, RetryCount={RetryCount}",
+                    scheduledEnqueueTime,
+                    message.EvaluationResultId,
+                    message.EvaluationRunId,
+                    message.RetryCount);
+            },
+            "SendEvaluatorJobMessageScheduled",
+            null,
+            cancellationToken);
+    }
+
     public void Dispose()
     {
         Dispose(true);

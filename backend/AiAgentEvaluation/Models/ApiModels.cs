@@ -222,6 +222,12 @@ public class EvaluatorJobMessage
     [Required]
     [JsonPropertyName("evaluationRunId")]
     public Guid EvaluationRunId { get; set; }
+
+    /// <summary>
+    /// Number of retry attempts for this message (used for exponential backoff)
+    /// </summary>
+    [JsonPropertyName("retryCount")]
+    public int RetryCount { get; set; } = 0;
 }
 
 /// <summary>

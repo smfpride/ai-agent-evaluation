@@ -11,21 +11,32 @@ namespace AiAgentEvaluation.Functions;
 /// Service Bus Worker Function for processing evaluator jobs (Phase 1 - New Architecture)
 /// Triggered by messages on evaluator-processing-queue
 /// Retrieves pending results, calls LLM Judge, and updates results to Completed or Errored
+/// Implements exponential backoff retry by re-queuing messages with scheduled enqueue time
 /// </summary>
 public class EvaluatorWorkerFunction
 {
     private readonly ILogger<EvaluatorWorkerFunction> _logger;
     private readonly IDataverseService _dataverseService;
     private readonly ILLMJudgeServiceFactory _llmJudgeServiceFactory;
+    private readonly IServiceBusService _serviceBusService;
+    private const int MaxRetryCount = 3; // Max application-level retries before marking as errored
+    private static readonly TimeSpan[] RetryDelays = new[]
+    {
+        TimeSpan.FromSeconds(5),   // 1st retry after 5 seconds
+        TimeSpan.FromSeconds(15),  // 2nd retry after 15 seconds
+        TimeSpan.FromSeconds(45)   // 3rd retry after 45 seconds
+    };
 
     public EvaluatorWorkerFunction(
         ILogger<EvaluatorWorkerFunction> logger,
         IDataverseService dataverseService,
-        ILLMJudgeServiceFactory llmJudgeServiceFactory)
+        ILLMJudgeServiceFactory llmJudgeServiceFactory,
+        IServiceBusService serviceBusService)
     {
         _logger = logger;
         _dataverseService = dataverseService;
         _llmJudgeServiceFactory = llmJudgeServiceFactory;
+        _serviceBusService = serviceBusService;
     }
 
     [Function("ProcessEvaluatorJob")]
@@ -188,14 +199,48 @@ public class EvaluatorWorkerFunction
             if (!judgeResponse.Success)
             {
                 _logger.LogWarning(
-                    "LLM Judge call failed for result {ResultId}: {ErrorMessage}",
+                    "LLM Judge call failed for result {ResultId}: {ErrorMessage}, RetryCount={RetryCount}",
                     result.Id,
+                    judgeResponse.ErrorMessage,
+                    message.RetryCount);
+
+                // Implement exponential backoff retry
+                if (message.RetryCount < MaxRetryCount)
+                {
+                    var delay = RetryDelays[message.RetryCount];
+                    var scheduledEnqueueTime = DateTimeOffset.UtcNow.Add(delay);
+                    
+                    _logger.LogInformation(
+                        "Re-queuing evaluator job for result {ResultId} with retry count {RetryCount}, scheduled for {ScheduledTime}",
+                        result.Id,
+                        message.RetryCount + 1,
+                        scheduledEnqueueTime);
+
+                    // Re-queue the message with incremented retry count
+                    await _serviceBusService.SendEvaluatorJobMessageAsync(
+                        new EvaluatorJobMessage
+                        {
+                            EvaluationResultId = message.EvaluationResultId,
+                            EvaluationRunId = message.EvaluationRunId,
+                            RetryCount = message.RetryCount + 1
+                        },
+                        scheduledEnqueueTime,
+                        cancellationToken);
+                    
+                    return;
+                }
+
+                // Max retries exceeded, mark as errored
+                _logger.LogError(
+                    "LLM Judge call failed for result {ResultId} after {MaxRetries} retries: {ErrorMessage}",
+                    result.Id,
+                    MaxRetryCount,
                     judgeResponse.ErrorMessage);
 
                 await UpdateResultToErrored(
                     message.EvaluationResultId,
                     message.EvaluationRunId,
-                    judgeResponse.ErrorMessage ?? "LLM Judge call failed",
+                    $"LLM Judge call failed after {MaxRetryCount} retries: {judgeResponse.ErrorMessage ?? "Unknown error"}",
                     stopwatch,
                     cancellationToken);
                 return;
