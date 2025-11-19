@@ -46,19 +46,23 @@ public class AggregateEvaluationProcessorFunction
 
             _logger.LogInformation("Found {Count} pending aggregate results", pendingAggregates.Count);
 
-            foreach (var aggregate in pendingAggregates)
-            {
-                try
+            // Process aggregates in parallel for better performance
+            await Parallel.ForEachAsync(
+                pendingAggregates,
+                cancellationToken,
+                async (aggregate, ct) =>
                 {
-                    await ProcessSingleAggregate(aggregate, cancellationToken);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, 
-                        "Error processing aggregate result {ResultId} for test case {TestCaseId}",
-                        aggregate.Id, aggregate.TestCaseId);
-                }
-            }
+                    try
+                    {
+                        await ProcessSingleAggregate(aggregate, ct);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, 
+                            "Error processing aggregate result {ResultId} for test case {TestCaseId}",
+                            aggregate.Id, aggregate.TestCaseId);
+                    }
+                });
         }
         catch (Exception ex)
         {
