@@ -96,6 +96,14 @@ public class EvaluatorWorkerFunctionTests
             .Setup(x => x.GetEvaluatorTypeAsync(evaluatorTypeId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(evaluatorType);
 
+        _mockDataverseService
+            .Setup(x => x.GetEvaluationRunAsync(evaluationRunId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new EvaluationRun
+            {
+                Id = evaluationRunId,
+                PassingThreshold = 0.7m
+            });
+
         _mockLLMJudgeService
             .Setup(x => x.EvaluateResponseAsync(It.IsAny<LLMJudgeRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(judgeResponse);
@@ -189,6 +197,14 @@ public class EvaluatorWorkerFunctionTests
         _mockDataverseService
             .Setup(x => x.GetEvaluatorTypeAsync(evaluatorTypeId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(evaluatorType);
+
+        _mockDataverseService
+            .Setup(x => x.GetEvaluationRunAsync(evaluationRunId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new EvaluationRun
+            {
+                Id = evaluationRunId,
+                PassingThreshold = 0.7m
+            });
 
         _mockLLMJudgeService
             .Setup(x => x.EvaluateResponseAsync(It.IsAny<LLMJudgeRequest>(), It.IsAny<CancellationToken>()))
@@ -345,6 +361,14 @@ public class EvaluatorWorkerFunctionTests
             .Setup(x => x.GetEvaluatorTypeAsync(evaluatorTypeId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(evaluatorType);
 
+        _mockDataverseService
+            .Setup(x => x.GetEvaluationRunAsync(evaluationRunId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new EvaluationRun
+            {
+                Id = evaluationRunId,
+                PassingThreshold = 0.7m
+            });
+
         _mockLLMJudgeService
             .Setup(x => x.EvaluateResponseAsync(It.IsAny<LLMJudgeRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(judgeResponse);
@@ -450,6 +474,14 @@ public class EvaluatorWorkerFunctionTests
         _mockDataverseService
             .Setup(x => x.GetEvaluatorTypeAsync(evaluatorTypeId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(evaluatorType);
+
+        _mockDataverseService
+            .Setup(x => x.GetEvaluationRunAsync(evaluationRunId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new EvaluationRun
+            {
+                Id = evaluationRunId,
+                PassingThreshold = 0.7m
+            });
 
         _mockLLMJudgeService
             .Setup(x => x.EvaluateResponseAsync(

@@ -201,8 +201,17 @@ public class EvaluatorWorkerFunction
                 return;
             }
 
-            // Determine passing threshold (default 0.7)
-            var passingThreshold = 0.7m; // TODO: Get from test case or evaluator configuration
+            // Get passing threshold from evaluation run
+            var evaluationRun = await _dataverseService.GetEvaluationRunAsync(
+                message.EvaluationRunId,
+                cancellationToken);
+            
+            var passingThreshold = evaluationRun?.PassingThreshold ?? 0.7m;
+            
+            _logger.LogInformation(
+                "Using passing threshold {PassingThreshold} for result {ResultId}",
+                passingThreshold,
+                result.Id);
 
             // Update result to completed
             await _dataverseService.UpdateEvaluationResultAsync(result.Id, new UpdateEvaluationResultRequest
