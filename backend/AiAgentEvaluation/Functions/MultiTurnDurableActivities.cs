@@ -7,7 +7,7 @@ using System.Diagnostics;
 namespace AiAgentEvaluation.Functions;
 
 /// <summary>
-/// Activity functions for multi-turn test case execution
+/// Activity functions for multi-turn test case execution (Phase 2: Updated for async architecture)
 /// Each activity can run for extended periods without timeout
 /// </summary>
 public class MultiTurnDurableActivities
@@ -16,17 +16,20 @@ public class MultiTurnDurableActivities
     private readonly IDataverseService _dataverseService;
     private readonly ICopilotStudioService _copilotStudioService;
     private readonly ILLMJudgeServiceFactory _llmJudgeServiceFactory;
+    private readonly IServiceBusService _serviceBusService;
 
     public MultiTurnDurableActivities(
         ILogger<MultiTurnDurableActivities> logger,
         IDataverseService dataverseService,
         ICopilotStudioService copilotStudioService,
-        ILLMJudgeServiceFactory llmJudgeServiceFactory)
+        ILLMJudgeServiceFactory llmJudgeServiceFactory,
+        IServiceBusService serviceBusService)
     {
         _logger = logger;
         _dataverseService = dataverseService;
         _copilotStudioService = copilotStudioService;
         _llmJudgeServiceFactory = llmJudgeServiceFactory;
+        _serviceBusService = serviceBusService;
     }
 
     /// <summary>
@@ -64,8 +67,11 @@ public class MultiTurnDurableActivities
     }
 
     /// <summary>
-    /// Executes a single turn: sends message to agent, evaluates with LLM, saves result
-    /// Can take many minutes without timeout
+    /// Executes a single turn using async architecture (Phase 2)
+    /// 1. Calls Copilot Studio
+    /// 2. Creates pending results for each evaluator
+    /// 3. Queues evaluator jobs to evaluator-processing-queue
+    /// 4. Polls Dataverse until all evaluators complete (with 10-minute timeout)
     /// </summary>
     [Function("ExecuteSingleTurn")]
     public async Task<List<TurnExecutionResult>> ExecuteSingleTurn(
@@ -75,83 +81,12 @@ public class MultiTurnDurableActivities
         var stopwatch = Stopwatch.StartNew();
         var results = new List<TurnExecutionResult>();
         
-        // CRITICAL DEBUG: Log the raw Turn object serialized
-        var turnJson = System.Text.Json.JsonSerializer.Serialize(input.Turn);
-        _logger.LogWarning("ExecuteSingleTurn START: Turn JSON = {TurnJson}", turnJson);
-        _logger.LogWarning("ExecuteSingleTurn START: PromptText property value = '{PromptText}'", input.Turn?.PromptText ?? "NULL");
-        
-        _logger.LogInformation("ExecuteSingleTurn RECEIVED: turn.Sequence={Sequence}, turn.PromptText='{PromptText}', turn.TestCaseId={TestCaseId}, conversationId={ConversationId}",
-            input.Turn.Sequence, input.Turn.PromptText, input.Turn.TestCaseId, input.ConversationId);
-        
-        _logger.LogInformation("Executing turn {Sequence} for test case {TestCaseId} with {EvaluatorCount} evaluators",
+        _logger.LogInformation("Executing turn {Sequence} for test case {TestCaseId} with {EvaluatorCount} evaluators (async architecture)",
             input.Turn.Sequence, input.Turn.TestCaseId, input.EvaluatorTypeIds.Count);
 
         try
         {
-            // Check which evaluators are applicable (NA check)
-            var applicableEvaluators = new List<Guid>();
-            
-            foreach (var evaluatorTypeId in input.EvaluatorTypeIds)
-            {
-                var evaluatorType = await _dataverseService.GetEvaluatorTypeAsync(evaluatorTypeId, cancellationToken);
-                
-                if (evaluatorType != null && evaluatorType.RequiresExpectedResponse && 
-                    string.IsNullOrWhiteSpace(input.Turn.ExpectedResponse))
-                {
-                    _logger.LogInformation("Turn {Sequence} marked NA for evaluator {EvaluatorId} (missing expected response)",
-                        input.Turn.Sequence, evaluatorTypeId);
-                    
-                    // Create NA result immediately
-                    var naResultRequest = new CreateEvaluationResultRequest
-                    {
-                        EvaluationRunId = input.TestRunId,
-                        TestCaseId = input.Turn.TestCaseId,
-                        TestCaseTurnId = input.Turn.Id,
-                        EvaluatorTypeId = evaluatorTypeId,
-                        ConversationId = input.ConversationId,
-                        ActualResponse = null,
-                        Score = 0.0m,
-                        Passed = false,
-                        Reasoning = $"Evaluator '{evaluatorType.Name}' requires expected response but turn {input.Turn.Sequence} has none provided",
-                        ExecutionTimeMs = (int)stopwatch.ElapsedMilliseconds,
-                        IsAggregate = false,
-                        StatusCode = EvaluationResultStatus.NotApplicable
-                    };
-
-                    var naResultId = await _dataverseService.CreateEvaluationResultAsync(naResultRequest, cancellationToken);
-                    
-                    // Increment completion counter
-                    await _dataverseService.IncrementCompletedTestCasesAsync(
-                        input.TestRunId, 
-                        failed: false, 
-                        cancellationToken);
-
-                    results.Add(new TurnExecutionResult
-                    {
-                        ConversationId = input.ConversationId ?? string.Empty,
-                        DirectLineToken = input.DirectLineToken,
-                        Success = true,
-                        Score = 0.0m,
-                        Passed = false,
-                        ExecutionTimeMs = (int)stopwatch.ElapsedMilliseconds,
-                        EvaluationResultId = naResultId,
-                        StatusCode = EvaluationResultStatus.NotApplicable
-                    });
-                }
-                else
-                {
-                    applicableEvaluators.Add(evaluatorTypeId);
-                }
-            }
-            
-            // If all evaluators are NA, return early
-            if (applicableEvaluators.Count == 0)
-            {
-                _logger.LogInformation("All evaluators marked NA for turn {Sequence}", input.Turn.Sequence);
-                return results;
-            }
-            
-            // 1. Send message to agent ONCE (can take minutes)
+            // Step 1: Call Copilot Studio
             _logger.LogInformation("Sending message to Copilot Studio for turn {Sequence}, promptText='{PromptText}', conversationId={ConversationId}", 
                 input.Turn.Sequence, input.Turn.PromptText, input.ConversationId);
             
@@ -167,45 +102,34 @@ public class MultiTurnDurableActivities
                 _logger.LogError("Copilot Studio error for turn {Sequence}: {Error}",
                     input.Turn.Sequence, copilotResponse.ErrorMessage);
                 
-                return CreateFailureResults(input, applicableEvaluators, copilotResponse.ErrorMessage ?? "Copilot Studio request failed", stopwatch);
+                // Create error results for all evaluators
+                return await CreateErrorResultsForAllEvaluators(
+                    input, 
+                    copilotResponse.ErrorMessage ?? "Copilot Studio request failed", 
+                    stopwatch, 
+                    cancellationToken);
             }
 
             _logger.LogInformation("Received response from Copilot Studio for turn {Sequence} in {Ms}ms",
                 input.Turn.Sequence, copilotResponse.ExecutionTimeMs);
 
-            // 2. Evaluate with ALL evaluators using the same Copilot response CONCURRENTLY
-            _logger.LogInformation("Evaluating turn {Sequence} response with {EvaluatorCount} evaluators (concurrent)", 
-                input.Turn.Sequence, applicableEvaluators.Count);
+            // Step 2 & 3: Create pending results and queue evaluator jobs
+            var pendingResultIds = new List<Guid>();
             
-            // Create evaluation tasks for all applicable evaluators
-            var evaluationTasks = applicableEvaluators.Select(async evaluatorTypeId =>
+            foreach (var evaluatorTypeId in input.EvaluatorTypeIds)
             {
-                try
+                var evaluatorType = await _dataverseService.GetEvaluatorTypeAsync(evaluatorTypeId, cancellationToken);
+                
+                // Check for NA scenario
+                if (evaluatorType != null && evaluatorType.RequiresExpectedResponse && 
+                    string.IsNullOrWhiteSpace(input.Turn.ExpectedResponse))
                 {
-                    var evaluatorStopwatch = Stopwatch.StartNew();
+                    _logger.LogInformation("Turn {Sequence} marked NA for evaluator {EvaluatorId} (missing expected response)",
+                        input.Turn.Sequence, evaluatorTypeId);
                     
-                    // Use factory to get the appropriate judge service
-                    var llmJudgeService = await _llmJudgeServiceFactory.CreateJudgeServiceAsync(
-                        evaluatorTypeId, cancellationToken);
-                    
-                    var judgeResponse = await llmJudgeService.EvaluateResponseAsync(
-                        new LLMJudgeRequest
-                        {
-                            EvaluatorTypeId = evaluatorTypeId,
-                            UserInput = input.Turn.PromptText,
-                            ExpectedResponse = input.Turn.ExpectedResponse ?? string.Empty,
-                            ActualResponse = copilotResponse.Response,
-                            ConversationId = copilotResponse.ConversationId
-                        },
-                        cancellationToken);
-
-                    if (!judgeResponse.Success)
-                    {
-                        _logger.LogError("LLM Judge error for turn {Sequence} with evaluator {EvaluatorId}: {Error}",
-                            input.Turn.Sequence, evaluatorTypeId, judgeResponse.ErrorMessage);
-                        
-                        // Create error result for this evaluator
-                        var errorResultRequest = new CreateEvaluationResultRequest
+                    // Create NA result immediately (don't queue)
+                    var naResultId = await _dataverseService.CreateEvaluationResultAsync(
+                        new CreateEvaluationResultRequest
                         {
                             EvaluationRunId = input.TestRunId,
                             TestCaseId = input.Turn.TestCaseId,
@@ -213,87 +137,39 @@ public class MultiTurnDurableActivities
                             EvaluatorTypeId = evaluatorTypeId,
                             ConversationId = copilotResponse.ConversationId,
                             ActualResponse = copilotResponse.Response,
-                            Score = null,
-                            ErrorMessage = judgeResponse.ErrorMessage,
-                            ExecutionTimeMs = (int)stopwatch.ElapsedMilliseconds,
+                            Score = 0.0m,
+                            Passed = false,
+                            Reasoning = $"Evaluator '{evaluatorType.Name}' requires expected response but turn {input.Turn.Sequence} has none provided",
                             McsExecutionTimeMs = copilotResponse.ExecutionTimeMs,
                             Metadata = copilotResponse.RawActivityJson,
                             IsAggregate = false,
-                            StatusCode = EvaluationResultStatus.Errored
-                        };
-
-                        var errorResultId = await _dataverseService.CreateEvaluationResultAsync(errorResultRequest, cancellationToken);
-                        
-                        await _dataverseService.IncrementCompletedTestCasesAsync(
-                            input.TestRunId, 
-                            failed: true, 
-                            cancellationToken);
-
-                        return new TurnExecutionResult
-                        {
-                            ConversationId = copilotResponse.ConversationId,
-                            DirectLineToken = copilotResponse.DirectLineToken,
-                            Success = false,
-                            Score = 0,
-                            Passed = false,
-                            ErrorMessage = judgeResponse.ErrorMessage,
-                            ExecutionTimeMs = (int)stopwatch.ElapsedMilliseconds,
-                            EvaluationResultId = errorResultId,
-                            StatusCode = EvaluationResultStatus.Errored
-                        };
-                    }
-
-                    evaluatorStopwatch.Stop();
+                            StatusCode = EvaluationResultStatus.NotApplicable
+                        }, 
+                        cancellationToken);
                     
-                    _logger.LogInformation("LLM Judge evaluation for turn {Sequence} with evaluator {EvaluatorId}: Score={Score}, Passed={Passed}",
-                        input.Turn.Sequence, evaluatorTypeId, judgeResponse.Score, judgeResponse.Score >= input.PassingThreshold);
-
-                    // 3. Save result to Dataverse immediately
-                    var createResultRequest = new CreateEvaluationResultRequest
-                    {
-                        EvaluationRunId = input.TestRunId,
-                        TestCaseId = input.Turn.TestCaseId,
-                        TestCaseTurnId = input.Turn.Id,
-                        EvaluatorTypeId = evaluatorTypeId,
-                        ConversationId = copilotResponse.ConversationId,
-                        ActualResponse = copilotResponse.Response,
-                        Score = judgeResponse.Score,
-                        Passed = judgeResponse.Score >= input.PassingThreshold,
-                        Reasoning = judgeResponse.Reasoning,
-                        ExecutionTimeMs = (int)stopwatch.ElapsedMilliseconds,
-                        McsExecutionTimeMs = copilotResponse.ExecutionTimeMs,
-                        Metadata = copilotResponse.RawActivityJson,
-                        IsAggregate = false,
-                        StatusCode = EvaluationResultStatus.Completed
-                    };
-
-                    var resultId = await _dataverseService.CreateEvaluationResultAsync(createResultRequest, cancellationToken);
-
-                    // Increment completion counter
                     await _dataverseService.IncrementCompletedTestCasesAsync(
                         input.TestRunId, 
                         failed: false, 
                         cancellationToken);
 
-                    return new TurnExecutionResult
+                    results.Add(new TurnExecutionResult
                     {
                         ConversationId = copilotResponse.ConversationId,
                         DirectLineToken = copilotResponse.DirectLineToken,
                         Success = true,
-                        Score = judgeResponse.Score,
-                        Passed = judgeResponse.Score >= input.PassingThreshold,
-                        ExecutionTimeMs = (int)evaluatorStopwatch.ElapsedMilliseconds,
-                        EvaluationResultId = resultId,
-                        StatusCode = EvaluationResultStatus.Completed
-                    };
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Error evaluating turn {Sequence} with evaluator {EvaluatorId}",
-                        input.Turn.Sequence, evaluatorTypeId);
+                        Score = 0.0m,
+                        Passed = false,
+                        ExecutionTimeMs = (int)stopwatch.ElapsedMilliseconds,
+                        EvaluationResultId = naResultId,
+                        StatusCode = EvaluationResultStatus.NotApplicable
+                    });
                     
-                    // Create error result
-                    var errorResultRequest = new CreateEvaluationResultRequest
+                    continue; // Skip queuing for NA results
+                }
+                
+                // Create pending result
+                var resultId = await _dataverseService.CreateEvaluationResultAsync(
+                    new CreateEvaluationResultRequest
                     {
                         EvaluationRunId = input.TestRunId,
                         TestCaseId = input.Turn.TestCaseId,
@@ -301,44 +177,61 @@ public class MultiTurnDurableActivities
                         EvaluatorTypeId = evaluatorTypeId,
                         ConversationId = copilotResponse.ConversationId,
                         ActualResponse = copilotResponse.Response,
-                        Score = null,
-                        ErrorMessage = $"Unexpected error: {ex.Message}",
-                        ExecutionTimeMs = (int)stopwatch.ElapsedMilliseconds,
                         McsExecutionTimeMs = copilotResponse.ExecutionTimeMs,
                         Metadata = copilotResponse.RawActivityJson,
                         IsAggregate = false,
-                        StatusCode = EvaluationResultStatus.Errored
-                    };
-
-                    var errorResultId = await _dataverseService.CreateEvaluationResultAsync(errorResultRequest, cancellationToken);
-                    
-                    await _dataverseService.IncrementCompletedTestCasesAsync(
-                        input.TestRunId, 
-                        failed: true, 
-                        cancellationToken);
-
-                    return new TurnExecutionResult
+                        StatusCode = EvaluationResultStatus.Pending
+                    }, 
+                    cancellationToken);
+                
+                pendingResultIds.Add(resultId);
+                
+                _logger.LogInformation("Created pending result {ResultId} for evaluator {EvaluatorId}",
+                    resultId, evaluatorTypeId);
+                
+                // Queue evaluator job
+                await _serviceBusService.SendEvaluatorJobMessageAsync(
+                    new EvaluatorJobMessage
                     {
-                        ConversationId = copilotResponse.ConversationId,
+                        EvaluationResultId = resultId,
+                        EvaluationRunId = input.TestRunId
+                    }, 
+                    cancellationToken);
+                
+                _logger.LogInformation("Queued evaluator job for result {ResultId}", resultId);
+            }
+            
+            // Step 4: Poll Dataverse until all evaluators complete (with timeout)
+            if (pendingResultIds.Any())
+            {
+                _logger.LogInformation("Polling for {Count} evaluator results to complete", pendingResultIds.Count);
+                
+                var completedResults = await PollForEvaluationCompletion(
+                    pendingResultIds, 
+                    TimeSpan.FromMinutes(10), 
+                    cancellationToken);
+                
+                // Build TurnExecutionResult from completed results
+                foreach (var completedResult in completedResults)
+                {
+                    results.Add(new TurnExecutionResult
+                    {
+                        ConversationId = completedResult.ConversationId ?? copilotResponse.ConversationId,
                         DirectLineToken = copilotResponse.DirectLineToken,
-                        Success = false,
-                        Score = 0,
-                        Passed = false,
-                        ErrorMessage = ex.Message,
-                        ExecutionTimeMs = (int)stopwatch.ElapsedMilliseconds,
-                        EvaluationResultId = errorResultId,
-                        StatusCode = EvaluationResultStatus.Errored
-                    };
+                        Success = completedResult.StatusCode == EvaluationResultStatus.Completed,
+                        Score = completedResult.Score ?? 0m,
+                        Passed = completedResult.Passed ?? false,
+                        ExecutionTimeMs = completedResult.ExecutionTimeMs ?? 0,
+                        EvaluationResultId = completedResult.Id,
+                        StatusCode = completedResult.StatusCode,
+                        ErrorMessage = completedResult.ErrorMessage
+                    });
                 }
-            }).ToList();
-
-            // Wait for all evaluations to complete and collect results
-            var evaluationResults = await Task.WhenAll(evaluationTasks);
-            results.AddRange(evaluationResults);
+            }
 
             stopwatch.Stop();
-            _logger.LogInformation("Successfully executed turn {Sequence} for test case {TestCaseId} with {EvaluatorCount} evaluators",
-                input.Turn.Sequence, input.Turn.TestCaseId, results.Count);
+            _logger.LogInformation("Successfully executed turn {Sequence} for test case {TestCaseId} with {EvaluatorCount} evaluators in {Ms}ms",
+                input.Turn.Sequence, input.Turn.TestCaseId, results.Count, stopwatch.ElapsedMilliseconds);
 
             return results;
         }
@@ -348,8 +241,166 @@ public class MultiTurnDurableActivities
             _logger.LogError(ex, "Unexpected error executing turn {Sequence} for test case {TestCaseId}",
                 input.Turn.Sequence, input.Turn.TestCaseId);
             
-            return CreateFailureResults(input, input.EvaluatorTypeIds, $"Unexpected error: {ex.Message}", stopwatch);
+            return await CreateErrorResultsForAllEvaluators(
+                input, 
+                $"Unexpected error: {ex.Message}", 
+                stopwatch, 
+                cancellationToken);
         }
+    }
+    
+    /// <summary>
+    /// Polls Dataverse until all evaluation results complete or timeout occurs
+    /// </summary>
+    private async Task<List<EvaluationResult>> PollForEvaluationCompletion(
+        List<Guid> resultIds,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        var pollStopwatch = Stopwatch.StartNew();
+        var pollInterval = TimeSpan.FromSeconds(2); // Start with 2 seconds
+        var completedResults = new List<EvaluationResult>();
+        var remainingResultIds = new HashSet<Guid>(resultIds);
+        
+        while (remainingResultIds.Any() && pollStopwatch.Elapsed < timeout)
+        {
+            _logger.LogInformation("Polling for {RemainingCount} results, elapsed: {Elapsed}s",
+                remainingResultIds.Count, pollStopwatch.Elapsed.TotalSeconds);
+            
+            // Check each remaining result
+            var currentBatch = remainingResultIds.ToList();
+            foreach (var resultId in currentBatch)
+            {
+                try
+                {
+                    var result = await _dataverseService.GetEvaluationResultAsync(resultId, cancellationToken);
+                    
+                    if (result != null && result.StatusCode != EvaluationResultStatus.Pending)
+                    {
+                        // Result is complete (either Completed, Errored, or NotApplicable)
+                        completedResults.Add(result);
+                        remainingResultIds.Remove(resultId);
+                        
+                        _logger.LogInformation("Result {ResultId} completed with status {Status}",
+                            resultId, EvaluationResultStatus.GetName(result.StatusCode));
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Error checking result {ResultId}, will retry", resultId);
+                }
+            }
+            
+            if (remainingResultIds.Any())
+            {
+                // Wait before next poll (exponential backoff up to 10 seconds)
+                await Task.Delay(pollInterval, cancellationToken);
+                pollInterval = TimeSpan.FromSeconds(Math.Min(pollInterval.TotalSeconds * 1.5, 10));
+            }
+        }
+        
+        // Handle timeout
+        if (remainingResultIds.Any())
+        {
+            _logger.LogWarning("Polling timed out after {Elapsed}s with {RemainingCount} results still pending",
+                pollStopwatch.Elapsed.TotalSeconds, remainingResultIds.Count);
+            
+            // Mark remaining results as errored due to timeout
+            foreach (var resultId in remainingResultIds)
+            {
+                try
+                {
+                    await _dataverseService.UpdateEvaluationResultAsync(
+                        resultId,
+                        new UpdateEvaluationResultRequest
+                        {
+                            StatusCode = EvaluationResultStatus.Errored,
+                            ErrorMessage = $"Evaluation timed out after {timeout.TotalMinutes} minutes",
+                            Score = 0m,
+                            Passed = false
+                        },
+                        cancellationToken);
+                    
+                    await _dataverseService.IncrementCompletedTestCasesAsync(
+                        Guid.Empty, // Will be set by update
+                        failed: true,
+                        cancellationToken);
+                    
+                    // Retrieve the updated result
+                    var result = await _dataverseService.GetEvaluationResultAsync(resultId, cancellationToken);
+                    if (result != null)
+                    {
+                        completedResults.Add(result);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error marking result {ResultId} as timed out", resultId);
+                }
+            }
+        }
+        
+        return completedResults;
+    }
+    
+    /// <summary>
+    /// Creates error results for all evaluators when agent call fails
+    /// </summary>
+    private async Task<List<TurnExecutionResult>> CreateErrorResultsForAllEvaluators(
+        ExecuteTurnInput input,
+        string errorMessage,
+        Stopwatch stopwatch,
+        CancellationToken cancellationToken)
+    {
+        var results = new List<TurnExecutionResult>();
+        
+        foreach (var evaluatorTypeId in input.EvaluatorTypeIds)
+        {
+            try
+            {
+                var errorResultId = await _dataverseService.CreateEvaluationResultAsync(
+                    new CreateEvaluationResultRequest
+                    {
+                        EvaluationRunId = input.TestRunId,
+                        TestCaseId = input.Turn.TestCaseId,
+                        TestCaseTurnId = input.Turn.Id,
+                        EvaluatorTypeId = evaluatorTypeId,
+                        ConversationId = input.ConversationId,
+                        ActualResponse = null,
+                        Score = 0m,
+                        Passed = false,
+                        ErrorMessage = errorMessage,
+                        ExecutionTimeMs = (int)stopwatch.ElapsedMilliseconds,
+                        IsAggregate = false,
+                        StatusCode = EvaluationResultStatus.Errored
+                    }, 
+                    cancellationToken);
+                
+                await _dataverseService.IncrementCompletedTestCasesAsync(
+                    input.TestRunId, 
+                    failed: true, 
+                    cancellationToken);
+
+                results.Add(new TurnExecutionResult
+                {
+                    ConversationId = input.ConversationId ?? string.Empty,
+                    DirectLineToken = input.DirectLineToken,
+                    Success = false,
+                    Score = 0,
+                    Passed = false,
+                    ErrorMessage = errorMessage,
+                    ExecutionTimeMs = (int)stopwatch.ElapsedMilliseconds,
+                    EvaluationResultId = errorResultId,
+                    StatusCode = EvaluationResultStatus.Errored
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error creating error result for evaluator {EvaluatorId}", evaluatorTypeId);
+            }
+        }
+        
+        return results;
     }
 
     /// <summary>

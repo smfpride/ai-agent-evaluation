@@ -25,12 +25,14 @@ public class MultiTurnAggregateNATests
         _mockDataverseService = new Mock<IDataverseService>();
         _mockCopilotStudioService = new Mock<ICopilotStudioService>();
         _mockLLMJudgeServiceFactory = new Mock<ILLMJudgeServiceFactory>();
+        var _mockServiceBusService = new Mock<IServiceBusService>();
 
         _activities = new MultiTurnDurableActivities(
             _mockLogger.Object,
             _mockDataverseService.Object,
             _mockCopilotStudioService.Object,
-            _mockLLMJudgeServiceFactory.Object);
+            _mockLLMJudgeServiceFactory.Object,
+            _mockServiceBusService.Object);
     }
 
     [Fact]

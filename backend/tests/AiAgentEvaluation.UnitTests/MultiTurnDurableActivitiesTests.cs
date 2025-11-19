@@ -31,6 +31,7 @@ public class MultiTurnDurableActivitiesTests
         _mockCopilotStudioService = new Mock<ICopilotStudioService>();
         _mockLLMJudgeService = new Mock<ILLMJudgeService>();
         _mockLLMJudgeServiceFactory = new Mock<ILLMJudgeServiceFactory>();
+        var _mockServiceBusService = new Mock<IServiceBusService>();
 
         // Setup factory to return mock judge service
         _mockLLMJudgeServiceFactory
@@ -41,7 +42,8 @@ public class MultiTurnDurableActivitiesTests
             _mockLogger.Object,
             _mockDataverseService.Object,
             _mockCopilotStudioService.Object,
-            _mockLLMJudgeServiceFactory.Object);
+            _mockLLMJudgeServiceFactory.Object,
+            _mockServiceBusService.Object);
     }
 
     #region GetTestCaseWithTurns Tests
