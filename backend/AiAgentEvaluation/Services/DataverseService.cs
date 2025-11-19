@@ -1567,6 +1567,104 @@ public class DataverseService : IDataverseService, IDisposable
         }
     }
 
+    public async Task<List<EvaluationResult>> GetPendingAggregateResultsAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var query = new QueryExpression("mcicaps_evaluationresults")
+            {
+                ColumnSet = new ColumnSet(
+                    "mcicaps_evaluationresultsid",
+                    "mcicaps_evaluationrunid",
+                    "mcicaps_testcaseid",
+                    "mcicaps_evaluatortypeid",
+                    "mcicaps_isaggregate",
+                    "statuscode"
+                ),
+                Criteria = new FilterExpression(LogicalOperator.And)
+            };
+
+            // Filter: IsAggregate = true AND StatusCode = Pending (1)
+            query.Criteria.AddCondition("mcicaps_isaggregate", ConditionOperator.Equal, true);
+            query.Criteria.AddCondition("statuscode", ConditionOperator.Equal, EvaluationResultStatus.Pending);
+
+            var results = await _serviceClient.RetrieveMultipleAsync(query, cancellationToken);
+            
+            _logger.LogInformation(
+                "Found {Count} pending aggregate results",
+                results.Entities.Count);
+
+            return results.Entities.Select(entity => new EvaluationResult
+            {
+                Id = entity.GetAttributeValue<Guid>("mcicaps_evaluationresultsid"),
+                EvaluationRunId = entity.GetAttributeValue<EntityReference>("mcicaps_evaluationrunid")?.Id ?? Guid.Empty,
+                TestCaseId = entity.GetAttributeValue<EntityReference>("mcicaps_testcaseid")?.Id ?? Guid.Empty,
+                EvaluatorTypeId = entity.GetAttributeValue<EntityReference>("mcicaps_evaluatortypeid")?.Id,
+                IsAggregate = entity.GetAttributeValue<bool>("mcicaps_isaggregate"),
+                StatusCode = entity.GetAttributeValue<int>("statuscode")
+            }).ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving pending aggregate results");
+            throw;
+        }
+    }
+
+    public async Task<List<EvaluationResult>> GetTurnResultsForTestCaseAsync(
+        Guid testCaseId,
+        Guid evaluationRunId,
+        Guid evaluatorTypeId,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var query = new QueryExpression("mcicaps_evaluationresults")
+            {
+                ColumnSet = new ColumnSet(
+                    "mcicaps_evaluationresultsid",
+                    "mcicaps_score",
+                    "mcicaps_passed",
+                    "mcicaps_executiontime",
+                    "mcicaps_errormessage",
+                    "mcicaps_isaggregate",
+                    "statuscode"
+                ),
+                Criteria = new FilterExpression(LogicalOperator.And)
+            };
+
+            // Filter: TestCaseId AND EvaluationRunId AND EvaluatorTypeId AND IsAggregate = false
+            query.Criteria.AddCondition("mcicaps_testcaseid", ConditionOperator.Equal, testCaseId);
+            query.Criteria.AddCondition("mcicaps_evaluationrunid", ConditionOperator.Equal, evaluationRunId);
+            query.Criteria.AddCondition("mcicaps_evaluatortypeid", ConditionOperator.Equal, evaluatorTypeId);
+            query.Criteria.AddCondition("mcicaps_isaggregate", ConditionOperator.Equal, false);
+
+            var results = await _serviceClient.RetrieveMultipleAsync(query, cancellationToken);
+            
+            _logger.LogInformation(
+                "Found {Count} turn results for test case {TestCaseId}, run {RunId}, evaluator {EvaluatorId}",
+                results.Entities.Count, testCaseId, evaluationRunId, evaluatorTypeId);
+
+            return results.Entities.Select(entity => new EvaluationResult
+            {
+                Id = entity.GetAttributeValue<Guid>("mcicaps_evaluationresultsid"),
+                Score = entity.Contains("mcicaps_score") ? entity.GetAttributeValue<decimal>("mcicaps_score") : (decimal?)null,
+                Passed = entity.Contains("mcicaps_passed") ? entity.GetAttributeValue<bool>("mcicaps_passed") : (bool?)null,
+                ExecutionTimeMs = entity.Contains("mcicaps_executiontime") ? entity.GetAttributeValue<int>("mcicaps_executiontime") : (int?)null,
+                ErrorMessage = entity.Contains("mcicaps_errormessage") ? entity.GetAttributeValue<string>("mcicaps_errormessage") : null,
+                IsAggregate = entity.GetAttributeValue<bool>("mcicaps_isaggregate"),
+                StatusCode = entity.GetAttributeValue<int>("statuscode")
+            }).ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, 
+                "Error retrieving turn results for test case {TestCaseId}, run {RunId}, evaluator {EvaluatorId}",
+                testCaseId, evaluationRunId, evaluatorTypeId);
+            throw;
+        }
+    }
+
     public void Dispose()
     {
         Dispose(true);

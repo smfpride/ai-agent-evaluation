@@ -199,39 +199,25 @@ public class MultiTurnDurableActivities
                     cancellationToken);
                 
                 _logger.LogInformation("Queued evaluator job for result {ResultId}", resultId);
-            }
-            
-            // Step 4: Poll Dataverse until all evaluators complete (with timeout)
-            if (pendingResultIds.Any())
-            {
-                _logger.LogInformation("Polling for {Count} evaluator results to complete", pendingResultIds.Count);
                 
-                var completedResults = await PollForEvaluationCompletion(
-                    pendingResultIds, 
-                    TimeSpan.FromMinutes(10), 
-                    cancellationToken);
-                
-                // Build TurnExecutionResult from completed results
-                foreach (var completedResult in completedResults)
+                // Add pending result to return list (will be processed asynchronously)
+                results.Add(new TurnExecutionResult
                 {
-                    results.Add(new TurnExecutionResult
-                    {
-                        ConversationId = completedResult.ConversationId ?? copilotResponse.ConversationId,
-                        DirectLineToken = copilotResponse.DirectLineToken,
-                        Success = completedResult.StatusCode == EvaluationResultStatus.Completed,
-                        Score = completedResult.Score ?? 0m,
-                        Passed = completedResult.Passed ?? false,
-                        ExecutionTimeMs = completedResult.ExecutionTimeMs ?? 0,
-                        EvaluationResultId = completedResult.Id,
-                        StatusCode = completedResult.StatusCode,
-                        ErrorMessage = completedResult.ErrorMessage
-                    });
-                }
+                    ConversationId = copilotResponse.ConversationId,
+                    DirectLineToken = copilotResponse.DirectLineToken,
+                    Success = false, // Not yet evaluated
+                    Score = 0m,
+                    Passed = false,
+                    ExecutionTimeMs = 0,
+                    EvaluationResultId = resultId,
+                    StatusCode = EvaluationResultStatus.Pending,
+                    ErrorMessage = null
+                });
             }
 
             stopwatch.Stop();
-            _logger.LogInformation("Successfully executed turn {Sequence} for test case {TestCaseId} with {EvaluatorCount} evaluators in {Ms}ms",
-                input.Turn.Sequence, input.Turn.TestCaseId, results.Count, stopwatch.ElapsedMilliseconds);
+            _logger.LogInformation("Successfully queued {EvaluatorCount} evaluators for turn {Sequence} of test case {TestCaseId} in {Ms}ms (evaluations pending)",
+                pendingResultIds.Count, input.Turn.Sequence, input.Turn.TestCaseId, stopwatch.ElapsedMilliseconds);
 
             return results;
         }
@@ -252,97 +238,6 @@ public class MultiTurnDurableActivities
     /// <summary>
     /// Polls Dataverse until all evaluation results complete or timeout occurs
     /// </summary>
-    private async Task<List<EvaluationResult>> PollForEvaluationCompletion(
-        List<Guid> resultIds,
-        TimeSpan timeout,
-        CancellationToken cancellationToken)
-    {
-        var pollStopwatch = Stopwatch.StartNew();
-        var pollInterval = TimeSpan.FromSeconds(2); // Start with 2 seconds
-        var completedResults = new List<EvaluationResult>();
-        var remainingResultIds = new HashSet<Guid>(resultIds);
-        
-        while (remainingResultIds.Any() && pollStopwatch.Elapsed < timeout)
-        {
-            _logger.LogInformation("Polling for {RemainingCount} results, elapsed: {Elapsed}s",
-                remainingResultIds.Count, pollStopwatch.Elapsed.TotalSeconds);
-            
-            // Check each remaining result
-            var currentBatch = remainingResultIds.ToList();
-            foreach (var resultId in currentBatch)
-            {
-                try
-                {
-                    var result = await _dataverseService.GetEvaluationResultAsync(resultId, cancellationToken);
-                    
-                    if (result != null && result.StatusCode != EvaluationResultStatus.Pending)
-                    {
-                        // Result is complete (either Completed, Errored, or NotApplicable)
-                        completedResults.Add(result);
-                        remainingResultIds.Remove(resultId);
-                        
-                        _logger.LogInformation("Result {ResultId} completed with status {Status}",
-                            resultId, EvaluationResultStatus.GetName(result.StatusCode));
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Error checking result {ResultId}, will retry", resultId);
-                }
-            }
-            
-            if (remainingResultIds.Any())
-            {
-                // Wait before next poll (exponential backoff up to 10 seconds)
-                await Task.Delay(pollInterval, cancellationToken);
-                pollInterval = TimeSpan.FromSeconds(Math.Min(pollInterval.TotalSeconds * 1.5, 10));
-            }
-        }
-        
-        // Handle timeout
-        if (remainingResultIds.Any())
-        {
-            _logger.LogWarning("Polling timed out after {Elapsed}s with {RemainingCount} results still pending",
-                pollStopwatch.Elapsed.TotalSeconds, remainingResultIds.Count);
-            
-            // Mark remaining results as errored due to timeout
-            foreach (var resultId in remainingResultIds)
-            {
-                try
-                {
-                    await _dataverseService.UpdateEvaluationResultAsync(
-                        resultId,
-                        new UpdateEvaluationResultRequest
-                        {
-                            StatusCode = EvaluationResultStatus.Errored,
-                            ErrorMessage = $"Evaluation timed out after {timeout.TotalMinutes} minutes",
-                            Score = 0m,
-                            Passed = false
-                        },
-                        cancellationToken);
-                    
-                    await _dataverseService.IncrementCompletedTestCasesAsync(
-                        Guid.Empty, // Will be set by update
-                        failed: true,
-                        cancellationToken);
-                    
-                    // Retrieve the updated result
-                    var result = await _dataverseService.GetEvaluationResultAsync(resultId, cancellationToken);
-                    if (result != null)
-                    {
-                        completedResults.Add(result);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Error marking result {ResultId} as timed out", resultId);
-                }
-            }
-        }
-        
-        return completedResults;
-    }
-    
     /// <summary>
     /// Creates error results for all evaluators when agent call fails
     /// </summary>

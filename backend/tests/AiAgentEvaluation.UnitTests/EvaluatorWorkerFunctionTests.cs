@@ -2,6 +2,7 @@ using AiAgentEvaluation.Functions;
 using AiAgentEvaluation.Models;
 using AiAgentEvaluation.Services;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Moq;
 using Xunit;
 using System.Text.Json;
@@ -33,11 +34,22 @@ public class EvaluatorWorkerFunctionTests
             .Setup(x => x.CreateJudgeServiceAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(_mockLLMJudgeService.Object);
 
+        // Mock AppSettings with default values
+        var mockSettings = new Mock<IOptions<AppSettings>>();
+        mockSettings.Setup(x => x.Value).Returns(new AppSettings
+        {
+            Evaluation = new EvaluationSettings
+            {
+                RetryDelaySeconds = 30 // Default delay
+            }
+        });
+
         _evaluatorWorker = new EvaluatorWorkerFunction(
             _mockLogger.Object,
             _mockDataverseService.Object,
             _mockLLMJudgeServiceFactory.Object,
-            _mockServiceBusService.Object);
+            _mockServiceBusService.Object,
+            mockSettings.Object);
     }
 
     [Fact]

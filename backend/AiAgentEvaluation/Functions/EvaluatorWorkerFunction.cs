@@ -1,5 +1,6 @@
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using AiAgentEvaluation.Models;
 using AiAgentEvaluation.Services;
 using System.Text.Json;
@@ -11,7 +12,8 @@ namespace AiAgentEvaluation.Functions;
 /// Service Bus Worker Function for processing evaluator jobs (Phase 1 - New Architecture)
 /// Triggered by messages on evaluator-processing-queue
 /// Retrieves pending results, calls LLM Judge, and updates results to Completed or Errored
-/// Implements exponential backoff retry by re-queuing messages with scheduled enqueue time
+/// Implements dynamic retry backoff by re-queuing messages with scheduled enqueue time
+/// Retry delay formula: (retryCount + 1) * RetryDelaySeconds (default: 30s, 60s, 90s)
 /// </summary>
 public class EvaluatorWorkerFunction
 {
@@ -19,24 +21,21 @@ public class EvaluatorWorkerFunction
     private readonly IDataverseService _dataverseService;
     private readonly ILLMJudgeServiceFactory _llmJudgeServiceFactory;
     private readonly IServiceBusService _serviceBusService;
+    private readonly AppSettings _settings;
     private const int MaxRetryCount = 3; // Max application-level retries before marking as errored
-    private static readonly TimeSpan[] RetryDelays = new[]
-    {
-        TimeSpan.FromSeconds(5),   // 1st retry after 5 seconds
-        TimeSpan.FromSeconds(15),  // 2nd retry after 15 seconds
-        TimeSpan.FromSeconds(45)   // 3rd retry after 45 seconds
-    };
 
     public EvaluatorWorkerFunction(
         ILogger<EvaluatorWorkerFunction> logger,
         IDataverseService dataverseService,
         ILLMJudgeServiceFactory llmJudgeServiceFactory,
-        IServiceBusService serviceBusService)
+        IServiceBusService serviceBusService,
+        IOptions<AppSettings> settings)
     {
         _logger = logger;
         _dataverseService = dataverseService;
         _llmJudgeServiceFactory = llmJudgeServiceFactory;
         _serviceBusService = serviceBusService;
+        _settings = settings.Value;
     }
 
     [Function("ProcessEvaluatorJob")]
@@ -204,16 +203,19 @@ public class EvaluatorWorkerFunction
                     judgeResponse.ErrorMessage,
                     message.RetryCount);
 
-                // Implement exponential backoff retry
+                // Implement dynamic retry backoff: (retryCount + 1) * RetryDelaySeconds
                 if (message.RetryCount < MaxRetryCount)
                 {
-                    var delay = RetryDelays[message.RetryCount];
+                    var baseDelaySeconds = _settings.Evaluation.RetryDelaySeconds;
+                    var delaySeconds = (message.RetryCount + 1) * baseDelaySeconds;
+                    var delay = TimeSpan.FromSeconds(delaySeconds);
                     var scheduledEnqueueTime = DateTimeOffset.UtcNow.Add(delay);
                     
                     _logger.LogInformation(
-                        "Re-queuing evaluator job for result {ResultId} with retry count {RetryCount}, scheduled for {ScheduledTime}",
+                        "Re-queuing evaluator job for result {ResultId} with retry count {RetryCount}, delay {DelaySeconds}s, scheduled for {ScheduledTime}",
                         result.Id,
                         message.RetryCount + 1,
+                        delaySeconds,
                         scheduledEnqueueTime);
 
                     // Re-queue the message with incremented retry count
