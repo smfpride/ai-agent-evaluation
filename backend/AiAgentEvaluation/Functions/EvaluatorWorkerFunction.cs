@@ -253,7 +253,7 @@ public class EvaluatorWorkerFunction
                 message.EvaluationRunId,
                 cancellationToken);
             
-            var passingThreshold = evaluationRun?.PassingThreshold ?? 0.7m;
+            var passingThreshold = evaluationRun?.PassingThreshold;
             
             _logger.LogInformation(
                 "Using passing threshold {PassingThreshold} for result {ResultId}",
