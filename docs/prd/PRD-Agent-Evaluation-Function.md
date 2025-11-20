@@ -20,21 +20,25 @@ HTTP Trigger → Orchestrator Function → Service Bus Queue → Worker Function
 
 ### 2.2 Key Components
 1. **Orchestrator Function**: HTTP-triggered coordinator (.NET 8, isolated process model)
-2. **Azure Service Bus**: Message queue for single-turn test case distribution and scaling
-3. **Worker Function**: Service Bus-triggered evaluation processor for single-turn tests
-4. **Durable Functions**: Long-running orchestrators for multi-turn conversations (PRIMARY multi-turn execution path)
-5. **Dataverse Integration**: Data source and result storage
-6. **Copilot Studio Agent**: Target system under test via Direct Line API
-7. **Azure OpenAI**: LLM Judge for response evaluation (Managed Identity authentication)
-8. **Result Storage & Aggregation**: Evaluation outcomes and run completion tracking
+2. **Azure Service Bus**: Message queues for test case distribution and scaling (3 queues: agent-call-queue, multi-turn-agent-call-queue, evaluator-processing-queue)
+3. **Worker Functions**: Service Bus-triggered evaluation processors for single-turn and multi-turn tests
+4. **Dataverse Integration**: Data source and result storage
+5. **Copilot Studio Agent**: Target system under test via Direct Line API
+6. **Azure OpenAI**: LLM Judge for response evaluation (Managed Identity authentication)
+7. **Result Storage & Aggregation**: Evaluation outcomes and run completion tracking
 
-### 2.3 Function App Architecture
+### 2.3 Function App Architecture (v3.0 - Story 11 Service Bus Migration)
 - **HTTP Orchestrator Function**: `StartEvaluationRun` - Initiates evaluation runs
-- **Service Bus Worker Function**: `ProcessTestCase` - Executes individual single-turn test evaluations
-- **Durable Functions Orchestrator**: `MultiTurnTestCaseOrchestrator` - Long-running orchestration for multi-turn tests
-- **Durable Functions Activities**: Helper activities for turn execution and result aggregation
-- **Timer Function**: `MonitorEvaluationRuns` - Tracks completion and updates final status
+- **Service Bus Worker Functions**:
+  - `AgentWorkerFunction` - Executes single-turn agent calls
+  - `MultiTurnAgentWorkerFunction` - Executes multi-turn agent calls with conversation context
+  - `EvaluatorWorkerFunction` - Processes evaluation jobs in parallel
+- **Timer Functions**:
+  - `AggregateEvaluationProcessorFunction` - Calculates aggregate scores for completed multi-turn tests (every 30s)
+  - `MonitorEvaluationRuns` - Tracks completion and updates final status (every 1 min)
 - **Health Check Function**: `HealthCheck` - Verifies system connectivity and health
+
+**Note**: Prior to Story 11, multi-turn execution used Durable Functions. This was replaced with pure Service Bus architecture for improved reliability and simplicity.
 
 ## 3. Functional Requirements
 
@@ -49,7 +53,9 @@ HTTP Trigger → Orchestrator Function → Service Bus Queue → Worker Function
 6. Compute total evaluation units = Σ(single-turn: evaluatorCount) + Σ(multi-turn: (turnCount * evaluatorCount) + evaluatorCount for aggregates)
 7. For each test case × evaluator type:
   - If evaluator requires expected response and none provided → create Not Applicable result (statuscode 778760004, score 0.0) immediately
-  - Else queue single-turn message or start durable orchestration (multi-turn)
+  - Else queue message to appropriate Service Bus queue:
+    - Single-turn: Queue to `agent-call-queue`
+    - Multi-turn: Create placeholder aggregate results, queue Turn 1 to `multi-turn-agent-call-queue`
 8. Update run counters (total/completed for NA short-circuits) and enqueue remaining messages
 9. Return HTTP 202 Accepted with operation tracking information
 
@@ -67,36 +73,47 @@ HTTP Trigger → Orchestrator Function → Service Bus Queue → Worker Function
 5. Handle errors per evaluator with exponential backoff
 6. All evaluations complete in parallel (2s for 3 evaluators instead of 6s sequential)
 
-#### 3.1.3 Durable Functions Orchestrator Workflow (`MultiTurnTestCaseOrchestrator` with Multi-Evaluator & Concurrent Evaluation)
-1. Started by Orchestrator Function for all multi-turn test cases (1 orchestration per test case)
-2. Uses Durable Functions for unlimited execution time (no 5-minute limit)
-3. Receives **List<Guid> EvaluatorTypeIds** and **Dictionary<Guid, Guid> AggregateResultIds** as input
-4. Calls activities sequentially:
-   - `GetTestCaseWithTurns`: Retrieve test case and turns from Dataverse
-   - `ExecuteSingleTurn`: Execute each turn **ONCE** and **concurrently evaluate** with all evaluators
-   - `CreateAggregateResult`: Generate final multi-turn result **for each evaluator**
-5. Maintains state and conversation context across activities
-6. Supports pause/resume and retry logic
-7. Handles conversations of any length (1 turn to 100+ turns)
+#### 3.1.3 Multi-Turn Agent Worker Workflow (`MultiTurnAgentWorkerFunction` - Story 11 Service Bus Architecture)
+1. Triggered by Service Bus queue message from `multi-turn-agent-call-queue`
+2. Processes one turn at a time with conversation context passed via message
+3. Receives message containing: testCaseId, turnSequence, conversationId (null for Turn 1), directLineToken, evaluatorTypeIds
+4. **Execution Flow per Turn**:
+   - Fetch turn data from Dataverse (`mcicaps_testcaseturn`)
+   - Call Copilot Studio Direct Line API:
+     - Turn 1: Create new conversation, get conversationId and token
+     - Turn 2+: Reuse conversationId from previous turn for context
+   - Get agent response
+   - Fan out to evaluators: Create pending results, queue to `evaluator-processing-queue`
+   - Poll Dataverse until all evaluators complete (exponential backoff: 2s → 10s)
+   - If not last turn: Queue next turn message with conversationId to `multi-turn-agent-call-queue`
+5. Retry logic: Exponential backoff (30s, 60s, 90s) with max 3 retries
+6. On max retries exceeded: Create error results for all evaluators
+7. Handles conversations of any length (1 turn to 100+ turns) via queue-based execution
 
-**Execution Flow**:
-1. Fetch test case and all associated turns (ordered by sequence) from Dataverse
-2. Execute turns sequentially while maintaining conversation context:
-   - Turn 1: Create new conversation (conversationId = null)
-   - Subsequent turns: Use conversationId from Turn 1 to maintain context
-   - **Per turn**: Call Copilot Studio **ONCE**, then **concurrently evaluate** with all evaluators using `Task.WhenAll`
-3. Store per-turn evaluation results in Dataverse (N results per turn for N evaluators)
-4. Create **separate aggregate results** for each evaluator type
-5. Filter Not Applicable (NA) results from aggregate calculations
-6. Atomically increment evaluation run progress counter (by evaluator count)
-7. Continue execution even if individual turns or evaluators fail (resilient design)
+**Architecture Benefits (vs Durable Functions)**:
+- **Reliability**: No stuck orchestrations, clear visibility via queue depth
+- **Simplicity**: Stateless workers, no state management or replay logic
+- **Monitoring**: Real-time progress via Service Bus metrics
+- **Retry**: Built-in Service Bus retry with dead letter queue
+- **Unlimited Runtime**: Queue-based execution has no timeout limits
 
-**Efficiency Gains**:
-- **Copilot Studio calls**: 1 per turn (was: N per turn for N evaluators)
-- **Evaluation time**: Concurrent (2s for 3 evaluators vs 6s sequential)
+**Efficiency Gains** (same as Durable approach):
+- **Copilot Studio calls**: 1 per turn (not N per turn for N evaluators)
+- **Evaluation time**: Parallel via queue fan-out (2s for 3 evaluators vs 6s sequential)
 - **Example**: 5-turn test with 3 evaluators: 5 Copilot calls (was: 15)
 
-#### 3.1.4 Monitoring Workflow (`MonitorEvaluationRuns`)
+#### 3.1.4 Aggregate Evaluation Processor Workflow (`AggregateEvaluationProcessorFunction` - Story 11)
+1. Timer-triggered function (every 30 seconds)
+2. Find multi-turn test cases where all turns have completed
+3. For each completed multi-turn test case:
+   - Fetch all turn results grouped by evaluator type
+   - Calculate aggregate pass rate (filter out NA results)
+   - Update placeholder aggregate result records with final scores
+   - Mark aggregate results as Completed (statuscode = 778760002)
+4. Skip test cases already processed (aggregate results already marked Completed)
+5. Handle errors: Mark aggregate as Errored (statuscode = 778760003) if calculation fails
+
+#### 3.1.5 Monitoring Workflow (`MonitorEvaluationRuns`)
 1. Timer-triggered function (every 1 minute)
 2. Query evaluation runs with status `778760002` (Running)
 3. Check completion status based on test case count vs results count
@@ -172,7 +189,7 @@ HTTP Trigger → Orchestrator Function → Service Bus Queue → Worker Function
     - `778760002` (Completed): Execution completed successfully with score
     - `778760003` (Errored): Execution completed with error
   - `778760004` (Not Applicable): Skipped because evaluator requires expected response but none provided (score stored as 0.0 and excluded from aggregates)
-  - **Orchestration Idempotency**: The auto-generated `mcicaps_evaluationresultsid` serves as the orchestration tracker for multi-turn tests. Placeholder aggregate results are created with `statuscode = 1` before orchestration starts, then updated to `778760002` or `778760003` upon completion. This prevents duplicate orchestrations and enables Monitor function to count only truly completed results.
+  - **Aggregate Result Pattern** (Story 11): The auto-generated `mcicaps_evaluationresultsid` serves as the aggregate result tracker for multi-turn tests. Placeholder aggregate results are created with `statuscode = 1` before queuing Turn 1, then updated to `778760002` or `778760003` by AggregateEvaluationProcessorFunction upon completion. This prevents duplicate processing and enables Monitor function to count only truly completed results.
 
 #### 3.2.3 Message Queue Schema
 
@@ -192,11 +209,14 @@ HTTP Trigger → Orchestrator Function → Service Bus Queue → Worker Function
 }
 ```
 
-**Multi-Turn Durable Functions Input**:
+**Multi-Turn Service Bus Message** (`multi-turn-agent-call-queue` queue - Story 11):
 ```json
 {
   "evaluationRunId": "guid",
   "testCaseId": "guid",
+  "turnSequence": 1,
+  "conversationId": "string (null for Turn 1)",
+  "directLineToken": "string (from Turn 1)",
   "directLineUrl": "string",
   "evaluatorTypeIds": ["guid1", "guid2", "guid3"], // Multiple evaluators per orchestration
   "aggregateResultIds": {  // Pre-created aggregate result IDs mapped to evaluators

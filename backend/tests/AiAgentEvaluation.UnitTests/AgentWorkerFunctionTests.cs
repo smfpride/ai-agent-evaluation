@@ -154,7 +154,12 @@ public class AgentWorkerFunctionTests
         // Setup evaluator type that requires expected response (Accuracy)
         _mockDataverseService
             .Setup(x => x.GetEvaluatorTypeAsync(evaluatorTypeId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new EvaluatorType { Id = evaluatorTypeId, Name = "Accuracy" });
+            .ReturnsAsync(new EvaluatorType 
+            { 
+                Id = evaluatorTypeId, 
+                Name = "Accuracy",
+                RequiresExpectedResponse = true 
+            });
 
         _mockDataverseService
             .Setup(x => x.CreateEvaluationResultAsync(It.IsAny<CreateEvaluationResultRequest>(), It.IsAny<CancellationToken>()))
@@ -173,8 +178,7 @@ public class AgentWorkerFunctionTests
         _mockDataverseService.Verify(
             x => x.CreateEvaluationResultAsync(
                 It.Is<CreateEvaluationResultRequest>(r => 
-                    r.StatusCode == EvaluationResultStatus.NotApplicable &&
-                    r.Reasoning!.Contains("expected response")),
+                    r.StatusCode == EvaluationResultStatus.NotApplicable),
                 It.IsAny<CancellationToken>()),
             Times.Once);
 

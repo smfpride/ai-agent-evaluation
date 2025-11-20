@@ -266,7 +266,7 @@ public class MultiEvaluatorSupportTests
         var request = CreateMockHttpRequest(new StartEvaluationRunRequest { EvaluationRunId = evaluationRunId });
 
         // Act
-        var response = await _orchestratorFunction.StartEvaluationRun(request.Object, _mockDurableClient.Object, CancellationToken.None);
+        var response = await _orchestratorFunction.StartEvaluationRun(request.Object, CancellationToken.None);
 
         // Assert
         Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
@@ -359,7 +359,7 @@ public class MultiEvaluatorSupportTests
         var request = CreateMockHttpRequest(new StartEvaluationRunRequest { EvaluationRunId = evaluationRunId });
 
         // Act
-        var response = await _orchestratorFunction.StartEvaluationRun(request.Object, _mockDurableClient.Object, CancellationToken.None);
+        var response = await _orchestratorFunction.StartEvaluationRun(request.Object, CancellationToken.None);
 
         // Assert
         Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
@@ -410,7 +410,7 @@ public class MultiEvaluatorSupportTests
         var request = CreateMockHttpRequest(new StartEvaluationRunRequest { EvaluationRunId = evaluationRunId });
 
         // Act
-        var response = await _orchestratorFunction.StartEvaluationRun(request.Object, _mockDurableClient.Object, CancellationToken.None);
+        var response = await _orchestratorFunction.StartEvaluationRun(request.Object, CancellationToken.None);
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);

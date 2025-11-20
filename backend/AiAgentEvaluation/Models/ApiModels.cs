@@ -207,3 +207,58 @@ public class UpdateEvaluationResultRequest
 
     public string? ErrorMessage { get; set; }
 }
+
+/// <summary>
+/// Service Bus message for multi-turn agent call processing (Story 11 - Service Bus Migration)
+/// Queued to multi-turn-agent-call-queue by OrchestratorFunction
+/// One message per test case per turn (not per evaluator)
+/// </summary>
+public class MultiTurnAgentCallMessage
+{
+    [Required]
+    [JsonPropertyName("evaluationRunId")]
+    public Guid EvaluationRunId { get; set; }
+
+    [Required]
+    [JsonPropertyName("testCaseId")]
+    public Guid TestCaseId { get; set; }
+
+    /// <summary>
+    /// All evaluator type IDs for this test case.
+    /// Agent is called once, then fans out to all evaluators.
+    /// </summary>
+    [Required]
+    [JsonPropertyName("evaluatorTypeIds")]
+    public List<Guid> EvaluatorTypeIds { get; set; } = new();
+
+    [JsonPropertyName("turnSequence")]
+    public int TurnSequence { get; set; }
+
+    [JsonPropertyName("totalTurns")]
+    public int TotalTurns { get; set; }
+
+    [JsonPropertyName("directLineUrl")]
+    public string DirectLineUrl { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Conversation ID from previous turn. Null for Turn 1.
+    /// </summary>
+    [JsonPropertyName("conversationId")]
+    public string? ConversationId { get; set; }
+
+    /// <summary>
+    /// DirectLine token from Turn 1 response. Required for Turn 2+ as each conversation is bound to its token.
+    /// </summary>
+    [JsonPropertyName("directLineToken")]
+    public string? DirectLineToken { get; set; }
+
+    [JsonPropertyName("passingThreshold")]
+    public decimal PassingThreshold { get; set; } = 0.7m;
+
+    /// <summary>
+    /// Number of retry attempts for this turn (used for exponential backoff).
+    /// Resets between turns.
+    /// </summary>
+    [JsonPropertyName("retryCount")]
+    public int RetryCount { get; set; } = 0;
+}

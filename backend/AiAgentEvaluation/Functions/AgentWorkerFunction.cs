@@ -98,10 +98,9 @@ public class AgentWorkerFunction
                 {
                     // Check if evaluator requires expected response (for NA handling)
                     var evaluatorType = await _dataverseService.GetEvaluatorTypeAsync(evaluatorTypeId, cancellationToken);
-                    var evaluatorRequiresExpectedResponse = evaluatorType?.Name?.Contains("Accuracy", StringComparison.OrdinalIgnoreCase) ?? false;
 
                     // Handle NA scenario: If evaluator requires expected response but none provided
-                    if (evaluatorRequiresExpectedResponse && string.IsNullOrWhiteSpace(message.ExpectedResponse))
+                    if (evaluatorType?.RequiresExpectedResponse == true && string.IsNullOrWhiteSpace(message.ExpectedResponse))
                     {
                         _logger.LogInformation(
                             "Creating NA result for evaluator {EvaluatorTypeId} - no expected response provided",
@@ -117,7 +116,7 @@ public class AgentWorkerFunction
                             StatusCode = EvaluationResultStatus.NotApplicable,
                             Score = 0.0m,
                             Passed = false,
-                            Reasoning = "Evaluator requires expected response but none provided",
+                            Reasoning = $"Evaluator '{evaluatorType?.Name}' requires expected response but none provided",
                             ActualResponse = copilotResponse.Response,
                             ConversationId = copilotResponse.ConversationId,
                             McsExecutionTimeMs = copilotResponse.ExecutionTimeMs,

@@ -37,6 +37,24 @@ public interface IDataverseService
         Guid evaluationRunId, 
         Guid testCaseId, 
         CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Gets ALL aggregate results for a test case in an evaluation run (multi-evaluator support).
+    /// Used for idempotency checks to ensure all evaluators have been processed.
+    /// </summary>
+    Task<List<EvaluationResult>> GetAggregateResultsForTestCaseAsync(
+        Guid evaluationRunId, 
+        Guid testCaseId, 
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets ALL aggregate results for an entire evaluation run (batch query optimization).
+    /// Used for idempotency checks when scheduling multiple multi-turn orchestrations.
+    /// Returns only aggregate results (IsAggregate=true), not individual turn results.
+    /// </summary>
+    Task<List<EvaluationResult>> GetAggregateResultsForEvaluationRunAsync(
+        Guid evaluationRunId, 
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Updates an existing aggregate result with final scores and status

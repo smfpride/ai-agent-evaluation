@@ -146,6 +146,14 @@ public class CopilotStudioService : ICopilotStudioService, IDisposable
 
     public async Task<CopilotDirectLineResponse> SendMessageAsync(string directLineSpeechUrl, string userInput, string? conversationId = null, string? directLineToken = null, CancellationToken cancellationToken = default)
     {
+        // Add delay to prevent overwhelming Copilot Studio endpoint with concurrent requests
+        if (_settings.CopilotStudio.RequestDelayMs > 0)
+        {
+            _logger.LogDebug("Delaying request by {DelayMs}ms to prevent rate limiting", 
+                _settings.CopilotStudio.RequestDelayMs);
+            await Task.Delay(_settings.CopilotStudio.RequestDelayMs, cancellationToken);
+        }
+        
         _logger.LogInformation("Sending message in conversation {ConversationId} using endpoint {Endpoint}, tokenProvided={TokenProvided}, userInput={UserInput}", 
             conversationId, directLineSpeechUrl, !string.IsNullOrEmpty(directLineToken), userInput);
         

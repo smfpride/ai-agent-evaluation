@@ -206,6 +206,79 @@ public class ServiceBusService : IServiceBusService, IDisposable
             cancellationToken);
     }
 
+    /// <summary>
+    /// Sends multi-turn agent call message to multi-turn-agent-call-queue (Story 11 - Service Bus Migration)
+    /// </summary>
+    public async Task SendMultiTurnAgentCallMessageAsync(MultiTurnAgentCallMessage message, CancellationToken cancellationToken = default)
+    {
+        await _resilientService.ExecuteAsync(
+            async (ct) =>
+            {
+                if (_serviceBusClient == null)
+                {
+                    throw new InvalidOperationException("Service Bus client not initialized. Check configuration.");
+                }
+
+                await using var sender = _serviceBusClient.CreateSender("multi-turn-agent-call-queue");
+                var messageBody = JsonSerializer.Serialize(message, _jsonOptions);
+                var serviceBusMessage = new ServiceBusMessage(Encoding.UTF8.GetBytes(messageBody))
+                {
+                    ContentType = "application/json",
+                    MessageId = Guid.NewGuid().ToString()
+                };
+
+                await sender.SendMessageAsync(serviceBusMessage, ct);
+                
+                _logger.LogInformation(
+                    "Sent multi-turn agent call message to queue: TestCase={TestCaseId}, Turn={TurnSequence}/{TotalTurns}, Run={EvaluationRunId}",
+                    message.TestCaseId,
+                    message.TurnSequence,
+                    message.TotalTurns,
+                    message.EvaluationRunId);
+            },
+            "SendMultiTurnAgentCallMessage",
+            null,
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Sends multi-turn agent call message to multi-turn-agent-call-queue with scheduled enqueue time (Story 11 - Retry with exponential backoff)
+    /// </summary>
+    public async Task SendMultiTurnAgentCallMessageAsync(MultiTurnAgentCallMessage message, DateTimeOffset scheduledEnqueueTime, CancellationToken cancellationToken = default)
+    {
+        await _resilientService.ExecuteAsync(
+            async (ct) =>
+            {
+                if (_serviceBusClient == null)
+                {
+                    throw new InvalidOperationException("Service Bus client not initialized. Check configuration.");
+                }
+
+                await using var sender = _serviceBusClient.CreateSender("multi-turn-agent-call-queue");
+                var messageBody = JsonSerializer.Serialize(message, _jsonOptions);
+                var serviceBusMessage = new ServiceBusMessage(Encoding.UTF8.GetBytes(messageBody))
+                {
+                    ContentType = "application/json",
+                    MessageId = Guid.NewGuid().ToString(),
+                    ScheduledEnqueueTime = scheduledEnqueueTime
+                };
+
+                await sender.SendMessageAsync(serviceBusMessage, ct);
+                
+                _logger.LogInformation(
+                    "Sent multi-turn agent call message to queue with scheduled enqueue time {ScheduledTime}: TestCase={TestCaseId}, Turn={TurnSequence}/{TotalTurns}, Run={EvaluationRunId}, RetryCount={RetryCount}",
+                    scheduledEnqueueTime,
+                    message.TestCaseId,
+                    message.TurnSequence,
+                    message.TotalTurns,
+                    message.EvaluationRunId,
+                    message.RetryCount);
+            },
+            "SendMultiTurnAgentCallMessageScheduled",
+            null,
+            cancellationToken);
+    }
+
     public void Dispose()
     {
         Dispose(true);

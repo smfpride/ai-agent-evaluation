@@ -22,7 +22,7 @@ public class EvaluatorWorkerFunction
     private readonly ILLMJudgeServiceFactory _llmJudgeServiceFactory;
     private readonly IServiceBusService _serviceBusService;
     private readonly AppSettings _settings;
-    private const int MaxRetryCount = 3; // Max application-level retries before marking as errored
+    private readonly int _maxRetryCount;
 
     public EvaluatorWorkerFunction(
         ILogger<EvaluatorWorkerFunction> logger,
@@ -36,6 +36,7 @@ public class EvaluatorWorkerFunction
         _llmJudgeServiceFactory = llmJudgeServiceFactory;
         _serviceBusService = serviceBusService;
         _settings = settings.Value;
+        _maxRetryCount = _settings.AzureOpenAI?.MaxRetryAttempts ?? 3; // Default to 3 if not configured
     }
 
     [Function("ProcessEvaluatorJob")]
@@ -204,7 +205,7 @@ public class EvaluatorWorkerFunction
                     message.RetryCount);
 
                 // Implement dynamic retry backoff: (retryCount + 1) * RetryDelaySeconds
-                if (message.RetryCount < MaxRetryCount)
+                if (message.RetryCount < _maxRetryCount)
                 {
                     var baseDelaySeconds = _settings.Evaluation.RetryDelaySeconds;
                     var delaySeconds = (message.RetryCount + 1) * baseDelaySeconds;
@@ -236,13 +237,13 @@ public class EvaluatorWorkerFunction
                 _logger.LogError(
                     "LLM Judge call failed for result {ResultId} after {MaxRetries} retries: {ErrorMessage}",
                     result.Id,
-                    MaxRetryCount,
+                    _maxRetryCount,
                     judgeResponse.ErrorMessage);
 
                 await UpdateResultToErrored(
                     message.EvaluationResultId,
                     message.EvaluationRunId,
-                    $"LLM Judge call failed after {MaxRetryCount} retries: {judgeResponse.ErrorMessage ?? "Unknown error"}",
+                    $"LLM Judge call failed after {_maxRetryCount} retries: {judgeResponse.ErrorMessage ?? "Unknown error"}",
                     stopwatch,
                     cancellationToken);
                 return;

@@ -25,17 +25,17 @@ The AI Agent Evaluation System is a cloud-native, serverless solution built on A
 - **LLM-Based Evaluation**: Use Azure OpenAI (GPT-4o) to score responses with human-like judgment
 - **Multi-Evaluator Support**: Evaluate each test case across multiple evaluators (Similarity, Accuracy, Relevancy, custom) in parallel
 - **Async Architecture**: Decouple agent calls from evaluations for 3-5× throughput improvement
-- **Multi-Turn Conversations**: Support for complex conversation scenarios with context preservation via Durable Functions
+- **Multi-Turn Conversations**: Support for complex conversation scenarios with context preservation via Service Bus message passing
 - **Scalable Processing**: Handle up to 50,000 test cases per evaluation run with parallel evaluator processing
 - **Comprehensive Results**: Store detailed results, reasoning, and metrics in Dataverse with pending/completed status tracking
 - **Flexible Evaluation Types**: Extensible evaluator type system stored in Dataverse
-- **Hybrid Execution**: Async queue-based workers for both single-turn and multi-turn scenarios
+- **Unified Execution**: Pure Service Bus queue-based architecture for both single-turn and multi-turn scenarios
 
 ---
 
 ## Architecture Diagram
 
-**Version 2.0**: Async Multi-Evaluator Architecture (Phase 1 & 2 Complete)
+**Version 3.0**: Service Bus-Based Multi-Turn Architecture (Story 11 Complete)
 
 <!-- ![](./images/ArchitectureDiagram.png) -->
 ```mermaid
@@ -50,30 +50,25 @@ flowchart TB
         HEALTH["Health Check Function"]
     end
     subgraph subGraph2["Service Bus Triggered - Async Workers"]
-        AGENT_WORKER["AgentWorkerFunction<br>ProcessAgentCall<br>(Single &amp; Multi-Turn)"]
+        AGENT_WORKER["AgentWorkerFunction<br>ProcessAgentCall<br>(Single-Turn Only)"]
+        MT_AGENT_WORKER["MultiTurnAgentWorkerFunction<br>ProcessMultiTurnAgentCall<br>(Multi-Turn with Context)"]
         EVAL_WORKER["EvaluatorWorkerFunction<br>ProcessEvaluatorJob<br>(Parallel Processing)"]
     end
-    subgraph subGraph3["Durable Functions (Multi-Turn)"]
-        DORCH["Durable Orchestrator<br>MultiTurnTestCaseOrchestrator<br>Unlimited Runtime"]
-        ACT1["Activity:<br>GetTestCaseWithTurns"]
-        ACT2["Activity:<br>ExecuteSingleTurn<br>(Creates Pending + Polls)"]
-        ACT3["Activity:<br>CreateAggregateResult"]
-    end
-    subgraph subGraph4["Timer Triggered"]
+    subgraph subGraph3["Timer Triggered"]
         MONITOR["Monitor Function<br>TrackProgress<br>Update Status"]
+        AGG_PROC["AggregateEvaluationProcessorFunction<br>ProcessPendingAggregates<br>(Multi-Turn Completion)"]
     end
-    subgraph subGraph5["Azure Function App"]
+    subgraph subGraph4["Azure Function App"]
         subGraph1
         subGraph2
         subGraph3
-        subGraph4
     end
-    subgraph subGraph6["Azure Services"]
-        SBUS["Azure Service Bus<br>2 Queues:<br>- agent-call-queue<br>- evaluator-processing-queue"]
+    subgraph subGraph5["Azure Services"]
+        SBUS["Azure Service Bus<br>3 Queues:<br>- agent-call-queue<br>- multi-turn-agent-call-queue<br>- evaluator-processing-queue"]
         AOAI["Azure OpenAI<br>GPT-4o Model<br>LLM Judge"]
         KV["Azure Key Vault<br>Secrets Management"]
         AI["Application Insights<br>Logging &amp; Metrics"]
-        STORAGE["Azure Storage<br>Function State +<br>Durable State"]
+        STORAGE["Azure Storage<br>Function State"]
     end
     subgraph subGraph7["Data Models"]
         TR["Test Run<br>mcicaps_evaluationruns"]
@@ -86,37 +81,29 @@ flowchart TB
     USER -- 1: POST /api/evaluations/start --> ORCH
     ORCH -- 2: Fetch Test Cases --> DV
     DV -- 3: Test Cases + Turns --> ORCH
-    ORCH -- 4a: Queue AgentCallMessage --> SBUS
-    ORCH -- 4b: Start Durable Orch<br>(Multi-Turn) --> DORCH
+    ORCH -- 4a: Queue AgentCallMessage<br>(Single-Turn) --> SBUS
+    ORCH -- 4b: Queue MultiTurnAgentCallMessage<br>(Multi-Turn Turn 1) --> SBUS
     SBUS -- 5a: agent-call-queue --> AGENT_WORKER
-    DORCH -- 5b: Call Activity --> ACT1
-    ACT1 -- Fetch Data --> DV
-    DORCH -- 5c: Call Activity --> ACT2
-    ACT2 -- 5c1: Call Agent --> CS
-    CS -- 5c2: Agent Response --> ACT2
-    ACT2 -- 5c3: Create Pending Results --> DV
-    ACT2 -- 5c4: Queue EvaluatorJobMessages --> SBUS
-    SBUS -- 5c5: evaluator-processing-queue --> EVAL_WORKER
-    EVAL_WORKER -- 5c6: Retrieve Pending Result --> DV
-    EVAL_WORKER -- 5c7: Evaluate --> AOAI
-    AOAI -- 5c8: Score & Reasoning --> EVAL_WORKER
-    EVAL_WORKER -- 5c9: Update to Completed --> DV
-    ACT2 -- 5c10: Poll Until Complete --> DV
-    DORCH -- 5d: Call Activity --> ACT3
-    ACT3 -- Save Aggregate --> DV
+    SBUS -- 5b: multi-turn-agent-call-queue --> MT_AGENT_WORKER
     AGENT_WORKER -- 6: Call Agent --> CS
     CS -- 7: Agent Response --> AGENT_WORKER
     AGENT_WORKER -- 8a: Create Pending Results<br>(StatusCode=1) --> DV
     AGENT_WORKER -- 8b: Queue N Evaluator Jobs --> SBUS
-    SBUS -- 9: evaluator-processing-queue<br>(Parallel) --> EVAL_WORKER
-    EVAL_WORKER -- 10: Retrieve Pending --> DV
-    EVAL_WORKER -- 11: Evaluate --> AOAI
-    AOAI -- 12: Score & Reasoning --> EVAL_WORKER
-    EVAL_WORKER -- 13: Update to Completed --> DV
-    MONITOR -- 14: Check Progress --> DV
-    MONITOR -- 15: Update Run Status --> DV
-    DORCH -.-> STORAGE
-    STORAGE -.-> DORCH
+    MT_AGENT_WORKER -- 9: Get Turn Data --> DV
+    MT_AGENT_WORKER -- 10: Call Agent<br>(with conversationId) --> CS
+    CS -- 11: Agent Response<br>+ conversationId --> MT_AGENT_WORKER
+    MT_AGENT_WORKER -- 12a: Create Pending Results --> DV
+    MT_AGENT_WORKER -- 12b: Queue N Evaluator Jobs --> SBUS
+    MT_AGENT_WORKER -- 12c: Queue Next Turn<br>(if not last) --> SBUS
+    SBUS -- 13: evaluator-processing-queue<br>(Parallel) --> EVAL_WORKER
+    EVAL_WORKER -- 14: Retrieve Pending --> DV
+    EVAL_WORKER -- 15: Evaluate --> AOAI
+    AOAI -- 16: Score & Reasoning --> EVAL_WORKER
+    EVAL_WORKER -- 17: Update to Completed --> DV
+    AGG_PROC -- 18: Find Completed Aggregates --> DV
+    AGG_PROC -- 19: Calculate Final Score --> DV
+    MONITOR -- 20: Check Progress --> DV
+    MONITOR -- 21: Update Run Status --> DV
   TR -- 1:N --> TC
   TR -- N:1 --> AGENT
   TR -- N:N --> EVAL
@@ -127,12 +114,11 @@ flowchart TB
     DV:::external
     ORCH:::function
     HEALTH:::function
-    WORKER:::function
-    DORCH:::durable
-    ACT1:::durable
-    ACT2:::durable
-    ACT3:::durable
+    AGENT_WORKER:::function
+    MT_AGENT_WORKER:::function
+    EVAL_WORKER:::function
     MONITOR:::function
+    AGG_PROC:::function
     SBUS:::azureService
     AOAI:::azureService
     KV:::azureService
@@ -146,7 +132,6 @@ flowchart TB
     AGENT:::data
     classDef azureService fill:#0078D4,stroke:#004578,stroke-width:2px,color:#fff
     classDef function fill:#7FBA00,stroke:#5A8700,stroke-width:2px,color:#000
-    classDef durable fill:#9B59B6,stroke:#6C3483,stroke-width:2px,color:#fff
     classDef external fill:#F25022,stroke:#A73513,stroke-width:2px,color:#fff
     classDef data fill:#FFB900,stroke:#B38500,stroke-width:2px,color:#000
 ```
@@ -166,8 +151,9 @@ flowchart TB
 - Receive evaluation run requests with run ID
 - Fetch test cases from Dataverse (including multi-turn tests)
 - Update evaluation run status to "Running"
-- Queue agent call messages to Service Bus (`agent-call-queue`)
-- Start Durable Functions orchestrations for multi-turn tests
+- Queue agent call messages to Service Bus
+  - Single-turn → `agent-call-queue`
+  - Multi-turn → `multi-turn-agent-call-queue`
 - Return HTTP 202 Accepted with tracking information
 
 **Key Features**:
@@ -175,11 +161,12 @@ flowchart TB
 - Supports up to 50,000 test cases per run
 - Fast response time (< 30 seconds for large runs)
 - Idempotent operation support
-- Async architecture: queues `AgentCallMessage` per test case
+- Unified Service Bus architecture for all test types
 
-**Architecture Change (v2.0)**:
-- Previously: Queued `ProcessTestCaseMessage` to `test-case-processing`
-- Now: Queues `AgentCallMessage` to `agent-call-queue` (decouples agent call from evaluation)
+**Architecture Evolution**:
+- **v1.0**: Synchronous execution in single worker
+- **v2.0**: Async with agent/evaluator separation, Durable Functions for multi-turn (deprecated Story 11)
+- **v3.0** (Story 11): Pure Service Bus architecture for all test types, removed Durable Functions dependency
 
 #### 1.2 AgentWorkerFunction (Agent Call Processing)
 **Trigger**: Service Bus Queue (`agent-call-queue`)  
@@ -254,51 +241,62 @@ flowchart TB
 - Previously: Tracked test cases
 - Now: Tracks evaluation units (1 test × 5 evaluators = 5 units)
 
-#### 1.5 Durable Functions Orchestrator (Multi-Turn Execution)
-**Trigger**: Started by Orchestrator Function  
-**Runtime**: .NET 8 Isolated (Durable Functions)  
-**Purpose**: Long-running orchestration for multi-turn test cases with async evaluations
+#### 1.5 MultiTurnAgentWorkerFunction (Multi-Turn Execution - Story 11)
+**Trigger**: Service Bus Queue (`multi-turn-agent-call-queue`)  
+**Runtime**: .NET 8 Isolated  
+**Purpose**: Execute multi-turn test cases with conversation context preservation via Service Bus
 
 **Responsibilities**:
-- Execute multi-turn conversations with unlimited execution time
-- Call activities sequentially for turn execution
-- Maintain conversation state and context
-- Poll for evaluation completion after each turn
-- Create aggregate results after all turns complete
-- Support pause/resume and retry logic
+- Process multi-turn agent call messages from queue
+- Retrieve turn data from Dataverse
+- Call Copilot Studio with conversation context (conversationId for Turn 2+)
+- Capture conversationId and DirectLine token from Turn 1
+- Create pending evaluation results for all evaluators
+- Queue evaluator jobs for parallel processing
+- Queue next turn message if not last turn
+- Handle retry logic with exponential backoff (30s, 60s, 90s)
 
 **Key Features**:
-- No 5-minute timeout limitation
-- Supports very long conversations (10+ turns)
-- Fault-tolerant with automatic state management
-- Async evaluation with polling mechanism
-- Primary multi-turn execution path
+- Pure Service Bus architecture (no Durable Functions)
+- Conversation context passed via messages (stateless)
+- Max retries: 3 (configurable via `AzureOpenAI:MaxRetryAttempts`)
+- NA scenario handling (evaluator requires expected response but none provided)
+- Multi-evaluator fan-out (one agent call → N evaluator jobs)
+- Dead letter queue for persistent failures
 
-**Activities**:
-- `GetTestCaseWithTurns`: Fetch test case and turns from Dataverse
-- `ExecuteSingleTurn`: Execute one turn with async evaluation (v2.0 updated)
-- `CreateAggregateResult`: Generate final multi-turn evaluation result
+**Flow**:
+1. Receive `MultiTurnAgentCallMessage` from queue (includes turnSequence, conversationId, token)
+2. Get turn data from Dataverse (`mcicaps_testcaseturn`)
+3. Call Copilot Studio Direct Line API (with conversationId for Turn 2+)
+4. For each evaluator: Create pending result or NA result, queue evaluator job
+5. If not last turn: Queue next turn message with conversationId
+6. On failure: Exponential backoff retry, max 3 attempts
+7. After max retries: Create error results for all evaluators
 
-**Flow (v2.0 Async Architecture)**:
-1. Orchestrator Function calls `durableClient.ScheduleNewOrchestrationInstanceAsync` for multi-turn cases
-2. Durable Orchestrator retrieves test case with all turns
-3. For each turn sequentially:
-   - Call Copilot Studio to get agent response
-   - Create pending evaluation results (StatusCode=1) for each evaluator
-   - Queue evaluator job messages to `evaluator-processing-queue`
-   - **Poll Dataverse** until all evaluators complete (max 10 minutes)
-   - Update conversation context with results
-4. After all turns complete, create aggregate result in Dataverse
+**Architecture Benefits (Story 11 Migration)**:
+- **Reliability**: No stuck orchestrations, clear visibility via queue depth
+- **Simplicity**: Stateless workers, no state management or replay logic
+- **Retry**: Built-in Service Bus retry with dead letter queue
+- **Monitoring**: Queue metrics provide real-time progress tracking
 
-**Architecture Change (v2.0)**:
-- Previously: Inline evaluation in `ExecuteSingleTurn` activity
-- Now: Creates pending results, queues jobs, polls for completion
-- Polling: Exponential backoff (2s → 10s), 10-minute timeout
-- Timeout handling: Marks incomplete results as Errored
+#### 1.6 AggregateEvaluationProcessorFunction (Multi-Turn Completion)
+**Trigger**: Timer (every 30 seconds)  
+**Runtime**: .NET 8 Isolated  
+**Purpose**: Calculate aggregate scores for completed multi-turn test cases
 
-**Implementation Note**: This is the PRIMARY execution path for all multi-turn test cases. Multi-turn now uses the same async evaluator architecture as single-turn.
+**Responsibilities**:
+- Find pending aggregate results where all turns are completed
+- Calculate average score across all completed turns
+- Exclude NA results from aggregate calculation
+- Update aggregate result to completed status
+- Increment evaluation run completion counter
 
-#### 1.5 Health Check Function
+**Flow**:
+1. Query pending aggregates (`IsAggregate=true, StatusCode=Pending`)
+2. For each: Calculate average score from completed turns
+3. Update aggregate result and increment completion counter
+
+#### 1.7 Health Check Function
 **Trigger**: HTTP GET  
 **Runtime**: .NET 8 Isolated  
 **Purpose**: Provide system health status
@@ -318,7 +316,7 @@ flowchart TB
 
 #### Queue Configuration
 
-##### 2.1 agent-call-queue (Phase 1 - Agent Calls)
+##### 2.1 agent-call-queue (Single-Turn Agent Calls)
 - **Max Size**: 5 GB
 - **Message TTL**: 14 days
 - **Dead Letter**: Enabled
@@ -326,13 +324,33 @@ flowchart TB
 - **Lock Duration**: 5 minutes
 - **Session Support**: No
 - **Status**: Active - used by AgentWorkerFunction
-- **Purpose**: Queue agent call messages for both single-turn and multi-turn (via activity)
+- **Purpose**: Queue single-turn agent call messages
 
 **Flow**: 
-- OrchestratorFunction → agent-call-queue → AgentWorkerFunction
-- Multi-turn: ExecuteSingleTurn activity also uses this queue
+- OrchestratorFunction → agent-call-queue → AgentWorkerFunction → evaluator-processing-queue
 
-##### 2.2 evaluator-processing-queue (Phase 1 - Evaluations)
+##### 2.2 multi-turn-agent-call-queue (Multi-Turn Agent Calls - Story 11)
+- **Max Size**: 5 GB
+- **Message TTL**: 14 days
+- **Dead Letter**: Enabled
+- **Max Delivery Count**: 10
+- **Lock Duration**: 5 minutes (per turn)
+- **Session Support**: No
+- **Scheduled Messages**: Enabled (for retry backoff)
+- **Status**: Active - used by MultiTurnAgentWorkerFunction
+- **Purpose**: Queue multi-turn agent call messages with conversation context
+
+**Flow**: 
+- OrchestratorFunction → multi-turn-agent-call-queue (Turn 1) → MultiTurnAgentWorkerFunction
+- MultiTurnAgentWorkerFunction → multi-turn-agent-call-queue (Turn 2+) → MultiTurnAgentWorkerFunction
+- One message per turn per test case
+
+**Message Features**:
+- Contains `conversationId` (null for Turn 1, populated for Turn 2+)
+- Contains `directLineToken` for session continuity
+- Contains `retryCount` for exponential backoff tracking
+
+##### 2.3 evaluator-processing-queue (Evaluations)
 - **Max Size**: 5 GB
 - **Message TTL**: 14 days
 - **Dead Letter**: Enabled
@@ -343,12 +361,8 @@ flowchart TB
 - **Purpose**: Queue evaluator jobs for parallel processing
 
 **Flow**: 
-- AgentWorkerFunction → evaluator-processing-queue → EvaluatorWorkerFunction (×N parallel)
+- AgentWorkerFunction OR MultiTurnAgentWorkerFunction → evaluator-processing-queue → EvaluatorWorkerFunction (×N parallel)
 - 1 agent call → N evaluator jobs (fan-out pattern)
-
-##### 2.3 test-case-processing (Legacy - Phase 3 Cleanup)
-- **Status**: To be removed in Phase 3 hard cutover
-- **Note**: Old single-turn queue, replaced by agent-call-queue + evaluator-processing-queue
 
 #### Message Schema
 
@@ -533,37 +547,39 @@ The system supports custom domain-specific evaluators (e.g., fashion, healthcare
    - Fetches multi-turn test cases
    - For each multi-turn test case:
      * Creates placeholder aggregate results
-     * Starts Durable Functions orchestration
-3. MultiTurnDurableOrchestrator:
-   - Calls GetTestCaseWithTurns activity
-   - For each turn sequentially:
-     * Calls ExecuteSingleTurn activity
-4. ExecuteSingleTurn Activity (v2.0 async):
-   - Calls Copilot Studio (with retry)
+     * Queues Turn 1 message to multi-turn-agent-call-queue
+3. MultiTurnAgentWorkerFunction (Turn 1):
+   - Calls Copilot Studio to get conversationId and Direct Line token
+   - Sends prompt for Turn 1
    - Gets agent response
    - For each evaluator:
      * Creates pending result (StatusCode=1) in Dataverse
      * Queues EvaluatorJobMessage to evaluator-processing-queue
-   - Polls Dataverse until all evaluators complete:
-     * Exponential backoff: 2s → 10s
-     * Timeout: 10 minutes
-     * Marks timed-out results as Errored
-   - Returns completed results to orchestrator
-5. EvaluatorWorkerFunction (×N parallel):
-   - Same as single-turn flow
-6. MultiTurnDurableOrchestrator (after all turns):
-   - Calls CreateAggregateResult activity
-   - Calculates overall scores across turns
-7. MonitorFunction:
-   - Checks if all evaluation units completed
+   - Waits for all evaluators to complete (polling with exponential backoff)
+   - Queues Turn 2 message with conversationId to multi-turn-agent-call-queue
+4. EvaluatorWorkerFunction (×N parallel):
+   - Processes evaluation jobs
+   - Updates results to Completed (778760003) or Errored (778760004)
+5. MultiTurnAgentWorkerFunction (Turn 2+):
+   - Reuses conversationId from previous turn
+   - Sends next turn prompt
+   - Repeats evaluation process
+   - Queues next turn or completes
+6. AggregateEvaluationProcessorFunction (timer every 30s):
+   - Finds multi-turn test cases with all turns completed
+   - Calculates aggregate pass rate across turns
+   - Updates aggregate result records (mcicaps_isaggregate = true)
+7. MonitorFunction (timer every 1 min):
+   - Checks if all test cases completed
    - Updates run status to Completed
 ```
 
 **Performance Characteristics**:
-- Conversation context preserved across turns
-- Each turn: 1 agent call → N parallel evaluators
-- Polling prevents orchestrator timeout (no 5-min limit)
-- Max turn processing time: 10 minutes per turn
+- Conversation context preserved across turns via conversationId
+- Each turn: 1 agent call → N parallel evaluators → poll for completion → queue next turn
+- No timeout limits (queue-based execution)
+- Retry logic: Exponential backoff (30s, 60s, 90s) with max 3 retries
+- Dead letter after 10 delivery attempts
 
 ### Evaluation Result State Machine (v2.0)
 
@@ -701,7 +717,7 @@ Fields:
   - createdon (DateTime)
 Notes:
   - Order is arbitrary (no weighting yet)
-  - Orchestrator enumerates evaluator types from this join when scheduling
+  - OrchestratorFunction and worker functions enumerate evaluator types from this join when processing test cases
 ```
 
 ##### 4.7 mcicaps_testcaseturn (Test Case Turn)
@@ -752,11 +768,11 @@ Fields:
   - Tracking agent response time trends over time
   - Separate SLA monitoring for Copilot Studio vs evaluation infrastructure
 
-**Orchestration Idempotency Pattern** (Story 08):
-- **Multi-Turn:** Before starting Durable Functions orchestration, create placeholder aggregate result with `statuscode = 1` (Pending)
-- **Tracking:** The auto-generated `mcicaps_evaluationresultsid` serves as the orchestration tracker
-- **Idempotency:** Query for existing aggregate result before orchestration start prevents duplicates
-- **Completion:** Orchestration updates placeholder result to `statuscode = 778760002` or `778760003` with final scores
+**Aggregate Result Pattern** (Story 08, updated Story 11):
+- **Multi-Turn:** OrchestratorFunction creates placeholder aggregate result with `statuscode = 1` (Pending) before queuing Turn 1
+- **Tracking:** The auto-generated `mcicaps_evaluationresultsid` serves as the aggregate result tracker
+- **Idempotency:** Query for existing aggregate result before message queuing prevents duplicates
+- **Completion:** AggregateEvaluationProcessorFunction updates placeholder result to `statuscode = 778760002` or `778760003` with final scores
 - **Monitor:** Only counts results with `statuscode = 778760002` as completed, preventing premature run completion
 
 #### Data Relationships
@@ -858,7 +874,7 @@ totalUnits = Σ(single-turn: testCount × evaluatorCount)
 **Contents**:
 - Function app binaries
 - Host configuration
-- Durable Functions state (for multi-turn orchestrations)
+- Service Bus queue messages (transient state)
 - Shared state (if needed)
 
 ---
@@ -960,18 +976,16 @@ sequenceDiagram
     MTWorker->>Dataverse: Save Aggregate Result<br/>(IsAggregate = true)
 ```
 
-### Multi-Turn Test Case Execution (Durable Functions with Multi-Evaluator & Concurrent Evaluation)
-<!-- ![](./images/DurableFunctionsMultiTurn.png) -->
+### Multi-Turn Test Case Execution (Service Bus Queue Architecture - Story 11)
 ```mermaid
 sequenceDiagram
     participant Orchestrator
     participant Dataverse
-    participant DurableClient as Durable Client
-    participant DurableOrch as Durable Orchestrator
-    participant GetTurns as Activity: GetTestCaseWithTurns
-    participant ExecTurn as Activity: ExecuteSingleTurn
-    participant CreateAgg as Activity: CreateAggregateResult
-    participant Storage as Azure Storage
+    participant MTQueue as multi-turn-agent-call-queue
+    participant MTWorker as MultiTurnAgentWorkerFunction
+    participant EvalQueue as evaluator-processing-queue
+    participant EvalWorker as EvaluatorWorkerFunction (×N)
+    participant AggProcessor as AggregateEvaluationProcessorFunction
     participant CopilotStudio
     participant OpenAI
 
@@ -979,67 +993,72 @@ sequenceDiagram
     Dataverse-->>Orchestrator: EvaluatorTypes [Similarity, Relevancy]
     Orchestrator->>Dataverse: Fetch Test Cases<br/>(IsMultiTurn = true)
     Dataverse-->>Orchestrator: Multi-Turn Test Cases
-    Orchestrator->>DurableClient: ScheduleNewOrchestrationInstanceAsync<br/>(1 orchestration per test case,<br/>with all evaluator IDs)
+    Orchestrator->>Dataverse: Create Placeholder Aggregate Results<br/>(StatusCode = Pending)
+    Orchestrator->>MTQueue: Queue Turn 1 Message<br/>(conversationId = null, turnSequence = 1)
     
-    Note over DurableOrch: Orchestration Started<br/>(evaluatorTypeIds=[Sim, Rel])
-    DurableOrch->>Storage: Save Orchestration State
+    Note over MTWorker: Turn 1 Processing
+    MTQueue->>MTWorker: Trigger (Turn 1 Message)
+    MTWorker->>Dataverse: Fetch Turn 1 Data
+    MTWorker->>CopilotStudio: Start Conversation<br/>(Get conversationId + token)
+    CopilotStudio-->>MTWorker: conversationId + token
+    MTWorker->>CopilotStudio: Send Turn 1 Prompt
+    CopilotStudio-->>MTWorker: Agent Response
     
-    DurableOrch->>GetTurns: CallActivityAsync<br/>(GetTestCaseWithTurns)
-    GetTurns->>Dataverse: Fetch Test Case + Turns
-    Dataverse-->>GetTurns: Test Case with Turns
-    GetTurns-->>DurableOrch: TestCase Object
-    
-    DurableOrch->>Storage: Update State
-    
-    Note over DurableOrch: Loop through each turn
-    
-    loop For each turn (1 to N)
-        DurableOrch->>ExecTurn: CallActivityAsync<br/>(ExecuteSingleTurn with all evaluator IDs)
-        ExecTurn->>CopilotStudio: Send Turn Prompt ONCE<br/>(with conversationId from Turn 1)
-        CopilotStudio-->>ExecTurn: Agent Response
-        
-        Note over ExecTurn: Concurrent Evaluation with Task.WhenAll
-        par Evaluate with Similarity
-            ExecTurn->>OpenAI: Evaluate (Similarity)
-            OpenAI-->>ExecTurn: Score + Reasoning
-            ExecTurn->>Dataverse: Save Turn Result 1
-        and Evaluate with Relevancy
-            ExecTurn->>OpenAI: Evaluate (Relevancy)
-            OpenAI-->>ExecTurn: Score + Reasoning
-            ExecTurn->>Dataverse: Save Turn Result 2
-        end
-        
-        ExecTurn-->>DurableOrch: List<TurnExecutionResult>
-        DurableOrch->>Storage: Update State with Turn Results
-        
-        Note over DurableOrch: Optional 2-second delay<br/>between turns
-        DurableOrch->>DurableOrch: CreateTimer (2 seconds)
+    Note over MTWorker: Fan-out to Evaluators
+    par Create Pending Results
+        MTWorker->>Dataverse: Create Pending Result 1<br/>(Similarity, StatusCode = 1)
+    and Create Pending Result 2
+        MTWorker->>Dataverse: Create Pending Result 2<br/>(Relevancy, StatusCode = 1)
     end
     
-    Note over DurableOrch: All turns completed<br/>Create aggregates for each evaluator
+    MTWorker->>EvalQueue: Queue Evaluator Job 1 (Similarity)
+    MTWorker->>EvalQueue: Queue Evaluator Job 2 (Relevancy)
     
-    loop For each evaluator type
-        DurableOrch->>CreateAgg: CallActivityAsync<br/>(CreateAggregateResult per evaluator)
-        CreateAgg->>CreateAgg: Calculate Pass Rate<br/>& Overall Metrics<br/>(filter NA results)
-        CreateAgg->>Dataverse: Save Aggregate Result<br/>(IsAggregate = true, evaluatorTypeId)
-        CreateAgg-->>DurableOrch: Aggregate Created
+    Note over EvalWorker: Parallel Evaluation
+    par Evaluate Similarity
+        EvalQueue->>EvalWorker: Trigger (Job 1)
+        EvalWorker->>OpenAI: Evaluate (Similarity)
+        OpenAI-->>EvalWorker: Score + Reasoning
+        EvalWorker->>Dataverse: Update Result 1<br/>(StatusCode = Completed)
+    and Evaluate Relevancy
+        EvalQueue->>EvalWorker: Trigger (Job 2)
+        EvalWorker->>OpenAI: Evaluate (Relevancy)
+        OpenAI-->>EvalWorker: Score + Reasoning
+        EvalWorker->>Dataverse: Update Result 2<br/>(StatusCode = Completed)
     end
     
-    DurableOrch->>Dataverse: Increment Completed Count<br/>(by evaluator count)
-    DurableOrch->>Storage: Save Final State
+    Note over MTWorker: Poll for Completion
+    MTWorker->>Dataverse: Check All Evaluators Complete<br/>(Exponential backoff: 2s → 10s)
+    Dataverse-->>MTWorker: All Complete
     
-    Note over DurableOrch: Orchestration Complete<br/>(Can run for hours)
+    MTWorker->>MTQueue: Queue Turn 2 Message<br/>(conversationId, token, turnSequence = 2)
+    
+    Note over MTWorker: Turn 2+ Processing (with context)
+    MTQueue->>MTWorker: Trigger (Turn 2 Message)
+    MTWorker->>Dataverse: Fetch Turn 2 Data
+    MTWorker->>CopilotStudio: Send Turn 2 Prompt<br/>(reuse conversationId)
+    CopilotStudio-->>MTWorker: Agent Response (with context)
+    
+    Note over MTWorker: Repeat evaluation fan-out...<br/>(Same pattern as Turn 1)
+    
+    Note over AggProcessor: Timer Every 30s
+    AggProcessor->>Dataverse: Find Multi-Turn Cases<br/>with All Turns Completed
+    Dataverse-->>AggProcessor: Test Case IDs Ready
+    AggProcessor->>Dataverse: Fetch All Turn Results<br/>(per evaluator type)
+    AggProcessor->>AggProcessor: Calculate Aggregate Pass Rate<br/>(filter NA results)
+    AggProcessor->>Dataverse: Update Aggregate Results<br/>(IsAggregate = true, StatusCode = Completed)
 ```
 
-**Key Advantages of Durable Functions Multi-Evaluator Approach**:
-- **Unlimited Runtime**: No 5-minute Service Bus message lock limitation
-- **State Management**: Automatic checkpointing and replay
-- **Resilience**: Automatic retries and failure handling
-- **Debugging**: Full execution history in Azure Storage
-- **Long Conversations**: Ideal for 10+ turn conversations
-- **Efficiency**: 1 Copilot call per turn (not N), concurrent evaluation
-- **Cost Savings**: 67-90% fewer Copilot Studio API calls
-- **Performance**: 67-80% faster evaluation through parallelization
+**Key Advantages of Service Bus Multi-Turn Approach (Story 11)**:
+- **Unlimited Runtime**: Queue-based execution has no timeout limits (vs 5-min message lock)
+- **Simplicity**: Stateless workers, no orchestration state management or replay logic
+- **Resilience**: Built-in Service Bus retry with exponential backoff and dead letter queue
+- **Debugging**: Clear message flow via queue metrics, no hidden orchestration state
+- **Long Conversations**: Ideal for 10+ turn conversations via message passing
+- **Efficiency**: 1 Copilot call per turn (not N), parallel evaluation via queue fan-out
+- **Cost Savings**: 67-90% fewer Copilot Studio API calls (same as Durable approach)
+- **Performance**: 67-80% faster evaluation through parallelization (same as Durable approach)
+- **Monitoring**: Real-time visibility via queue depth and dead letter counts
 
 ### Azure OpenAI Deployment Name Resolution
 <!-- ![](./images/DeploymentNameResolution.png) -->
@@ -1099,17 +1118,15 @@ sequenceDiagram
 - **.NET 8**: Function runtime (isolated process model)
 - **C#**: Primary programming language
 - **Azure Functions v4**: Serverless compute platform
-- **Azure Durable Functions**: Long-running orchestrations and stateful workflows
 
 ### Azure Services
 - **Azure Functions**: Compute (Premium or Consumption Plan)
-- **Azure Service Bus**: Message queue (Standard tier, 1 active queue for single-turn)
-- **Azure Durable Functions**: Multi-turn orchestration (requires Azure Storage for state)
+- **Azure Service Bus**: Message queue (Standard tier, 3 queues: agent-call-queue, multi-turn-agent-call-queue, evaluator-processing-queue)
 - **Azure OpenAI**: LLM Judge (GPT-4o)
 - **Microsoft Dataverse**: Data storage and prompt templates
 - **Azure Key Vault**: Secrets management (Dataverse ClientSecret only)
 - **Application Insights**: Monitoring and telemetry
-- **Azure Storage**: Function state and Durable Functions orchestration state
+- **Azure Storage**: Function state and transient message storage
 
 ### External Integrations
 - **Copilot Studio Direct Line API**: Agent communication
@@ -1183,20 +1200,19 @@ Only non-Azure services require secrets in Key Vault:
 | Function | Trigger | Scaling Strategy | Max Instances |
 |----------|---------|------------------|---------------|
 | Orchestrator | HTTP | On-demand | 200 |
-| Worker (Single-Turn) | Service Bus | Event-driven (queue depth) | 1000 |
-| Durable Orchestrator (Multi-Turn) | Durable Functions | Automatic (orchestration instances) | Unlimited |
-| Monitor | Timer | Single instance | 1 |
+| AgentWorkerFunction (Single-Turn) | Service Bus | Event-driven (queue depth) | 1000 |
+| MultiTurnAgentWorkerFunction | Service Bus | Event-driven (queue depth) | 1000 |
+| EvaluatorWorkerFunction | Service Bus | Event-driven (queue depth) | 1000 |
+| AggregateEvaluationProcessorFunction | Timer (30s) | Single instance | 1 |
+| Monitor | Timer (1 min) | Single instance | 1 |
 
-#### Service Bus Scaling
-- **Auto-scaling**: Enabled based on queue depth (single-turn only)
-- **Concurrent Workers**: Up to 1000 for single-turn queue
-- **Message Throughput**: 1000+ messages/minute
+#### Service Bus Scaling (Story 11 - Unified Architecture)
+- **Auto-scaling**: Enabled based on queue depth for all three queues
+- **Concurrent Workers**: Up to 1000 per queue (agent-call-queue, multi-turn-agent-call-queue, evaluator-processing-queue)
+- **Message Throughput**: 1000+ messages/minute per queue
 - **Queue Capacity**: 5 GB per queue
-
-#### Durable Functions Scaling
-- **Concurrent Orchestrations**: Unlimited multi-turn conversations
-- **State Management**: Automatic via Azure Storage
-- **Long-Running Support**: No timeout limitations
+- **Retry Strategy**: Exponential backoff (30s, 60s, 90s) with max 3 retries
+- **Dead Letter**: Enabled with max 10 delivery attempts
 
 ### Performance Targets
 | Metric | Target | Actual |
@@ -1208,13 +1224,13 @@ Only non-Azure services require secrets in Key Vault:
 
 ### Optimization Strategies
 
-1. **Queue-Based Processing**: Decouple orchestration from execution
-2. **Parallel Execution**: Process test cases concurrently across two dedicated queues
+1. **Queue-Based Processing**: Decouple job scheduling from execution
+2. **Parallel Execution**: Process test cases concurrently across three dedicated queues (agent, multi-turn agent, evaluator)
 3. **Connection Pooling**: Reuse HTTP connections
 4. **Prompt Caching**: Cache EvaluatorType prompts to reduce Dataverse calls
 5. **Batch Operations**: Batch Dataverse updates where possible
 6. **Atomic Updates**: Use atomic increment operations for progress tracking
-7. **Durable Functions**: Alternative execution path for very long conversations
+7. **Stateless Design**: No orchestration state management overhead (pure Service Bus architecture)
 
 ---
 
@@ -1309,15 +1325,15 @@ graph TB
 **Bicep Template**: `backend/infrastructure/main.bicep`
 
 Provisions:
-- Function App with Premium Plan (supports Durable Functions)
-- Service Bus namespace with 1 queue (test-case-processing for single-turn)
+- Function App with Premium Plan
+- Service Bus namespace with 3 queues (agent-call-queue, multi-turn-agent-call-queue, evaluator-processing-queue)
 - Azure OpenAI with GPT-4o deployment
 - Key Vault
 - Application Insights
-- Storage Account (required for Durable Functions state management)
+- Storage Account (required for Function state)
 - All RBAC role assignments
 
-**Note**: Multi-turn execution uses Durable Functions orchestration and does not require Service Bus queuing.
+**Note** (Story 11): Multi-turn execution now uses Service Bus queues (multi-turn-agent-call-queue) instead of Durable Functions.
 
 **Deployment Command**:
 ```bash
@@ -1343,9 +1359,9 @@ az deployment group create \
 1. **Event Grid Integration**: Event-driven notifications
 2. **Cosmos DB**: High-scale result storage alternative
 3. **Azure Container Apps**: Extreme scale scenarios
-4. **Durable Functions Expansion**: Enhanced orchestration patterns for complex workflows
+4. **Multi-Queue Optimization**: Advanced queue partitioning strategies for extreme scale
 
-**Note**: Azure Durable Functions is already implemented for multi-turn conversations as an alternative to Service Bus workers.
+**Note** (Story 11): Durable Functions were deprecated and replaced with pure Service Bus architecture for all test types.
 
 ---
 

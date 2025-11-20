@@ -75,6 +75,13 @@ public class CopilotStudioSettings
     /// Maximum time to wait for bot response in seconds (polling timeout)
     /// </summary>
     public int BotResponseTimeoutSeconds { get; set; } = 60;
+    
+    /// <summary>
+    /// Delay in milliseconds between consecutive Copilot Studio requests
+    /// Helps prevent rate limiting when many orchestrations run simultaneously
+    /// Default: 500ms (recommended range: 100-2000ms)
+    /// </summary>
+    public int RequestDelayMs { get; set; } = 500;
 }
 
 public class AzureOpenAISettings

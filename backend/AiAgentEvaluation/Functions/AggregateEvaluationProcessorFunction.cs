@@ -31,20 +31,28 @@ public class AggregateEvaluationProcessorFunction
         [TimerTrigger("*/30 * * * * *")] TimerInfo timerInfo,
         CancellationToken cancellationToken)
     {
-        _logger.LogInformation("Aggregate evaluation processor triggered at {Time}", DateTime.UtcNow);
+        _logger.LogInformation("=== Aggregate evaluation processor triggered at {Time} ===", DateTime.UtcNow);
 
         try
         {
             // Get all pending aggregate results
             var pendingAggregates = await _dataverseService.GetPendingAggregateResultsAsync(cancellationToken);
             
+            _logger.LogInformation("Query returned {Count} pending aggregates", pendingAggregates.Count);
+            
             if (!pendingAggregates.Any())
             {
-                _logger.LogInformation("No pending aggregate results to process");
+                _logger.LogInformation("No pending aggregate results to process - processor idle");
                 return;
             }
 
-            _logger.LogInformation("Found {Count} pending aggregate results", pendingAggregates.Count);
+            _logger.LogInformation("Found {Count} pending aggregate results - processing...", pendingAggregates.Count);
+            
+            foreach (var agg in pendingAggregates)
+            {
+                _logger.LogInformation("  - Aggregate {ResultId}: TestCase={TestCaseId}, Run={RunId}, Evaluator={EvaluatorId}",
+                    agg.Id, agg.TestCaseId, agg.EvaluationRunId, agg.EvaluatorTypeId);
+            }
 
             // Process aggregates in parallel for better performance
             await Parallel.ForEachAsync(
@@ -73,8 +81,8 @@ public class AggregateEvaluationProcessorFunction
     private async Task ProcessSingleAggregate(EvaluationResult aggregate, CancellationToken cancellationToken)
     {
         _logger.LogInformation(
-            "Processing aggregate result {ResultId} for test case {TestCaseId}, run {RunId}",
-            aggregate.Id, aggregate.TestCaseId, aggregate.EvaluationRunId);
+            "Processing aggregate result {ResultId} (IsAggregate={IsAggregate}, StatusCode={StatusCode}) for test case {TestCaseId}, run {RunId}, evaluator {EvaluatorId}",
+            aggregate.Id, aggregate.IsAggregate, aggregate.StatusCode, aggregate.TestCaseId, aggregate.EvaluationRunId, aggregate.EvaluatorTypeId);
 
         // Validate required fields
         if (aggregate.TestCaseId == Guid.Empty || !aggregate.EvaluatorTypeId.HasValue)
@@ -85,7 +93,29 @@ public class AggregateEvaluationProcessorFunction
             return;
         }
 
-        // Get all turn results for this test case and evaluation run
+        // Get the test case to find expected number of turns
+        var testCase = await _dataverseService.GetTestCaseAsync(aggregate.TestCaseId, cancellationToken);
+        if (testCase == null)
+        {
+            _logger.LogWarning(
+                "Test case {TestCaseId} not found for aggregate {ResultId}",
+                aggregate.TestCaseId, aggregate.Id);
+            return;
+        }
+
+        // Get turn count for this test case
+        var turns = await _dataverseService.GetTestCaseTurnsAsync(aggregate.TestCaseId, cancellationToken);
+        var expectedTurnCount = turns?.Count ?? 0;
+        
+        if (expectedTurnCount == 0)
+        {
+            _logger.LogWarning(
+                "Test case {TestCaseId} has no turns defined for aggregate {ResultId}",
+                aggregate.TestCaseId, aggregate.Id);
+            return;
+        }
+
+        // Get all turn results for this test case + evaluation run + evaluator type
         var turnResults = await _dataverseService.GetTurnResultsForTestCaseAsync(
             aggregate.TestCaseId,
             aggregate.EvaluationRunId,
@@ -94,9 +124,18 @@ public class AggregateEvaluationProcessorFunction
 
         if (!turnResults.Any())
         {
-            _logger.LogWarning(
-                "No turn results found for aggregate {ResultId}, test case {TestCaseId}",
-                aggregate.Id, aggregate.TestCaseId);
+            _logger.LogInformation(
+                "No turn results found yet for aggregate {ResultId}, test case {TestCaseId}, run {RunId}, evaluator {EvaluatorId} - orchestration may still be creating them",
+                aggregate.Id, aggregate.TestCaseId, aggregate.EvaluationRunId, aggregate.EvaluatorTypeId);
+            return;
+        }
+
+        // Check if we have all expected turns
+        if (turnResults.Count < expectedTurnCount)
+        {
+            _logger.LogInformation(
+                "Aggregate {ResultId} only has {ActualCount} of {ExpectedCount} turn results - orchestration still in progress",
+                aggregate.Id, turnResults.Count, expectedTurnCount);
             return;
         }
 

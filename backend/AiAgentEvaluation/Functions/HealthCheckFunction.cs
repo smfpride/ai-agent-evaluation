@@ -18,8 +18,8 @@ public class HealthCheckFunction
     private readonly ILLMJudgeServiceFactory _llmJudgeServiceFactory;
     
     // Build timestamp to track deployments - updated with each build
-    private static readonly string BuildTimestamp = "2025-11-19T03:43:00Z";
-    private static readonly string DeploymentVersion = "1.0.20"; // Deployment #20 - Phase 3 hard cutover: Removed old WorkerFunction, ProcessTestCaseMessage, test-case-processing queue
+    private static readonly string BuildTimestamp = "2025-11-19T23:45:00Z";
+    private static readonly string DeploymentVersion = "1.0.43"; // Story 11: Multi-Turn Service Bus Migration - Phase 5 & 6 Complete
 
     public HealthCheckFunction(
         ILogger<HealthCheckFunction> logger,

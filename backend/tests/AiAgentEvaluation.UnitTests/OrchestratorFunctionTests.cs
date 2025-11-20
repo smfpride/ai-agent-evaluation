@@ -87,7 +87,7 @@ public class OrchestratorFunctionTests
         var httpRequestData = CreateMockHttpRequestData(request);
 
         // Act
-        var result = await _orchestratorFunction.StartEvaluationRun(httpRequestData, _mockDurableClient.Object, CancellationToken.None);
+        var result = await _orchestratorFunction.StartEvaluationRun(httpRequestData, CancellationToken.None);
 
         // Assert
         Assert.Equal(HttpStatusCode.Accepted, result.StatusCode);
@@ -153,7 +153,7 @@ public class OrchestratorFunctionTests
         var httpRequestData = CreateMockHttpRequestData(request);
 
         // Act
-        var result = await _orchestratorFunction.StartEvaluationRun(httpRequestData, _mockDurableClient.Object, CancellationToken.None);
+        var result = await _orchestratorFunction.StartEvaluationRun(httpRequestData, CancellationToken.None);
 
         // Assert
         Assert.Equal(HttpStatusCode.Accepted, result.StatusCode);
@@ -187,7 +187,7 @@ public class OrchestratorFunctionTests
         var httpRequestData = CreateMockHttpRequestData(request);
 
         // Act
-        var result = await _orchestratorFunction.StartEvaluationRun(httpRequestData, _mockDurableClient.Object, CancellationToken.None);
+        var result = await _orchestratorFunction.StartEvaluationRun(httpRequestData, CancellationToken.None);
 
         // Assert
         Assert.Equal(HttpStatusCode.NotFound, result.StatusCode);
@@ -226,7 +226,7 @@ public class OrchestratorFunctionTests
         var httpRequestData = CreateMockHttpRequestData(request);
 
         // Act
-        var result = await _orchestratorFunction.StartEvaluationRun(httpRequestData, _mockDurableClient.Object, CancellationToken.None);
+        var result = await _orchestratorFunction.StartEvaluationRun(httpRequestData, CancellationToken.None);
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, result.StatusCode);
@@ -266,7 +266,7 @@ public class OrchestratorFunctionTests
         var httpRequestData = CreateMockHttpRequestData(request);
 
         // Act
-        var result = await _orchestratorFunction.StartEvaluationRun(httpRequestData, _mockDurableClient.Object, CancellationToken.None);
+        var result = await _orchestratorFunction.StartEvaluationRun(httpRequestData, CancellationToken.None);
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, result.StatusCode);
@@ -322,7 +322,7 @@ public class OrchestratorFunctionTests
         var httpRequestData = CreateMockHttpRequestData(request);
 
         // Act
-        var result = await _orchestratorFunction.StartEvaluationRun(httpRequestData, _mockDurableClient.Object, CancellationToken.None);
+        var result = await _orchestratorFunction.StartEvaluationRun(httpRequestData, CancellationToken.None);
 
         // Assert
         Assert.Equal(HttpStatusCode.InternalServerError, result.StatusCode);
@@ -348,7 +348,7 @@ public class OrchestratorFunctionTests
         var httpRequestData = CreateMockHttpRequestData(request);
 
         // Act
-        var result = await _orchestratorFunction.StartEvaluationRun(httpRequestData, _mockDurableClient.Object, CancellationToken.None);
+        var result = await _orchestratorFunction.StartEvaluationRun(httpRequestData, CancellationToken.None);
 
         // Assert
         Assert.Equal(HttpStatusCode.InternalServerError, result.StatusCode);
@@ -365,7 +365,7 @@ public class OrchestratorFunctionTests
         var httpRequestData = CreateMockHttpRequestData("{ invalid json }");
 
         // Act
-        var result = await _orchestratorFunction.StartEvaluationRun(httpRequestData, _mockDurableClient.Object, CancellationToken.None);
+        var result = await _orchestratorFunction.StartEvaluationRun(httpRequestData, CancellationToken.None);
 
         // Assert
         Assert.Equal(HttpStatusCode.InternalServerError, result.StatusCode);
@@ -378,7 +378,7 @@ public class OrchestratorFunctionTests
         var httpRequestData = CreateMockHttpRequestData("");
 
         // Act
-        var result = await _orchestratorFunction.StartEvaluationRun(httpRequestData, _mockDurableClient.Object, CancellationToken.None);
+        var result = await _orchestratorFunction.StartEvaluationRun(httpRequestData, CancellationToken.None);
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, result.StatusCode);
@@ -400,7 +400,7 @@ public class OrchestratorFunctionTests
         var httpRequestData = CreateMockHttpRequestData(request);
 
         // Act
-        var result = await _orchestratorFunction.StartEvaluationRun(httpRequestData, _mockDurableClient.Object, CancellationToken.None);
+        var result = await _orchestratorFunction.StartEvaluationRun(httpRequestData, CancellationToken.None);
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, result.StatusCode);
@@ -466,240 +466,6 @@ public class OrchestratorFunctionTests
 
         // Assert
         Assert.Equal(HttpStatusCode.NotFound, result.StatusCode);
-    }
-
-    #endregion
-
-    #region Idempotency Tests (Story 08)
-
-    [Fact]
-    public async Task StartEvaluationRun_MultiTurn_CreatesPlaceholderWithPendingStatus()
-    {
-        // Arrange
-        var evaluationRunId = Guid.NewGuid();
-        var testCaseId = Guid.NewGuid();
-        var agentToEvalId = Guid.NewGuid();
-        
-        var request = new StartEvaluationRunRequest
-        {
-            EvaluationRunId = evaluationRunId
-        };
-
-        var evaluationRun = new EvaluationRun
-        {
-            Id = evaluationRunId,
-            StatusCode = EvaluationRunStatus.Execute,
-            AgentToEvalId = agentToEvalId
-        };
-
-        var agentToEval = new AgentToEval
-        {
-            Id = agentToEvalId,
-            Name = "Test Agent",
-            DirectLineSpeechUrl = "https://test.powerplatform.com/powervirtualagents/botsbyschema/test/directline/token"
-        };
-
-        var testCases = new List<TestCase>
-        {
-            new() { Id = testCaseId, UserInput = "Test 1", IsMultiTurn = true }
-        };
-
-        _mockDataverseService.Setup(x => x.GetEvaluationRunAsync(evaluationRunId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(evaluationRun);
-        _mockDataverseService.Setup(x => x.GetAgentToEvalAsync(agentToEvalId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(agentToEval);
-        _mockDataverseService.Setup(x => x.GetTestCasesAsync(evaluationRunId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(testCases);
-        _mockDataverseService.Setup(x => x.GetEvaluatorTypesForRunAsync(evaluationRunId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<EvaluatorType> { new() { Id = Guid.NewGuid(), Name = "Similarity", RequiresExpectedResponse = false } });
-        _mockDataverseService.Setup(x => x.GetAggregateResultForTestCaseAsync(
-            evaluationRunId, testCaseId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync((EvaluationResult?)null);  // No existing result
-        _mockDataverseService.Setup(x => x.CreateEvaluationResultAsync(
-            It.IsAny<CreateEvaluationResultRequest>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Guid.NewGuid());
-
-        var httpRequestData = CreateMockHttpRequestData(request);
-
-        // Act
-        var result = await _orchestratorFunction.StartEvaluationRun(
-            httpRequestData, _mockDurableClient.Object, CancellationToken.None);
-
-        // Assert
-        Assert.Equal(HttpStatusCode.Accepted, result.StatusCode);
-        
-        // Verify placeholder created with StatusCode = 1 (Pending)
-        _mockDataverseService.Verify(x => x.CreateEvaluationResultAsync(
-            It.Is<CreateEvaluationResultRequest>(r => 
-                r.EvaluationRunId == evaluationRunId &&
-                r.TestCaseId == testCaseId &&
-                r.IsAggregate == true &&
-                r.StatusCode == 1),  // Pending
-            It.IsAny<CancellationToken>()), Times.Once);
-        
-        // Verify orchestration started
-        _mockDurableClient.Verify(x => x.ScheduleNewOrchestrationInstanceAsync(
-            "MultiTurnTestCaseOrchestrator",
-            It.Is<MultiTurnOrchestratorInput>(i => 
-                i.TestCaseId == testCaseId &&
-                i.AggregateResultIds.Any()),
-            It.IsAny<StartOrchestrationOptions>(),
-            It.IsAny<CancellationToken>()), Times.Once);
-    }
-
-    [Fact]
-    public async Task StartEvaluationRun_MultiTurn_SkipsIfAggregateAlreadyExists()
-    {
-        // Arrange
-        var evaluationRunId = Guid.NewGuid();
-        var testCaseId = Guid.NewGuid();
-        var agentToEvalId = Guid.NewGuid();
-        var existingResultId = Guid.NewGuid();
-        
-        var request = new StartEvaluationRunRequest
-        {
-            EvaluationRunId = evaluationRunId
-        };
-
-        var evaluationRun = new EvaluationRun
-        {
-            Id = evaluationRunId,
-            StatusCode = EvaluationRunStatus.Execute,
-            AgentToEvalId = agentToEvalId
-        };
-
-        var agentToEval = new AgentToEval
-        {
-            Id = agentToEvalId,
-            Name = "Test Agent",
-            DirectLineSpeechUrl = "https://test.powerplatform.com/powervirtualagents/botsbyschema/test/directline/token"
-        };
-
-        var testCases = new List<TestCase>
-        {
-            new() { Id = testCaseId, UserInput = "Test 1", IsMultiTurn = true }
-        };
-
-        var existingResult = new EvaluationResult
-        {
-            Id = existingResultId,
-            TestCaseId = testCaseId,
-            EvaluationRunId = evaluationRunId,
-            IsAggregate = true,
-            StatusCode = 1  // Pending
-        };
-
-        _mockDataverseService.Setup(x => x.GetEvaluationRunAsync(evaluationRunId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(evaluationRun);
-        _mockDataverseService.Setup(x => x.GetAgentToEvalAsync(agentToEvalId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(agentToEval);
-        _mockDataverseService.Setup(x => x.GetTestCasesAsync(evaluationRunId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(testCases);
-        _mockDataverseService.Setup(x => x.GetEvaluatorTypesForRunAsync(evaluationRunId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<EvaluatorType> { new() { Id = Guid.NewGuid(), Name = "Similarity", RequiresExpectedResponse = false } });
-        _mockDataverseService.Setup(x => x.GetAggregateResultForTestCaseAsync(
-            evaluationRunId, testCaseId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(existingResult);  // Existing result found
-
-        var httpRequestData = CreateMockHttpRequestData(request);
-
-        // Act
-        var result = await _orchestratorFunction.StartEvaluationRun(
-            httpRequestData, _mockDurableClient.Object, CancellationToken.None);
-
-        // Assert
-        Assert.Equal(HttpStatusCode.Accepted, result.StatusCode);
-        
-        // Verify NO placeholder created (idempotent)
-        _mockDataverseService.Verify(x => x.CreateEvaluationResultAsync(
-            It.IsAny<CreateEvaluationResultRequest>(), It.IsAny<CancellationToken>()), Times.Never);
-        
-        // Verify NO orchestration started (idempotent)
-        _mockDurableClient.Verify(x => x.ScheduleNewOrchestrationInstanceAsync(
-            It.IsAny<TaskName>(),
-            It.IsAny<object>(),
-            It.IsAny<StartOrchestrationOptions>(),
-            It.IsAny<CancellationToken>()), Times.Never);
-    }
-
-    [Fact]
-    public async Task StartEvaluationRun_MultiTurn_AllowsRetryIfPreviousErrored()
-    {
-        // Arrange
-        var evaluationRunId = Guid.NewGuid();
-        var testCaseId = Guid.NewGuid();
-        var agentToEvalId = Guid.NewGuid();
-        var existingResultId = Guid.NewGuid();
-        
-        var request = new StartEvaluationRunRequest
-        {
-            EvaluationRunId = evaluationRunId
-        };
-
-        var evaluationRun = new EvaluationRun
-        {
-            Id = evaluationRunId,
-            StatusCode = EvaluationRunStatus.Execute,
-            AgentToEvalId = agentToEvalId
-        };
-
-        var agentToEval = new AgentToEval
-        {
-            Id = agentToEvalId,
-            Name = "Test Agent",
-            DirectLineSpeechUrl = "https://test.powerplatform.com/powervirtualagents/botsbyschema/test/directline/token"
-        };
-
-        var testCases = new List<TestCase>
-        {
-            new() { Id = testCaseId, UserInput = "Test 1", IsMultiTurn = true }
-        };
-
-        var existingResult = new EvaluationResult
-        {
-            Id = existingResultId,
-            TestCaseId = testCaseId,
-            EvaluationRunId = evaluationRunId,
-            IsAggregate = true,
-            StatusCode = 778760003  // Errored
-        };
-
-        _mockDataverseService.Setup(x => x.GetEvaluationRunAsync(evaluationRunId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(evaluationRun);
-        _mockDataverseService.Setup(x => x.GetAgentToEvalAsync(agentToEvalId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(agentToEval);
-        _mockDataverseService.Setup(x => x.GetTestCasesAsync(evaluationRunId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(testCases);
-        _mockDataverseService.Setup(x => x.GetEvaluatorTypesForRunAsync(evaluationRunId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<EvaluatorType> { new() { Id = Guid.NewGuid(), Name = "Similarity", RequiresExpectedResponse = false } });
-        _mockDataverseService.Setup(x => x.GetAggregateResultForTestCaseAsync(
-            evaluationRunId, testCaseId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(existingResult);  // Existing errored result
-        _mockDataverseService.Setup(x => x.CreateEvaluationResultAsync(
-            It.IsAny<CreateEvaluationResultRequest>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Guid.NewGuid());
-
-        var httpRequestData = CreateMockHttpRequestData(request);
-
-        // Act
-        var result = await _orchestratorFunction.StartEvaluationRun(
-            httpRequestData, _mockDurableClient.Object, CancellationToken.None);
-
-        // Assert
-        Assert.Equal(HttpStatusCode.Accepted, result.StatusCode);
-        
-        // Verify new placeholder created (allows retry)
-        _mockDataverseService.Verify(x => x.CreateEvaluationResultAsync(
-            It.Is<CreateEvaluationResultRequest>(r => 
-                r.StatusCode == 1), // New pending placeholder
-            It.IsAny<CancellationToken>()), Times.Once);
-        
-        // Verify orchestration started (allows retry)
-        _mockDurableClient.Verify(x => x.ScheduleNewOrchestrationInstanceAsync(
-            "MultiTurnTestCaseOrchestrator",
-            It.IsAny<MultiTurnOrchestratorInput>(),
-            It.IsAny<StartOrchestrationOptions>(),
-            It.IsAny<CancellationToken>()), Times.Once);
     }
 
     #endregion

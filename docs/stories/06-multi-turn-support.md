@@ -1,7 +1,12 @@
 # Story 06: Multi-Turn Test Case Support
 
+> **⚠️ IMPLEMENTATION UPDATE (November 19, 2025)**  
+> Multi-turn support was initially implemented using Azure Durable Functions as documented below.  
+> **Story 11 (Multi-Turn Service Bus Migration)** replaced the Durable Functions approach with a pure Service Bus queue architecture for improved reliability and simplicity.  
+> See `docs/stories/11-multi-turn-service-bus-migration.md` for current implementation details.
+
 ## Overview
-This document outlines the implementation plan for adding multi-turn conversation support to the AI Agent Evaluation system. Multi-turn test cases enable testing of conversational scenarios where the agent must maintain context across multiple user prompts.
+This document outlines the original implementation plan for adding multi-turn conversation support to the AI Agent Evaluation system using Durable Functions. Multi-turn test cases enable testing of conversational scenarios where the agent must maintain context across multiple user prompts.
 
 ## Use Case Example
 ```
@@ -14,7 +19,7 @@ Turn 2:
   Agent: "Opulent blue mens button down, Royal navy henley."
 ```
 
-## Key Requirements
+## Key Requirements (Original Durable Functions Implementation)
 1. Each turn stored as a separate test case record for simplicity
 2. All turns in a sequence share the same conversationId to maintain context
 3. Individual evaluation results for each turn
@@ -22,6 +27,8 @@ Turn 2:
 5. Continue execution even if earlier turns fail
 6. Evaluate each turn independently using the test type defined at sequence level
 7. No new Azure infrastructure required (can add functions if needed)
+
+**Current Implementation (Story 11)**: Uses Service Bus queues (`multi-turn-agent-call-queue`) with stateless workers instead of Durable Functions orchestrations. See Story 11 for details.
 
 ---
 

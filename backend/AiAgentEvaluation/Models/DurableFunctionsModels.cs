@@ -115,6 +115,24 @@ public class TurnExecutionResult
 }
 
 /// <summary>
+/// Input for creating placeholder aggregate (called by orchestrator after it starts)
+/// </summary>
+public class CreatePlaceholderAggregateInput
+{
+    [Required]
+    [JsonPropertyName("testRunId")]
+    public Guid TestRunId { get; set; }
+
+    [Required]
+    [JsonPropertyName("testCaseId")]
+    public Guid TestCaseId { get; set; }
+
+    [Required]
+    [JsonPropertyName("evaluatorTypeId")]
+    public Guid EvaluatorTypeId { get; set; }
+}
+
+/// <summary>
 /// Input for creating aggregate result
 /// </summary>
 public class CreateAggregateResultInput

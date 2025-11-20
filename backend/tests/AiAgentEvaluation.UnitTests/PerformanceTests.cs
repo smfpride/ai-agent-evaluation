@@ -95,7 +95,7 @@ public class PerformanceTests
 
         // Act
         var stopwatch = Stopwatch.StartNew();
-        await orchestrator.StartEvaluationRun(httpRequestData, _mockDurableClient.Object, CancellationToken.None);
+        await orchestrator.StartEvaluationRun(httpRequestData, CancellationToken.None);
         stopwatch.Stop();
 
         // Assert - Should complete within 30 seconds (PRD requirement)
@@ -166,7 +166,7 @@ public class PerformanceTests
         {
             var request = new StartEvaluationRunRequest { EvaluationRunId = run.Id };
             var httpRequestData = CreateMockHttpRequestData(request);
-            return await orchestrator.StartEvaluationRun(httpRequestData, _mockDurableClient.Object, CancellationToken.None);
+            return await orchestrator.StartEvaluationRun(httpRequestData, CancellationToken.None);
         });
 
         var stopwatch = Stopwatch.StartNew();

@@ -131,6 +131,22 @@ resource evaluatorProcessingQueue 'Microsoft.ServiceBus/namespaces/queues@2022-1
   }
 }
 
+// Story 11: Multi-Turn Agent Call Queue - for multi-turn agent calls with conversation context
+resource multiTurnAgentCallQueue 'Microsoft.ServiceBus/namespaces/queues@2022-10-01-preview' = {
+  parent: serviceBusNamespace
+  name: 'multi-turn-agent-call-queue'
+  properties: {
+    maxSizeInMegabytes: 5120
+    defaultMessageTimeToLive: 'P14D'
+    deadLetteringOnMessageExpiration: true
+    duplicateDetectionHistoryTimeWindow: 'PT10M'
+    maxDeliveryCount: 10
+    lockDuration: 'PT5M'
+    enablePartitioning: false
+    requiresSession: false
+  }
+}
+
 // Deploy Key Vault
 resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   name: keyVaultNameValid
