@@ -77,11 +77,34 @@ public class CopilotStudioSettings
     public int BotResponseTimeoutSeconds { get; set; } = 60;
     
     /// <summary>
+    /// DEPRECATED: Use MaxRequestsPerSecond instead
     /// Delay in milliseconds between consecutive Copilot Studio requests
-    /// Helps prevent rate limiting when many orchestrations run simultaneously
-    /// Default: 500ms (recommended range: 100-2000ms)
     /// </summary>
-    public int RequestDelayMs { get; set; } = 500;
+    [Obsolete("Use MaxRequestsPerSecond for rate limiting instead")]
+    public int RequestDelayMs { get; set; } = 0;
+    
+    /// <summary>
+    /// Maximum requests per second to Copilot Studio (sustainable rate)
+    /// Uses token bucket algorithm for smooth rate limiting
+    /// Default: 10 requests/second (recommended range: 5-20 depending on service tier)
+    /// Set to 0 to disable rate limiting
+    /// </summary>
+    public int MaxRequestsPerSecond { get; set; } = 10;
+    
+    /// <summary>
+    /// Maximum burst capacity for short-term spikes
+    /// Allows accumulating tokens during idle periods
+    /// Default: 20 (2x sustained rate, recommended range: 1.5x - 3x MaxRequestsPerSecond)
+    /// </summary>
+    public int BurstCapacity { get; set; } = 20;
+    
+    /// <summary>
+    /// Maximum concurrent requests to Copilot Studio
+    /// Limits parallel execution to prevent overwhelming the service
+    /// Default: 50 (recommended range: 20-100 depending on service capacity)
+    /// Set to 0 for unlimited concurrency (not recommended)
+    /// </summary>
+    public int MaxConcurrentRequests { get; set; } = 50;
 }
 
 public class AzureOpenAISettings

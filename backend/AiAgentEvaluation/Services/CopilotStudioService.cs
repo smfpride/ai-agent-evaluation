@@ -11,6 +11,7 @@ namespace AiAgentEvaluation.Services;
 /// <summary>
 /// Implementation of Copilot Studio service using Direct Line API 3.0 with dynamic token endpoint URLs
 /// This version gets Direct Line tokens from Copilot Studio token endpoints specified per-request
+/// Includes rate limiting to prevent throttling
 /// </summary>
 public class CopilotStudioService : ICopilotStudioService, IDisposable
 {
@@ -20,6 +21,7 @@ public class CopilotStudioService : ICopilotStudioService, IDisposable
     private readonly HttpClient _tokenHttpClient;
     private readonly JsonSerializerOptions _jsonOptions;
     private readonly ResilientService _resilientService;
+    private readonly RateLimiter? _rateLimiter;
     private bool _disposed;
     
     // Cache tokens per URL until they expire (with some buffer time)
@@ -50,6 +52,30 @@ public class CopilotStudioService : ICopilotStudioService, IDisposable
 
         // Configure HttpClient timeout for Direct Line API
         _httpClient.Timeout = TimeSpan.FromSeconds(_settings.CopilotStudio.TimeoutSeconds);
+        
+        // Initialize rate limiter if configured
+        if (_settings.CopilotStudio.MaxRequestsPerSecond > 0)
+        {
+            var burstCapacity = _settings.CopilotStudio.BurstCapacity > 0
+                ? _settings.CopilotStudio.BurstCapacity
+                : _settings.CopilotStudio.MaxRequestsPerSecond * 2; // Default to 2x sustained rate
+            
+            _rateLimiter = new RateLimiter(
+                _logger,
+                _settings.CopilotStudio.MaxRequestsPerSecond,
+                burstCapacity,
+                _settings.CopilotStudio.MaxConcurrentRequests);
+            
+            _logger.LogInformation(
+                "Copilot Studio rate limiting enabled: MaxRPS={MaxRPS}, BurstCapacity={BurstCapacity}, MaxConcurrent={MaxConcurrent}",
+                _settings.CopilotStudio.MaxRequestsPerSecond,
+                burstCapacity,
+                _settings.CopilotStudio.MaxConcurrentRequests);
+        }
+        else
+        {
+            _logger.LogWarning("Copilot Studio rate limiting is DISABLED - requests may be throttled by the service");
+        }
     }
 
     /// <summary>
@@ -146,73 +172,85 @@ public class CopilotStudioService : ICopilotStudioService, IDisposable
 
     public async Task<CopilotDirectLineResponse> SendMessageAsync(string directLineSpeechUrl, string userInput, string? conversationId = null, string? directLineToken = null, CancellationToken cancellationToken = default)
     {
-        // Add delay to prevent overwhelming Copilot Studio endpoint with concurrent requests
-        if (_settings.CopilotStudio.RequestDelayMs > 0)
+        // Acquire rate limiter ticket (waits if rate limit exceeded)
+        RateLimiterTicket? ticket = null;
+        if (_rateLimiter != null)
         {
-            _logger.LogDebug("Delaying request by {DelayMs}ms to prevent rate limiting", 
-                _settings.CopilotStudio.RequestDelayMs);
-            await Task.Delay(_settings.CopilotStudio.RequestDelayMs, cancellationToken);
+            ticket = await _rateLimiter.AcquireAsync(cancellationToken);
+            var stats = _rateLimiter.GetStats();
+            _logger.LogDebug(
+                "Rate limiter acquired: AvailableTokens={AvailableTokens:F2}, AvailableConcurrentSlots={AvailableConcurrentSlots}",
+                stats.AvailableTokens,
+                stats.AvailableConcurrentSlots);
         }
         
-        _logger.LogInformation("Sending message in conversation {ConversationId} using endpoint {Endpoint}, tokenProvided={TokenProvided}, userInput={UserInput}", 
-            conversationId, directLineSpeechUrl, !string.IsNullOrEmpty(directLineToken), userInput);
-        
-        // Extract Direct Line base URL from the token endpoint
-        var directLineBaseUrl = ExtractDirectLineBaseUrl(directLineSpeechUrl);
-        
-        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-        var actualConversationId = conversationId;
-        var actualDirectLineToken = directLineToken;
-
-        return await _resilientService.ExecuteAsync(async ct =>
+        try
         {
-            try
-            {
-                // Start conversation if not provided
-                if (string.IsNullOrEmpty(actualConversationId))
-                {
-                    var (convId, token) = await StartConversationInternalAsync(directLineSpeechUrl, ct);
-                    actualConversationId = convId;
-                    actualDirectLineToken = token;
-                }
+            _logger.LogInformation("Sending message in conversation {ConversationId} using endpoint {Endpoint}, tokenProvided={TokenProvided}, userInput={UserInput}", 
+                conversationId, directLineSpeechUrl, !string.IsNullOrEmpty(directLineToken), userInput);
+        
+            // Extract Direct Line base URL from the token endpoint
+            var directLineBaseUrl = ExtractDirectLineBaseUrl(directLineSpeechUrl);
+            
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            var actualConversationId = conversationId;
+            var actualDirectLineToken = directLineToken;
 
-                // Send message to bot and capture timestamp
-                var sentTimestamp = await SendActivityAsync(directLineSpeechUrl, directLineBaseUrl, actualConversationId, userInput, actualDirectLineToken, ct);
-                
-                // Wait for response from bot, passing the sent timestamp and user input for filtering
-                var (responseText, rawActivityJson) = await WaitForBotResponseAsync(directLineSpeechUrl, directLineBaseUrl, actualConversationId, sentTimestamp, userInput, actualDirectLineToken, ct);
-                
-                stopwatch.Stop();
-                
-                return new CopilotDirectLineResponse
-                {
-                    ConversationId = actualConversationId,
-                    Response = responseText ?? string.Empty,
-                    ExecutionTimeMs = (int)stopwatch.ElapsedMilliseconds,
-                    Success = !string.IsNullOrEmpty(responseText),
-                    RawActivityJson = rawActivityJson,
-                    DirectLineToken = actualDirectLineToken
-                };
-            }
-            catch (Exception ex)
+            return await _resilientService.ExecuteAsync(async ct =>
             {
-                _logger.LogError(ex, "Error sending message in conversation {ConversationId}", 
-                    actualConversationId);
-                stopwatch.Stop();
-                
-                return new CopilotDirectLineResponse
+                try
                 {
-                    ConversationId = actualConversationId ?? string.Empty,
-                    Response = string.Empty,
-                    ExecutionTimeMs = (int)stopwatch.ElapsedMilliseconds,
-                    Success = false,
-                    ErrorMessage = ex.Message,
-                    DirectLineToken = actualDirectLineToken
-                };
-            }
-        }, "SendMessage",
-        exception => exception is HttpRequestException || exception is TaskCanceledException,
-        cancellationToken);
+                    // Start conversation if not provided
+                    if (string.IsNullOrEmpty(actualConversationId))
+                    {
+                        var (convId, token) = await StartConversationInternalAsync(directLineSpeechUrl, ct);
+                        actualConversationId = convId;
+                        actualDirectLineToken = token;
+                    }
+
+                    // Send message to bot and capture timestamp
+                    var sentTimestamp = await SendActivityAsync(directLineSpeechUrl, directLineBaseUrl, actualConversationId, userInput, actualDirectLineToken, ct);
+                    
+                    // Wait for response from bot, passing the sent timestamp and user input for filtering
+                    var (responseText, rawActivityJson) = await WaitForBotResponseAsync(directLineSpeechUrl, directLineBaseUrl, actualConversationId, sentTimestamp, userInput, actualDirectLineToken, ct);
+                    
+                    stopwatch.Stop();
+                    
+                    return new CopilotDirectLineResponse
+                    {
+                        ConversationId = actualConversationId,
+                        Response = responseText ?? string.Empty,
+                        ExecutionTimeMs = (int)stopwatch.ElapsedMilliseconds,
+                        Success = !string.IsNullOrEmpty(responseText),
+                        RawActivityJson = rawActivityJson,
+                        DirectLineToken = actualDirectLineToken
+                    };
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error sending message in conversation {ConversationId}", 
+                        actualConversationId);
+                    stopwatch.Stop();
+                    
+                    return new CopilotDirectLineResponse
+                    {
+                        ConversationId = actualConversationId ?? string.Empty,
+                        Response = string.Empty,
+                        ExecutionTimeMs = (int)stopwatch.ElapsedMilliseconds,
+                        Success = false,
+                        ErrorMessage = ex.Message,
+                        DirectLineToken = actualDirectLineToken
+                    };
+                }
+            }, "SendMessage",
+            exception => exception is HttpRequestException || exception is TaskCanceledException,
+            cancellationToken);
+        }
+        finally
+        {
+            // Release rate limiter ticket
+            ticket?.Dispose();
+        }
     }
 
     /// <summary>
@@ -502,6 +540,7 @@ public class CopilotStudioService : ICopilotStudioService, IDisposable
     {
         if (!_disposed && disposing)
         {
+            _rateLimiter?.Dispose();
             _tokenHttpClient?.Dispose();
             // HttpClient is typically managed by DI container, so we don't dispose it here
             _disposed = true;
