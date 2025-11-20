@@ -125,7 +125,7 @@ public class AzureOpenAIJudgeService : ILLMJudgeService, IDisposable
             
             return result;
         }, "EvaluateResponse",
-        exception => exception is HttpRequestException || exception is TaskCanceledException,
+        customRetryLogic: null, // Use default retry logic from RetryPolicy which handles ClientResultException, RequestFailedException, etc.
         cancellationToken);
     }
 

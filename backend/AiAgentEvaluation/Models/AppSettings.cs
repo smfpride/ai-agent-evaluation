@@ -151,7 +151,7 @@ public class KeyVaultSettings
 public class EvaluationSettings
 {
     public int DefaultTimeoutMinutes { get; set; } = 5;
-    public int MaxRetryAttempts { get; set; } = 3;
+    public int MaxRetryAttempts { get; set; } = 10; // Increased to 10 for better resilience against transient failures
     public int RetryDelaySeconds { get; set; } = 30;
     public bool EnableDetailedLogging { get; set; } = true;
     public double MinScore { get; set; } = 0.0;
