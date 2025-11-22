@@ -42,6 +42,40 @@ public class DirectLineActivity
 
     [JsonPropertyName("locale")]
     public string? Locale { get; set; }
+
+    [JsonPropertyName("channelData")]
+    public DirectLineChannelData? ChannelData { get; set; }
+}
+
+/// <summary>
+/// Direct Line channel data from Copilot Studio
+/// Contains various metadata fields that may or may not be present
+/// </summary>
+public class DirectLineChannelData
+{
+    [JsonPropertyName("isError")]
+    public bool? IsError { get; set; }
+
+    [JsonPropertyName("errorDetails")]
+    public DirectLineErrorDetails? ErrorDetails { get; set; }
+}
+
+/// <summary>
+/// Error details from Copilot Studio when isError is true
+/// </summary>
+public class DirectLineErrorDetails
+{
+    [JsonPropertyName("correlationId")]
+    public string? CorrelationId { get; set; }
+
+    [JsonPropertyName("errorCode")]
+    public string? ErrorCode { get; set; }
+
+    [JsonPropertyName("message")]
+    public string? Message { get; set; }
+
+    [JsonPropertyName("statusCode")]
+    public int? StatusCode { get; set; }
 }
 
 /// <summary>

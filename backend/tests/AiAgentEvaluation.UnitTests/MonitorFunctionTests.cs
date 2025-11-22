@@ -3,6 +3,7 @@ using AiAgentEvaluation.Models;
 using AiAgentEvaluation.Services;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Moq;
 using Xunit;
 
@@ -31,10 +32,20 @@ public class MonitorFunctionTests
         _mockDataverseService.Setup(x => x.CheckHealthAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);
         _mockServiceBusService.Setup(x => x.CheckHealthAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);
 
+        var mockSettings = new Mock<IOptions<AppSettings>>();
+        mockSettings.Setup(x => x.Value).Returns(new AppSettings
+        {
+            Evaluation = new EvaluationSettings
+            {
+                MaxRunningTimeMinutes = 120
+            }
+        });
+
         _monitorFunction = new MonitorFunction(
             _mockLogger.Object,
             _mockDataverseService.Object,
-            _mockServiceBusService.Object);
+            _mockServiceBusService.Object,
+            mockSettings.Object);
     }
 
     #region TC-MON-001: Timer Trigger Execution

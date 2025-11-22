@@ -35,10 +35,10 @@ public class MultiTurnAgentWorkerFunctionTests
         {
             AzureOpenAI = new AzureOpenAISettings
             {
-                MaxRetryAttempts = 3
             },
             Evaluation = new EvaluationSettings
             {
+                MaxRetryAttempts = 3,
                 RetryDelaySeconds = 30
             }
         };
@@ -513,12 +513,15 @@ public class MultiTurnAgentWorkerFunctionTests
                 It.IsAny<CancellationToken>()),
             Times.Never);
 
-        // Assert - No next turn queued (error stops progression, using overload with CancellationToken)
+        // Assert - Next turn IS queued (Problem #1 fix: allow subsequent turns even after errors with conversation reset)
         _mockServiceBusService.Verify(
             x => x.SendMultiTurnAgentCallMessageAsync(
-                It.IsAny<MultiTurnAgentCallMessage>(),
+                It.Is<MultiTurnAgentCallMessage>(m =>
+                    m.TurnSequence == 3 &&
+                    m.ConversationId == null &&  // Conversation reset
+                    m.DirectLineToken == null),  // Token reset
                 It.Is<CancellationToken>(ct => true)),
-            Times.Never);
+            Times.Once);
     }
 
     [Fact]

@@ -13,6 +13,7 @@ public interface IServiceBusService
     /// Sends agent call message to agent-call-queue (Phase 1 - New Architecture)
     /// </summary>
     Task SendAgentCallMessageAsync(AgentCallMessage message, CancellationToken cancellationToken = default);
+    Task SendAgentCallMessageAsync(AgentCallMessage message, DateTimeOffset scheduledEnqueueTime, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Sends evaluator job message to evaluator-processing-queue (Phase 1 - New Architecture)
@@ -33,4 +34,9 @@ public interface IServiceBusService
     /// Sends multi-turn agent call message to multi-turn-agent-call-queue with scheduled enqueue time (Story 11 - Retry with exponential backoff)
     /// </summary>
     Task SendMultiTurnAgentCallMessageAsync(MultiTurnAgentCallMessage message, DateTimeOffset scheduledEnqueueTime, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Sends orchestration start message to orchestration-queue to trigger background processing
+    /// </summary>
+    Task SendOrchestrationMessageAsync(StartOrchestrationMessage message, CancellationToken cancellationToken = default);
 }

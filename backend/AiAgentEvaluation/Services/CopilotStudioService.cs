@@ -212,14 +212,49 @@ public class CopilotStudioService : ICopilotStudioService, IDisposable
                     var sentTimestamp = await SendActivityAsync(directLineSpeechUrl, directLineBaseUrl, actualConversationId, userInput, actualDirectLineToken, ct);
                     
                     // Wait for response from bot, passing the sent timestamp and user input for filtering
-                    var (responseText, rawActivityJson) = await WaitForBotResponseAsync(directLineSpeechUrl, directLineBaseUrl, actualConversationId, sentTimestamp, userInput, actualDirectLineToken, ct);
+                    var (responseText, rawActivityJson, botActivity) = await WaitForBotResponseAsync(directLineSpeechUrl, directLineBaseUrl, actualConversationId, sentTimestamp, userInput, actualDirectLineToken, ct);
+                    
+                    // Check if the response indicates an error from Copilot Studio
+                    // Primary: Check channelData.isError if present
+                    // Fallback: Check text pattern for "**Is Error:**\n\nYes"
+                    bool isError = botActivity?.ChannelData?.IsError == true;
+                    string? errorMessage = null;
+                    string? formattedResponse = responseText;
+                    
+                    if (isError && botActivity?.ChannelData?.ErrorDetails != null)
+                    {
+                        var details = botActivity.ChannelData.ErrorDetails;
+                        errorMessage = $"[{details.ErrorCode}] {details.Message} (Status: {details.StatusCode}, CorrelationId: {details.CorrelationId})";
+                        // Format error for response field: "Error PSA-1000: Server error calling API - microservice call failed"
+                        formattedResponse = $"Error {details.ErrorCode}: {details.Message}";
+                    }
+                    
+                    // Fallback: If channelData doesn't indicate error, check the text pattern
+                    if (!isError && !string.IsNullOrEmpty(responseText) && responseText.Contains("**Is Error:**"))
+                    {
+                        // Check for the pattern with actual newlines in the response text
+                        if (responseText.Contains("**Is Error:**\n\nYes"))
+                        {
+                            isError = true;
+                            errorMessage = errorMessage ?? "Error pattern detected in response text";
+                            formattedResponse = "Error: Error pattern detected in response text";
+                            _logger.LogInformation("Detected error via text pattern in conversation {ConversationId}", actualConversationId);
+                        }
+                    }
+                    
+                    if (isError)
+                    {
+                        _logger.LogWarning("Copilot Studio returned an error response in conversation {ConversationId}: {ErrorMessage}. Response will be retried.", 
+                            actualConversationId, errorMessage ?? "Unknown error");
+                        throw new InvalidOperationException($"Copilot Studio returned an error response in conversation {actualConversationId}: {errorMessage ?? "Unknown error"}");
+                    }
                     
                     stopwatch.Stop();
                     
                     return new CopilotDirectLineResponse
                     {
                         ConversationId = actualConversationId,
-                        Response = responseText ?? string.Empty,
+                        Response = formattedResponse ?? string.Empty,
                         ExecutionTimeMs = (int)stopwatch.ElapsedMilliseconds,
                         Success = !string.IsNullOrEmpty(responseText),
                         RawActivityJson = rawActivityJson,
@@ -232,10 +267,22 @@ public class CopilotStudioService : ICopilotStudioService, IDisposable
                         actualConversationId);
                     stopwatch.Stop();
                     
+                    // Extract error details from the exception message if it's a Copilot Studio error
+                    string responseText = string.Empty;
+                    if (ex.Message.Contains("Error") && ex.Message.Contains(":"))
+                    {
+                        // If the exception message already has formatted error (e.g., "Copilot Studio returned an error response in conversation XXX: Error PSA-1000: ...")
+                        var errorMatch = System.Text.RegularExpressions.Regex.Match(ex.Message, @"Error ([A-Z]+-\d+): (.+?)(?:\s*\(|$)");
+                        if (errorMatch.Success)
+                        {
+                            responseText = $"Error {errorMatch.Groups[1].Value}: {errorMatch.Groups[2].Value}";
+                        }
+                    }
+                    
                     return new CopilotDirectLineResponse
                     {
                         ConversationId = actualConversationId ?? string.Empty,
-                        Response = string.Empty,
+                        Response = responseText,
                         ExecutionTimeMs = (int)stopwatch.ElapsedMilliseconds,
                         Success = false,
                         ErrorMessage = ex.Message,
@@ -243,7 +290,7 @@ public class CopilotStudioService : ICopilotStudioService, IDisposable
                     };
                 }
             }, "SendMessage",
-            exception => exception is HttpRequestException || exception is TaskCanceledException,
+            exception => exception is HttpRequestException || exception is TaskCanceledException || exception is InvalidOperationException,
             cancellationToken);
         }
         finally
@@ -316,7 +363,7 @@ public class CopilotStudioService : ICopilotStudioService, IDisposable
         return timestamp;
     }
 
-    private async Task<(string? ResponseText, string? RawActivityJson)> WaitForBotResponseAsync(string directLineSpeechUrl, string directLineBaseUrl, string conversationId, DateTime userMessageTimestamp, string userInputText, string? directLineToken, CancellationToken cancellationToken)
+    private async Task<(string? ResponseText, string? RawActivityJson, DirectLineActivity? Activity)> WaitForBotResponseAsync(string directLineSpeechUrl, string directLineBaseUrl, string conversationId, DateTime userMessageTimestamp, string userInputText, string? directLineToken, CancellationToken cancellationToken)
     {
         // Use configurable timeout instead of hardcoded 30 seconds
         var timeoutSeconds = _settings.CopilotStudio.BotResponseTimeoutSeconds;
@@ -406,10 +453,11 @@ public class CopilotStudioService : ICopilotStudioService, IDisposable
                         seenActivityIds.Add(newMessage.Id!);
                         var rawJson = JsonSerializer.Serialize(newMessage, _jsonOptions);
                         
-                        _logger.LogWarning("[DIRECTLINE] Returning NEW bot response ActivityId={ActivityId}, Timestamp={Timestamp}, Text='{Text}'", 
-                            newMessage.Id, newMessage.Timestamp, newMessage.Text?.Substring(0, Math.Min(100, newMessage.Text?.Length ?? 0)));
+                        _logger.LogWarning("[DIRECTLINE] Returning NEW bot response ActivityId={ActivityId}, Timestamp={Timestamp}, Text='{Text}', IsError={IsError}", 
+                            newMessage.Id, newMessage.Timestamp, newMessage.Text?.Substring(0, Math.Min(100, newMessage.Text?.Length ?? 0)),
+                            newMessage.ChannelData?.IsError ?? false);
                         
-                        return (newMessage.Text, rawJson);
+                        return (newMessage.Text, rawJson, newMessage);
                     }
                 }
 
@@ -428,7 +476,7 @@ public class CopilotStudioService : ICopilotStudioService, IDisposable
 
         _logger.LogWarning("Timeout waiting for bot response in conversation {ConversationId} after {Attempts} attempts ({TimeoutSeconds} seconds)", 
             conversationId, attempt, timeoutSeconds);
-        return (null, null);
+        return (null, null, null);
     }
 
     public async Task<string> StartConversationAsync(string directLineSpeechUrl, CancellationToken cancellationToken = default)

@@ -45,6 +45,15 @@ public class StartEvaluationRunResponse
 }
 
 /// <summary>
+/// Message for triggering orchestration processing on Service Bus
+/// </summary>
+public class StartOrchestrationMessage
+{
+    [JsonPropertyName("evaluationRunId")]
+    public Guid EvaluationRunId { get; set; }
+}
+
+/// <summary>
 /// Response from Copilot Studio Direct Line API
 /// </summary>
 public class CopilotDirectLineResponse
@@ -165,6 +174,12 @@ public class AgentCallMessage
     /// </summary>
     [JsonPropertyName("testCaseTurnId")]
     public Guid? TestCaseTurnId { get; set; }
+
+    /// <summary>
+    /// Retry count for Service Bus-level retries (incremented on each retry)
+    /// </summary>
+    [JsonPropertyName("retryCount")]
+    public int RetryCount { get; set; } = 0;
 }
 
 /// <summary>

@@ -2,6 +2,7 @@ using AiAgentEvaluation.Functions;
 using AiAgentEvaluation.Models;
 using AiAgentEvaluation.Services;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Moq;
 using Xunit;
 using System.Text.Json;
@@ -18,6 +19,7 @@ public class AgentWorkerFunctionTests
     private readonly Mock<IDataverseService> _mockDataverseService;
     private readonly Mock<ICopilotStudioService> _mockCopilotStudioService;
     private readonly Mock<IServiceBusService> _mockServiceBusService;
+    private readonly IOptions<AppSettings> _mockSettings;
     private readonly AgentWorkerFunction _agentWorker;
 
     public AgentWorkerFunctionTests()
@@ -26,12 +28,22 @@ public class AgentWorkerFunctionTests
         _mockDataverseService = new Mock<IDataverseService>();
         _mockCopilotStudioService = new Mock<ICopilotStudioService>();
         _mockServiceBusService = new Mock<IServiceBusService>();
+        
+        _mockSettings = Options.Create(new AppSettings
+        {
+            Evaluation = new EvaluationSettings
+            {
+                MaxRetryAttempts = 10,
+                RetryDelaySeconds = 30
+            }
+        });
 
         _agentWorker = new AgentWorkerFunction(
             _mockLogger.Object,
             _mockDataverseService.Object,
             _mockCopilotStudioService.Object,
-            _mockServiceBusService.Object);
+            _mockServiceBusService.Object,
+            _mockSettings);
     }
 
     [Fact]
@@ -196,7 +208,7 @@ public class AgentWorkerFunctionTests
     }
 
     [Fact]
-    public async Task ProcessAgentCall_CopilotFailure_CreatesErrorResultsForAllEvaluators()
+    public async Task ProcessAgentCall_CopilotFailure_RetriesMessage()
     {
         // Arrange
         var evaluatorTypeId1 = Guid.NewGuid();
@@ -209,7 +221,8 @@ public class AgentWorkerFunctionTests
             DirectLineUrl = "https://test.directline.com",
             UserInput = "What is Product X?",
             ExpectedResponse = "Product X is an AI solution",
-            EvaluatorTypeIds = new List<Guid> { evaluatorTypeId1, evaluatorTypeId2 }
+            EvaluatorTypeIds = new List<Guid> { evaluatorTypeId1, evaluatorTypeId2 },
+            RetryCount = 0
         };
 
         var copilotResponse = new CopilotDirectLineResponse
@@ -227,12 +240,8 @@ public class AgentWorkerFunctionTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(copilotResponse);
 
-        _mockDataverseService
-            .Setup(x => x.CreateEvaluationResultAsync(It.IsAny<CreateEvaluationResultRequest>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Guid.NewGuid());
-
-        _mockDataverseService
-            .Setup(x => x.IncrementCompletedTestCasesAsync(It.IsAny<Guid>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+        _mockServiceBusService
+            .Setup(x => x.SendAgentCallMessageAsync(It.IsAny<AgentCallMessage>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
         var messageBody = JsonSerializer.Serialize(message);
@@ -240,19 +249,18 @@ public class AgentWorkerFunctionTests
         // Act
         await _agentWorker.ProcessAgentCall(messageBody, CancellationToken.None);
 
-        // Assert - Error results created for all evaluators
-        _mockDataverseService.Verify(
-            x => x.CreateEvaluationResultAsync(
-                It.Is<CreateEvaluationResultRequest>(r => 
-                    r.StatusCode == EvaluationResultStatus.Errored &&
-                    r.ErrorMessage == copilotResponse.ErrorMessage),
+        // Assert - Message should be requeued for retry
+        _mockServiceBusService.Verify(
+            x => x.SendAgentCallMessageAsync(
+                It.Is<AgentCallMessage>(m => m.RetryCount == 1 && m.TestCaseId == message.TestCaseId),
+                It.IsAny<DateTimeOffset>(),
                 It.IsAny<CancellationToken>()),
-            Times.Exactly(2));
+            Times.Once);
 
-        // Assert - Completion counter incremented as failed for each evaluator
+        // Assert - No error results created yet (will retry first)
         _mockDataverseService.Verify(
-            x => x.IncrementCompletedTestCasesAsync(message.EvaluationRunId, true, It.IsAny<CancellationToken>()),
-            Times.Exactly(2));
+            x => x.CreateEvaluationResultAsync(It.IsAny<CreateEvaluationResultRequest>(), It.IsAny<CancellationToken>()),
+            Times.Never);
 
         // Assert - No evaluator jobs queued
         _mockServiceBusService.Verify(

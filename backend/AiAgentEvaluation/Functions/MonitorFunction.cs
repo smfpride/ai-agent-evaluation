@@ -1,5 +1,6 @@
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using AiAgentEvaluation.Models;
 using AiAgentEvaluation.Services;
 
@@ -13,18 +14,20 @@ public class MonitorFunction
     private readonly ILogger<MonitorFunction> _logger;
     private readonly IDataverseService _dataverseService;
     private readonly IServiceBusService _serviceBusService;
-    private const int MaxRunningTimeMinutes = 120; // 2 hours max runtime
+    private readonly AppSettings _settings;
     private const int MaxNoProgressMinutes = 30; // 30 minutes with no progress = stalled
     private const decimal DefaultPassingThreshold = 0.7m; // 70% default threshold
 
     public MonitorFunction(
         ILogger<MonitorFunction> logger,
         IDataverseService dataverseService,
-        IServiceBusService serviceBusService)
+        IServiceBusService serviceBusService,
+        IOptions<AppSettings> settings)
     {
         _logger = logger;
         _dataverseService = dataverseService;
         _serviceBusService = serviceBusService;
+        _settings = settings.Value;
     }
 
     [Function("MonitorEvaluationRuns")]
@@ -85,10 +88,11 @@ public class MonitorFunction
         if (evaluationRun.StartTime.HasValue)
         {
             var runningTime = DateTime.UtcNow - evaluationRun.StartTime.Value;
-            if (runningTime.TotalMinutes > MaxRunningTimeMinutes)
+            var maxRunningTime = _settings.Evaluation.MaxRunningTimeMinutes;
+            if (runningTime.TotalMinutes > maxRunningTime)
             {
-                _logger.LogWarning("Evaluation run {EvaluationRunId} has been running for {Minutes} minutes, marking as errored",
-                    evaluationRun.Id, runningTime.TotalMinutes);
+                _logger.LogWarning("Evaluation run {EvaluationRunId} has been running for {Minutes} minutes (max: {MaxMinutes}), marking as errored",
+                    evaluationRun.Id, runningTime.TotalMinutes, maxRunningTime);
                 
                 await _dataverseService.UpdateEvaluationRunCompletionAsync(
                     evaluationRun.Id,

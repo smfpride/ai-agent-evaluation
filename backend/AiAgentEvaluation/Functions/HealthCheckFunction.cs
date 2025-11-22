@@ -15,22 +15,19 @@ public class HealthCheckFunction
     private readonly ILogger<HealthCheckFunction> _logger;
     private readonly IDataverseService _dataverseService;
     private readonly IServiceBusService _serviceBusService;
-    private readonly ILLMJudgeServiceFactory _llmJudgeServiceFactory;
     
     // Build timestamp to track deployments - updated with each build
-    private static readonly string BuildTimestamp = "2025-11-20T02:50:00Z";
-    private static readonly string DeploymentVersion = "1.0.45"; // Increased AOAI retry attempts to 10
+    private static readonly string BuildTimestamp = "2025-11-22T02:00:00Z";
+    private static readonly string DeploymentVersion = "1.0.57"; // Multi-turn error handling + staleness detection
 
     public HealthCheckFunction(
         ILogger<HealthCheckFunction> logger,
         IDataverseService dataverseService,
-        IServiceBusService serviceBusService,
-        ILLMJudgeServiceFactory llmJudgeServiceFactory)
+        IServiceBusService serviceBusService)
     {
         _logger = logger;
         _dataverseService = dataverseService;
         _serviceBusService = serviceBusService;
-        _llmJudgeServiceFactory = llmJudgeServiceFactory;
     }
 
     /// <summary>
@@ -49,24 +46,18 @@ public class HealthCheckFunction
             // Perform health checks for all dependencies in parallel
             var dataverseHealthTask = _dataverseService.CheckHealthAsync(cancellationToken);
             var serviceBusHealthTask = _serviceBusService.CheckHealthAsync(cancellationToken);
-            
-            // Create default judge service for health check (no evaluator type needed)
-            var llmJudgeService = await _llmJudgeServiceFactory.CreateJudgeServiceAsync(null, cancellationToken);
-            var azureOpenAIHealthTask = llmJudgeService.CheckHealthAsync(cancellationToken);
 
-            await Task.WhenAll(dataverseHealthTask, serviceBusHealthTask, azureOpenAIHealthTask);
+            await Task.WhenAll(dataverseHealthTask, serviceBusHealthTask);
 
             var dataverseHealthy = await dataverseHealthTask;
             var serviceBusHealthy = await serviceBusHealthTask;
-            var azureOpenAIHealthy = await azureOpenAIHealthTask;
 
-            var allHealthy = dataverseHealthy && serviceBusHealthy && azureOpenAIHealthy;
+            var allHealthy = dataverseHealthy && serviceBusHealthy;
 
-            _logger.LogInformation("Health check completed: Overall={Status}, Dataverse={Dataverse}, ServiceBus={ServiceBus}, AzureOpenAI={AzureOpenAI}",
+            _logger.LogInformation("Health check completed: Overall={Status}, Dataverse={Dataverse}, ServiceBus={ServiceBus}",
                 allHealthy ? "Healthy" : "Degraded", 
                 dataverseHealthy ? "Healthy" : "Unhealthy",
-                serviceBusHealthy ? "Healthy" : "Unhealthy",
-                azureOpenAIHealthy ? "Healthy" : "Unhealthy");
+                serviceBusHealthy ? "Healthy" : "Unhealthy");
 
             var statusCode = allHealthy ? HttpStatusCode.OK : HttpStatusCode.ServiceUnavailable;
             var response = req.CreateResponse(statusCode);
@@ -81,8 +72,7 @@ public class HealthCheckFunction
                 services = new
                 {
                     dataverse = dataverseHealthy ? "Healthy" : "Unhealthy",
-                    serviceBus = serviceBusHealthy ? "Healthy" : "Unhealthy",
-                    azureOpenAI = azureOpenAIHealthy ? "Healthy" : "Unhealthy"
+                    serviceBus = serviceBusHealthy ? "Healthy" : "Unhealthy"
                 }
             });
 
@@ -148,21 +138,6 @@ public class HealthCheckFunction
             _logger.LogError(ex, "Service Bus check: Unhealthy");
         }
 
-        // Check Azure OpenAI connectivity
-        try
-        {
-            _logger.LogInformation("Checking Azure OpenAI connectivity...");
-            // We can't make a real call without consuming quota, so just validate service initialization
-            checks["azureOpenAI"] = new HealthCheckResult { Status = "Healthy", Message = "Service initialized successfully" };
-            _logger.LogInformation("Azure OpenAI check: Healthy");
-        }
-        catch (Exception ex)
-        {
-            checks["azureOpenAI"] = new HealthCheckResult { Status = "Unhealthy", Message = ex.Message };
-            overallHealthy = false;
-            _logger.LogError(ex, "Azure OpenAI check: Unhealthy");
-        }
-
         var statusCode = overallHealthy ? HttpStatusCode.OK : HttpStatusCode.ServiceUnavailable;
         var response = req.CreateResponse(statusCode);
 
@@ -224,9 +199,8 @@ public class HealthCheckFunction
         // Configuration validation
         checks["configuration"] = new
         {
-            hasDataverseConfig = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DataverseBaseUrl")),
-            hasServiceBusConfig = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ServiceBusNamespace")),
-            hasOpenAIConfig = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("AzureOpenAIEndpoint"))
+            hasDataverseConfig = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DataverseConnectionString")),
+            hasServiceBusConfig = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ServiceBus__Namespace"))
         };
 
         // Uptime

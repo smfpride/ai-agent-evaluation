@@ -142,55 +142,151 @@ public class DataverseService : IDataverseService, IDisposable
         };
     }
 
-    public async Task<EvaluationRun?> GetEvaluationRunAsync(Guid evaluationRunId, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Validates that the service client is ready, throwing an exception if not
+    /// </summary>
+    private void EnsureClientReady()
     {
-        _logger.LogInformation("Getting evaluation run {EvaluationRunId}", evaluationRunId);
-        
         if (_serviceClient == null || !_serviceClient.IsReady)
         {
             throw new InvalidOperationException($"Dataverse service client is not ready. Connection error: {_connectionError}");
         }
+    }
+
+    /// <summary>
+    /// Generic pagination helper that retrieves all pages of results
+    /// </summary>
+    private async Task<List<Entity>> RetrieveAllPagesAsync(
+        QueryExpression query,
+        CancellationToken cancellationToken = default)
+    {
+        var allEntities = new List<Entity>();
+        EntityCollection result;
+        
+        if (query.PageInfo == null)
+        {
+            query.PageInfo = new PagingInfo { Count = 5000, PageNumber = 1 };
+        }
+        
+        do
+        {
+            result = await Task.Run(() => _serviceClient!.RetrieveMultiple(query), cancellationToken);
+            allEntities.AddRange(result.Entities);
+            
+            if (result.MoreRecords)
+            {
+                query.PageInfo.PageNumber++;
+                query.PageInfo.PagingCookie = result.PagingCookie;
+            }
+        } while (result.MoreRecords);
+        
+        return allEntities;
+    }
+
+    /// <summary>
+    /// Generic retrieve method with error handling for not found scenarios
+    /// </summary>
+    private async Task<Entity?> RetrieveEntityAsync(
+        string entityName,
+        Guid id,
+        ColumnSet columnSet,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            return await Task.Run(() => _serviceClient!.Retrieve(entityName, id, columnSet), cancellationToken);
+        }
+        catch (Exception ex) when (ex.Message.Contains("does not exist") || ex.Message.Contains("not found"))
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Maps a Dataverse entity to an EvaluationResult model (full mapping)
+    /// </summary>
+    private EvaluationResult MapToEvaluationResult(Entity entity)
+    {
+        return new EvaluationResult
+        {
+            Id = entity.Id,
+            Name = entity.GetAttributeValue<string>(Prefixed("evaluationresultname")) ?? string.Empty,
+            EvaluationRunId = entity.GetAttributeValue<EntityReference>(Prefixed("evaluation"))?.Id ?? Guid.Empty,
+            TestCaseId = entity.GetAttributeValue<EntityReference>(Prefixed("testcase"))?.Id ?? Guid.Empty,
+            EvaluatorTypeId = entity.Contains(Prefixed("evaluatortypeid")) 
+                ? entity.GetAttributeValue<EntityReference>(Prefixed("evaluatortypeid"))?.Id 
+                : null,
+            TestCaseTurnId = entity.Contains(Prefixed("testcaseturnid"))
+                ? entity.GetAttributeValue<EntityReference>(Prefixed("testcaseturnid"))?.Id
+                : null,
+            IsAggregate = entity.GetAttributeValue<bool>(Prefixed("isaggregate")),
+            ActualResponse = entity.Contains(Prefixed("actualresponse")) 
+                ? entity.GetAttributeValue<string>(Prefixed("actualresponse"))
+                : null,
+            Score = GetDecimalValue(entity, Prefixed("score")),
+            Passed = entity.Contains(Prefixed("passed")) 
+                ? entity.GetAttributeValue<bool?>(Prefixed("passed"))
+                : null,
+            Reasoning = entity.Contains(Prefixed("reasoning"))
+                ? entity.GetAttributeValue<string>(Prefixed("reasoning"))
+                : null,
+            ConversationId = entity.Contains(Prefixed("conversationid"))
+                ? entity.GetAttributeValue<string>(Prefixed("conversationid"))
+                : null,
+            ExecutionTimeMs = entity.Contains(Prefixed("executiontime")) 
+                ? entity.GetAttributeValue<int?>(Prefixed("executiontime"))
+                : null,
+            McsExecutionTimeMs = entity.Contains(Prefixed("mcsexecutiontime"))
+                ? entity.GetAttributeValue<int?>(Prefixed("mcsexecutiontime"))
+                : null,
+            ErrorMessage = entity.Contains(Prefixed("errormessage"))
+                ? entity.GetAttributeValue<string>(Prefixed("errormessage"))
+                : null,
+            Metadata = entity.Contains(Prefixed("metadata"))
+                ? entity.GetAttributeValue<string>(Prefixed("metadata"))
+                : null,
+            StateCode = GetIntValue(entity, "statecode"),
+            StatusCode = entity.GetAttributeValue<OptionSetValue>("statuscode")?.Value ?? 1,
+            CreatedOn = entity.GetAttributeValue<DateTime>("createdon"),
+            ModifiedOn = entity.Contains("modifiedon") 
+                ? entity.GetAttributeValue<DateTime>("modifiedon")
+                : default
+        };
+    }
+
+    public async Task<EvaluationRun?> GetEvaluationRunAsync(Guid evaluationRunId, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Getting evaluation run {EvaluationRunId}", evaluationRunId);
+        EnsureClientReady();
 
         return await _resilientService.ExecuteAsync(async ct =>
         {
-            var query = new QueryExpression(Prefixed("evaluationruns"))
-            {
-                ColumnSet = new ColumnSet(
-                    Prefixed("evaluationrunsid"), 
-                    Prefixed("runname"), 
-                    Prefixed("testset"), 
-                    Prefixed("agenttoeval"),
-                    Prefixed("description"),
-                    Prefixed("passingthreshold"),
-                    Prefixed("overallpass"),
-                    Prefixed("overallscore"),
-                    Prefixed("totaltestcases"),
-                    Prefixed("completedtestcases"),
-                    Prefixed("failedtestcases"),
-                    Prefixed("starttime"),
-                    Prefixed("endtime"),
-                    "statuscode",
-                    "statecode",
-                    "createdon"
-                ),
-                Criteria = new FilterExpression
-                {
-                    Conditions =
-                    {
-                        new ConditionExpression(Prefixed("evaluationrunsid"), ConditionOperator.Equal, evaluationRunId)
-                    }
-                }
-            };
+            var columnSet = new ColumnSet(
+                Prefixed("evaluationrunsid"), 
+                Prefixed("runname"), 
+                Prefixed("testset"), 
+                Prefixed("agenttoeval"),
+                Prefixed("description"),
+                Prefixed("passingthreshold"),
+                Prefixed("overallpass"),
+                Prefixed("overallscore"),
+                Prefixed("totaltestcases"),
+                Prefixed("completedtestcases"),
+                Prefixed("failedtestcases"),
+                Prefixed("starttime"),
+                Prefixed("endtime"),
+                "statuscode",
+                "statecode",
+                "createdon"
+            );
 
-            var result = await Task.Run(() => _serviceClient.RetrieveMultiple(query), ct);
+            var entity = await RetrieveEntityAsync(Prefixed("evaluationruns"), evaluationRunId, columnSet, ct);
             
-            if (result.Entities.Count == 0)
+            if (entity == null)
             {
                 _logger.LogWarning("Evaluation run {EvaluationRunId} not found", evaluationRunId);
                 return null;
             }
-
-            var entity = result.Entities[0];
             
             return new EvaluationRun
             {
@@ -219,16 +315,12 @@ public class DataverseService : IDataverseService, IDisposable
     public async Task<List<TestCase>> GetTestCasesAsync(Guid evaluationRunId, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Getting test cases for evaluation run {EvaluationRunId}", evaluationRunId);
-        
-        if (_serviceClient == null || !_serviceClient.IsReady)
-        {
-            throw new InvalidOperationException("Dataverse service client is not ready");
-        }
+        EnsureClientReady();
 
         return await _resilientService.ExecuteAsync(async ct =>
         {
             // First, get the evaluation run to retrieve the test set
-            var evaluationRunResult = await Task.Run(() => _serviceClient.Retrieve(Prefixed("evaluationruns"), evaluationRunId, new ColumnSet(Prefixed("testset"))), ct);
+            var evaluationRunResult = await Task.Run(() => _serviceClient!.Retrieve(Prefixed("evaluationruns"), evaluationRunId, new ColumnSet(Prefixed("testset"))), ct);
             
             if (evaluationRunResult == null)
             {
@@ -270,37 +362,30 @@ public class DataverseService : IDataverseService, IDisposable
                 }
             };
 
-            var testCases = new List<TestCase>();
+            var allEntities = await RetrieveAllPagesAsync(query, ct);
             
-            // Retrieve all pages of test cases
-            EntityCollection result;
-            do
+            var testCases = allEntities.Select(entity =>
             {
-                result = await Task.Run(() => _serviceClient.RetrieveMultiple(query), ct);
+                var isMultiTurn = entity.GetAttributeValue<bool>(Prefixed("ismultiturn"));
+                var testCaseId = entity.Id;
+                var testCaseName = entity.GetAttributeValue<string>(Prefixed("testcasename")) ?? string.Empty;
                 
-                foreach (var entity in result.Entities)
-                {
-                    testCases.Add(new TestCase
-                    {
-                        Id = entity.Id,
-                        Name = entity.GetAttributeValue<string>(Prefixed("testcasename")) ?? string.Empty,
-                        EvaluationRunId = evaluationRunId,
-                        UserInput = entity.GetAttributeValue<string>(Prefixed("prompt")) ?? string.Empty,
-                        ExpectedResponse = entity.GetAttributeValue<string>(Prefixed("expectedresponse")) ?? string.Empty,
-                        EvaluatorTypeId = null, // Evaluator types are now fetched via GetEvaluatorTypesForRunAsync (N:N relationship)
-                        ConversationId = null, // ConversationId is on EvaluationResult, not TestCase
-                        IsMultiTurn = entity.GetAttributeValue<bool>(Prefixed("ismultiturn")),
-                        CreatedOn = entity.GetAttributeValue<DateTime>("createdon")
-                    });
-                }
+                _logger.LogWarning("[DATAVERSE] Test case {TestCaseId} ({Name}): ismultiturn field = {IsMultiTurn}, Contains field = {Contains}",
+                    testCaseId, testCaseName, isMultiTurn, entity.Contains(Prefixed("ismultiturn")));
                 
-                // Check if there are more pages
-                if (result.MoreRecords)
+                return new TestCase
                 {
-                    query.PageInfo.PageNumber++;
-                    query.PageInfo.PagingCookie = result.PagingCookie;
-                }
-            } while (result.MoreRecords);
+                    Id = testCaseId,
+                    Name = testCaseName,
+                    EvaluationRunId = evaluationRunId,
+                    UserInput = entity.GetAttributeValue<string>(Prefixed("prompt")) ?? string.Empty,
+                    ExpectedResponse = entity.GetAttributeValue<string>(Prefixed("expectedresponse")) ?? string.Empty,
+                    EvaluatorTypeId = null, // Evaluator types are now fetched via GetEvaluatorTypesForRunAsync (N:N relationship)
+                    ConversationId = null, // ConversationId is on EvaluationResult, not TestCase
+                    IsMultiTurn = isMultiTurn,
+                    CreatedOn = entity.GetAttributeValue<DateTime>("createdon")
+                };
+            }).ToList();
             
             _logger.LogInformation("Retrieved {Count} test cases for evaluation run {EvaluationRunId}", 
                 testCases.Count, evaluationRunId);
@@ -314,11 +399,7 @@ public class DataverseService : IDataverseService, IDisposable
     public async Task UpdateEvaluationRunStatusAsync(Guid evaluationRunId, int statusCode, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Updating evaluation run {EvaluationRunId} status to {StatusCode}", evaluationRunId, statusCode);
-        
-        if (_serviceClient == null || !_serviceClient.IsReady)
-        {
-            throw new InvalidOperationException("Dataverse service client is not ready");
-        }
+        EnsureClientReady();
 
         await _resilientService.ExecuteAsync(async ct =>
         {
@@ -336,7 +417,7 @@ public class DataverseService : IDataverseService, IDisposable
                 updateEntity["statecode"] = new OptionSetValue(0); // Keep active (0), use status to differentiate
             }
 
-            await Task.Run(() => _serviceClient.Update(updateEntity), ct);
+            await Task.Run(() => _serviceClient!.Update(updateEntity), ct);
             
             _logger.LogInformation("Successfully updated evaluation run {EvaluationRunId} status to {StatusCode}", 
                 evaluationRunId, statusCode);
@@ -348,11 +429,7 @@ public class DataverseService : IDataverseService, IDisposable
     public async Task SetEvaluationRunTotalTestCasesAsync(Guid evaluationRunId, int totalTestCases, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Setting evaluation run {EvaluationRunId} total test cases to {TotalTestCases}", evaluationRunId, totalTestCases);
-        
-        if (_serviceClient == null || !_serviceClient.IsReady)
-        {
-            throw new InvalidOperationException("Dataverse service client is not ready");
-        }
+        EnsureClientReady();
 
         await _resilientService.ExecuteAsync(async ct =>
         {
@@ -363,7 +440,7 @@ public class DataverseService : IDataverseService, IDisposable
             updateEntity[Prefixed("failedtestcases")] = 0;
             updateEntity[Prefixed("progresspercentage")] = 0.00m;
 
-            await Task.Run(() => _serviceClient.Update(updateEntity), ct);
+            await Task.Run(() => _serviceClient!.Update(updateEntity), ct);
             
             _logger.LogInformation("Successfully set evaluation run {EvaluationRunId} total test cases to {TotalTestCases}", evaluationRunId, totalTestCases);
         }, "SetEvaluationRunTotalTestCases",
@@ -395,36 +472,47 @@ public class DataverseService : IDataverseService, IDisposable
     {
         _logger.LogInformation("Updating evaluation run {EvaluationRunId} progress: completed={CompletedTestCases}, failed={FailedTestCases}, notApplicable={NotApplicableTestCases}", 
             evaluationRunId, completedTestCases, failedTestCases, notApplicableTestCases);
-        
-        if (_serviceClient == null || !_serviceClient.IsReady)
-        {
-            throw new InvalidOperationException("Dataverse service client is not ready");
-        }
+        EnsureClientReady();
 
         await _resilientService.ExecuteAsync(async ct =>
         {
-            // First retrieve the total test cases to calculate percentage
-            var query = new QueryExpression(Prefixed("evaluationruns"))
-            {
-                ColumnSet = new ColumnSet(Prefixed("totaltestcases")),
-                Criteria = new FilterExpression
-                {
-                    Conditions =
-                    {
-                        new ConditionExpression(Prefixed("evaluationrunsid"), ConditionOperator.Equal, evaluationRunId)
-                    }
-                }
-            };
-
-            var result = await Task.Run(() => _serviceClient.RetrieveMultiple(query), ct);
+            // Retrieve current counts and total test cases
+            var columnSet = new ColumnSet(
+                Prefixed("totaltestcases"),
+                Prefixed("completedtestcases"),
+                Prefixed("failedtestcases"),
+                Prefixed("natestcases"));
+            var entity = await RetrieveEntityAsync(Prefixed("evaluationruns"), evaluationRunId, columnSet, ct);
             
-            if (result.Entities.Count == 0)
+            if (entity == null)
             {
                 _logger.LogWarning("Evaluation run {EvaluationRunId} not found for progress update", evaluationRunId);
                 return;
             }
 
-            var totalTestCases = result.Entities[0].GetAttributeValue<int>(Prefixed("totaltestcases"));
+            var totalTestCases = entity.GetAttributeValue<int>(Prefixed("totaltestcases"));
+            var currentCompletedCount = entity.GetAttributeValue<int>(Prefixed("completedtestcases"));
+            var currentFailedCount = entity.GetAttributeValue<int>(Prefixed("failedtestcases"));
+            var currentNACount = entity.GetAttributeValue<int>(Prefixed("natestcases"));
+
+            // Check if counts have actually changed
+            var countsChanged = completedTestCases != currentCompletedCount ||
+                               failedTestCases != currentFailedCount ||
+                               notApplicableTestCases != currentNACount;
+
+            if (!countsChanged)
+            {
+                _logger.LogDebug(
+                    "No progress change for {EvaluationRunId}: completed={Completed}, failed={Failed}, NA={NA}",
+                    evaluationRunId, completedTestCases, failedTestCases, notApplicableTestCases);
+                return; // No update needed - preserves LastProgressUpdate for stall detection
+            }
+
+            _logger.LogInformation(
+                "Progress changed for {EvaluationRunId}: completed {OldCompleted}->{NewCompleted}, " +
+                "failed {OldFailed}->{NewFailed}, NA {OldNA}->{NewNA}",
+                evaluationRunId, currentCompletedCount, completedTestCases, 
+                currentFailedCount, failedTestCases, currentNACount, notApplicableTestCases);
 
             var updateEntity = new Entity(Prefixed("evaluationruns"), evaluationRunId);
             updateEntity[Prefixed("completedtestcases")] = completedTestCases;
@@ -447,10 +535,10 @@ public class DataverseService : IDataverseService, IDisposable
                     evaluationRunId);
             }
 
-            // Update last progress timestamp
+            // Update last progress timestamp ONLY when counts actually change
             updateEntity[Prefixed("lastprogressupdate")] = DateTime.UtcNow;
 
-            await Task.Run(() => _serviceClient.Update(updateEntity), ct);
+            await Task.Run(() => _serviceClient!.Update(updateEntity), ct);
             
             _logger.LogInformation("Successfully updated evaluation run {EvaluationRunId} progress", evaluationRunId);
         }, "UpdateEvaluationRunProgress",
@@ -461,11 +549,7 @@ public class DataverseService : IDataverseService, IDisposable
     public async Task UpdateEvaluationRunScoresAsync(Guid evaluationRunId, decimal? overallScore, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Updating evaluation run {EvaluationRunId} scores", evaluationRunId);
-        
-        if (_serviceClient == null || !_serviceClient.IsReady)
-        {
-            throw new InvalidOperationException("Dataverse service client is not ready");
-        }
+        EnsureClientReady();
 
         await _resilientService.ExecuteAsync(async ct =>
         {
@@ -475,7 +559,7 @@ public class DataverseService : IDataverseService, IDisposable
             if (overallScore.HasValue)
                 updateEntity[Prefixed("overallscore")] = Convert.ToDouble(overallScore.Value);
 
-            await Task.Run(() => _serviceClient.Update(updateEntity), ct);
+            await Task.Run(() => _serviceClient!.Update(updateEntity), ct);
             
             _logger.LogInformation("Successfully updated evaluation run {EvaluationRunId} scores", evaluationRunId);
         }, "UpdateEvaluationRunScores",
@@ -486,11 +570,7 @@ public class DataverseService : IDataverseService, IDisposable
     public async Task<Guid> CreateEvaluationResultAsync(CreateEvaluationResultRequest request, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Creating evaluation result for test case {TestCaseId}", request.TestCaseId);
-        
-        if (_serviceClient == null || !_serviceClient.IsReady)
-        {
-            throw new InvalidOperationException("Dataverse service client is not ready");
-        }
+        EnsureClientReady();
 
         return await _resilientService.ExecuteAsync(async ct =>
         {
@@ -544,7 +624,7 @@ public class DataverseService : IDataverseService, IDisposable
             if (request.StatusCode.HasValue)
                 resultEntity["statuscode"] = new OptionSetValue(request.StatusCode.Value);
 
-            var resultId = await Task.Run(() => _serviceClient.Create(resultEntity), ct);
+            var resultId = await Task.Run(() => _serviceClient!.Create(resultEntity), ct);
             
             _logger.LogInformation("Successfully created evaluation result {ResultId} for test case {TestCaseId}", 
                 resultId, request.TestCaseId);
@@ -558,41 +638,25 @@ public class DataverseService : IDataverseService, IDisposable
     public async Task<TestCase?> GetTestCaseAsync(Guid testCaseId, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Getting test case {TestCaseId}", testCaseId);
-        
-        if (_serviceClient == null || !_serviceClient.IsReady)
-        {
-            throw new InvalidOperationException("Dataverse service client is not ready");
-        }
+        EnsureClientReady();
 
         return await _resilientService.ExecuteAsync(async ct =>
         {
-            var query = new QueryExpression(Prefixed("testcases"))
-            {
-                ColumnSet = new ColumnSet(
-                    Prefixed("testcasesid"),
-                    Prefixed("testcasename"),
-                    Prefixed("prompt"),
-                    Prefixed("expectedresponse"),
-                    "createdon"
-                ),
-                Criteria = new FilterExpression
-                {
-                    Conditions =
-                    {
-                        new ConditionExpression(Prefixed("testcasesid"), ConditionOperator.Equal, testCaseId)
-                    }
-                }
-            };
+            var columnSet = new ColumnSet(
+                Prefixed("testcasesid"),
+                Prefixed("testcasename"),
+                Prefixed("prompt"),
+                Prefixed("expectedresponse"),
+                "createdon"
+            );
 
-            var result = await Task.Run(() => _serviceClient.RetrieveMultiple(query), ct);
+            var entity = await RetrieveEntityAsync(Prefixed("testcases"), testCaseId, columnSet, ct);
             
-            if (result.Entities.Count == 0)
+            if (entity == null)
             {
                 _logger.LogWarning("Test case {TestCaseId} not found", testCaseId);
                 return null;
             }
-
-            var entity = result.Entities[0];
             
             return new TestCase
             {
@@ -613,18 +677,14 @@ public class DataverseService : IDataverseService, IDisposable
     public async Task SetEvaluationRunStartTimeAsync(Guid evaluationRunId, DateTime startTime, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Setting evaluation run {EvaluationRunId} start time to {StartTime}", evaluationRunId, startTime);
-        
-        if (_serviceClient == null || !_serviceClient.IsReady)
-        {
-            throw new InvalidOperationException("Dataverse service client is not ready");
-        }
+        EnsureClientReady();
 
         await _resilientService.ExecuteAsync(async ct =>
         {
             var updateEntity = new Entity(Prefixed("evaluationruns"), evaluationRunId);
             updateEntity[Prefixed("starttime")] = startTime;
 
-            await Task.Run(() => _serviceClient.Update(updateEntity), ct);
+            await Task.Run(() => _serviceClient!.Update(updateEntity), ct);
             
             _logger.LogInformation("Successfully set evaluation run {EvaluationRunId} start time", evaluationRunId);
         }, "SetEvaluationRunStartTime",
@@ -635,18 +695,14 @@ public class DataverseService : IDataverseService, IDisposable
     public async Task SetEvaluationRunEndTimeAsync(Guid evaluationRunId, DateTime endTime, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Setting evaluation run {EvaluationRunId} end time to {EndTime}", evaluationRunId, endTime);
-        
-        if (_serviceClient == null || !_serviceClient.IsReady)
-        {
-            throw new InvalidOperationException("Dataverse service client is not ready");
-        }
+        EnsureClientReady();
 
         await _resilientService.ExecuteAsync(async ct =>
         {
             var updateEntity = new Entity(Prefixed("evaluationruns"), evaluationRunId);
             updateEntity[Prefixed("endtime")] = endTime;
 
-            await Task.Run(() => _serviceClient.Update(updateEntity), ct);
+            await Task.Run(() => _serviceClient!.Update(updateEntity), ct);
             
             _logger.LogInformation("Successfully set evaluation run {EvaluationRunId} end time", evaluationRunId);
         }, "SetEvaluationRunEndTime",
@@ -657,19 +713,15 @@ public class DataverseService : IDataverseService, IDisposable
     public async Task<List<EvaluationRun>> GetRunningEvaluationRunsAsync(CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Getting running evaluation runs");
-        
-        if (_serviceClient == null || !_serviceClient.IsReady)
-        {
-            throw new InvalidOperationException("Dataverse service client is not ready");
-        }
+        EnsureClientReady();
 
         return await _resilientService.ExecuteAsync(async ct =>
         {
             var query = new QueryExpression(Prefixed("evaluationruns"))
             {
                 ColumnSet = new ColumnSet(
-                    Prefixed("evaluationrunsid"), 
-                    Prefixed("runname"), 
+                    Prefixed("evaluationrunsid"),
+                    Prefixed("runname"),
                     Prefixed("passingthreshold"),
                     Prefixed("overallpass"),
                     Prefixed("overallscore"),
@@ -689,33 +741,29 @@ public class DataverseService : IDataverseService, IDisposable
                     {
                         new ConditionExpression("statuscode", ConditionOperator.Equal, EvaluationRunStatus.Running)
                     }
-                }
+                },
+                PageInfo = new PagingInfo { Count = 1000, PageNumber = 1 }
             };
 
-            var result = await Task.Run(() => _serviceClient.RetrieveMultiple(query), ct);
+            var allEntities = await RetrieveAllPagesAsync(query, ct);
             
-            var evaluationRuns = new List<EvaluationRun>();
-            
-            foreach (var entity in result.Entities)
+            var evaluationRuns = allEntities.Select(entity => new EvaluationRun
             {
-                evaluationRuns.Add(new EvaluationRun
-                {
-                    Id = entity.Id,
-                    Name = entity.GetAttributeValue<string>(Prefixed("runname")) ?? string.Empty,
-                    PassingThreshold = GetDecimalValue(entity, Prefixed("passingthreshold")),
-                    OverallScore = GetDecimalValue(entity, Prefixed("overallscore")),
-                    OverallPass = entity.GetAttributeValue<bool?>(Prefixed("overallpass")),
-                    TotalTestCases = entity.GetAttributeValue<int>(Prefixed("totaltestcases")),
-                    CompletedTestCases = entity.GetAttributeValue<int>(Prefixed("completedtestcases")),
-                    FailedTestCases = entity.GetAttributeValue<int>(Prefixed("failedtestcases")),
-                    StartTime = entity.GetAttributeValue<DateTime?>(Prefixed("starttime")),
-                    EndTime = entity.GetAttributeValue<DateTime?>(Prefixed("endtime")),
-                    LastProgressUpdate = entity.GetAttributeValue<DateTime?>(Prefixed("lastprogressupdate")),
-                    StateCode = GetIntValue(entity, "statecode"),
-                    StatusCode = entity.GetAttributeValue<OptionSetValue>("statuscode")?.Value ?? 1,
-                    CreatedOn = entity.GetAttributeValue<DateTime>("createdon")
-                });
-            }
+                Id = entity.Id,
+                Name = entity.GetAttributeValue<string>(Prefixed("runname")) ?? string.Empty,
+                PassingThreshold = GetDecimalValue(entity, Prefixed("passingthreshold")),
+                OverallScore = GetDecimalValue(entity, Prefixed("overallscore")),
+                OverallPass = entity.GetAttributeValue<bool?>(Prefixed("overallpass")),
+                TotalTestCases = entity.GetAttributeValue<int>(Prefixed("totaltestcases")),
+                CompletedTestCases = entity.GetAttributeValue<int>(Prefixed("completedtestcases")),
+                FailedTestCases = entity.GetAttributeValue<int>(Prefixed("failedtestcases")),
+                StartTime = entity.GetAttributeValue<DateTime?>(Prefixed("starttime")),
+                EndTime = entity.GetAttributeValue<DateTime?>(Prefixed("endtime")),
+                LastProgressUpdate = entity.GetAttributeValue<DateTime?>(Prefixed("lastprogressupdate")),
+                StateCode = GetIntValue(entity, "statecode"),
+                StatusCode = entity.GetAttributeValue<OptionSetValue>("statuscode")?.Value ?? 1,
+                CreatedOn = entity.GetAttributeValue<DateTime>("createdon")
+            }).ToList();
             
             _logger.LogInformation("Retrieved {Count} running evaluation runs", evaluationRuns.Count);
             
@@ -728,11 +776,7 @@ public class DataverseService : IDataverseService, IDisposable
     public async Task<List<EvaluationResult>> GetEvaluationResultsAsync(Guid evaluationRunId, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Getting evaluation results for evaluation run {EvaluationRunId}", evaluationRunId);
-        
-        if (_serviceClient == null || !_serviceClient.IsReady)
-        {
-            throw new InvalidOperationException("Dataverse service client is not ready");
-        }
+        EnsureClientReady();
 
         return await _resilientService.ExecuteAsync(async ct =>
         {
@@ -763,36 +807,12 @@ public class DataverseService : IDataverseService, IDisposable
                     {
                         new ConditionExpression(Prefixed("evaluation"), ConditionOperator.Equal, evaluationRunId)
                     }
-                }
+                },
+                PageInfo = new PagingInfo { Count = 5000, PageNumber = 1 }
             };
 
-            var result = await Task.Run(() => _serviceClient.RetrieveMultiple(query), ct);
-            
-            var evaluationResults = new List<EvaluationResult>();
-            
-            foreach (var entity in result.Entities)
-            {
-                evaluationResults.Add(new EvaluationResult
-                {
-                    Id = entity.Id,
-                    Name = entity.GetAttributeValue<string>(Prefixed("evaluationresultname")) ?? string.Empty,
-                    EvaluationRunId = entity.GetAttributeValue<EntityReference>(Prefixed("evaluation"))?.Id ?? Guid.Empty,
-                    TestCaseId = entity.GetAttributeValue<EntityReference>(Prefixed("testcase"))?.Id ?? Guid.Empty,
-                    TestCaseTurnId = entity.GetAttributeValue<EntityReference>(Prefixed("testcaseturnid"))?.Id,
-                    IsAggregate = entity.GetAttributeValue<bool>(Prefixed("isaggregate")),
-                    ActualResponse = entity.GetAttributeValue<string>(Prefixed("actualresponse")),
-                    Score = GetDecimalValue(entity, Prefixed("score")),
-                    Reasoning = entity.GetAttributeValue<string>(Prefixed("reasoning")),
-                    ConversationId = entity.GetAttributeValue<string>(Prefixed("conversationid")),
-                    ExecutionTimeMs = entity.GetAttributeValue<int?>(Prefixed("executiontime")),
-                    McsExecutionTimeMs = entity.GetAttributeValue<int?>(Prefixed("mcsexecutiontime")),
-                    ErrorMessage = entity.GetAttributeValue<string>(Prefixed("errormessage")),
-                    Metadata = entity.GetAttributeValue<string>(Prefixed("metadata")),
-                    StateCode = GetIntValue(entity, "statecode"),
-                    StatusCode = entity.GetAttributeValue<OptionSetValue>("statuscode")?.Value ?? 1,
-                    CreatedOn = entity.GetAttributeValue<DateTime>("createdon")
-                });
-            }
+            var allEntities = await RetrieveAllPagesAsync(query, ct);
+            var evaluationResults = allEntities.Select(MapToEvaluationResult).ToList();
             
             _logger.LogInformation("Retrieved {Count} evaluation results for evaluation run {EvaluationRunId}", 
                 evaluationResults.Count, evaluationRunId);
@@ -807,11 +827,7 @@ public class DataverseService : IDataverseService, IDisposable
     {
         _logger.LogInformation("Updating evaluation run {EvaluationRunId} completion: status={StatusCode}, score={OverallScore}, pass={OverallPass}", 
             evaluationRunId, statusCode, overallScore, overallPass);
-        
-        if (_serviceClient == null || !_serviceClient.IsReady)
-        {
-            throw new InvalidOperationException("Dataverse service client is not ready");
-        }
+        EnsureClientReady();
 
         await _resilientService.ExecuteAsync(async ct =>
         {
@@ -826,7 +842,7 @@ public class DataverseService : IDataverseService, IDisposable
             if (overallPass.HasValue)
                 updateEntity[Prefixed("overallpass")] = overallPass.Value;
 
-            await Task.Run(() => _serviceClient.Update(updateEntity), ct);
+            await Task.Run(() => _serviceClient!.Update(updateEntity), ct);
             
             _logger.LogInformation("Successfully updated evaluation run {EvaluationRunId} completion", evaluationRunId);
         }, "UpdateEvaluationRunCompletion",
@@ -838,11 +854,7 @@ public class DataverseService : IDataverseService, IDisposable
     {
         _logger.LogInformation("Updating test case counts for evaluation run {EvaluationRunId} based on actual results", 
             evaluationRunId);
-        
-        if (_serviceClient == null || !_serviceClient.IsReady)
-        {
-            throw new InvalidOperationException("Dataverse service client is not ready");
-        }
+        EnsureClientReady();
 
         await _resilientService.ExecuteAsync(async ct =>
         {
@@ -855,30 +867,45 @@ public class DataverseService : IDataverseService, IDisposable
             _logger.LogInformation("Recalculated counts for {EvaluationRunId}: completed={Completed}, failed={Failed}, notApplicable={NotApplicable}", 
                 evaluationRunId, completedCount, failedCount, notApplicableCount);
 
-            // Retrieve total test cases for percentage calculation
-            var query = new QueryExpression(Prefixed("evaluationruns"))
-            {
-                ColumnSet = new ColumnSet(Prefixed("totaltestcases")),
-                Criteria = new FilterExpression
-                {
-                    Conditions =
-                    {
-                        new ConditionExpression(Prefixed("evaluationrunsid"), ConditionOperator.Equal, evaluationRunId)
-                    }
-                }
-            };
-
-            var result = await Task.Run(() => _serviceClient.RetrieveMultiple(query), ct);
+            // Retrieve current counts and total test cases
+            var columnSet = new ColumnSet(
+                Prefixed("totaltestcases"),
+                Prefixed("completedtestcases"),
+                Prefixed("failedtestcases"),
+                Prefixed("natestcases"));
+            var entity = await RetrieveEntityAsync(Prefixed("evaluationruns"), evaluationRunId, columnSet, ct);
             
-            if (result.Entities.Count == 0)
+            if (entity == null)
             {
                 _logger.LogWarning("Evaluation run {EvaluationRunId} not found for progress update", evaluationRunId);
                 return;
             }
 
-            var totalTestCases = result.Entities[0].GetAttributeValue<int>(Prefixed("totaltestcases"));
+            var totalTestCases = entity.GetAttributeValue<int>(Prefixed("totaltestcases"));
+            var currentCompletedCount = entity.GetAttributeValue<int>(Prefixed("completedtestcases"));
+            var currentFailedCount = entity.GetAttributeValue<int>(Prefixed("failedtestcases"));
+            var currentNACount = entity.GetAttributeValue<int>(Prefixed("natestcases"));
 
-            // Update with actual counts
+            // Check if counts have actually changed
+            var countsChanged = completedCount != currentCompletedCount ||
+                               failedCount != currentFailedCount ||
+                               notApplicableCount != currentNACount;
+
+            if (!countsChanged)
+            {
+                _logger.LogDebug(
+                    "No progress change for {EvaluationRunId}: completed={Completed}, failed={Failed}, NA={NA}",
+                    evaluationRunId, completedCount, failedCount, notApplicableCount);
+                return; // No update needed - preserves LastProgressUpdate for stall detection
+            }
+
+            _logger.LogInformation(
+                "Progress changed for {EvaluationRunId}: completed {OldCompleted}->{NewCompleted}, " +
+                "failed {OldFailed}->{NewFailed}, NA {OldNA}->{NewNA}",
+                evaluationRunId, currentCompletedCount, completedCount, 
+                currentFailedCount, failedCount, currentNACount, notApplicableCount);
+
+            // Update with new counts
             var updateEntity = new Entity(Prefixed("evaluationruns"), evaluationRunId);
             updateEntity[Prefixed("completedtestcases")] = completedCount;
             updateEntity[Prefixed("failedtestcases")] = failedCount;
@@ -895,10 +922,10 @@ public class DataverseService : IDataverseService, IDisposable
                     evaluationRunId, totalProcessed, totalTestCases, Math.Round(progressPercentage, 2));
             }
 
-            // Update last progress timestamp
+            // Update last progress timestamp ONLY when counts actually change
             updateEntity[Prefixed("lastprogressupdate")] = DateTime.UtcNow;
 
-            await Task.Run(() => _serviceClient.Update(updateEntity), ct);
+            await Task.Run(() => _serviceClient!.Update(updateEntity), ct);
             
             _logger.LogInformation("Successfully updated test case counts for evaluation run {EvaluationRunId} from actual results", 
                 evaluationRunId);
@@ -910,46 +937,37 @@ public class DataverseService : IDataverseService, IDisposable
     public async Task<EvaluatorType?> GetEvaluatorTypeAsync(Guid evaluatorTypeId, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Getting evaluator type {EvaluatorTypeId}", evaluatorTypeId);
-        
-        if (_serviceClient == null || !_serviceClient.IsReady)
-        {
-            throw new InvalidOperationException($"Dataverse service client is not ready. Connection error: {_connectionError}");
-        }
+        EnsureClientReady();
 
         return await _resilientService.ExecuteAsync(async ct =>
         {
-            var query = new QueryExpression(Prefixed("evaluatortype"))
-            {
-                ColumnSet = new ColumnSet(
-                    Prefixed("evaluatortypeid"),
-                    Prefixed("name"),
-                    Prefixed("evaluatorprompt"),
-                    Prefixed("requiresexpectedresponse"),
-                    Prefixed("judgeagentid"),
-                    "statecode",
-                    "statuscode",
-                    "createdon",
-                    "modifiedon"
-                ),
-                Criteria = new FilterExpression
-                {
-                    Conditions =
-                    {
-                        new ConditionExpression(Prefixed("evaluatortypeid"), ConditionOperator.Equal, evaluatorTypeId),
-                        new ConditionExpression("statecode", ConditionOperator.Equal, 0) // Active only
-                    }
-                }
-            };
+            var columnSet = new ColumnSet(
+                Prefixed("evaluatortypeid"),
+                Prefixed("name"),
+                Prefixed("evaluatorprompt"),
+                Prefixed("requiresexpectedresponse"),
+                Prefixed("judgeagentid"),
+                "statecode",
+                "statuscode",
+                "createdon",
+                "modifiedon"
+            );
 
-            var result = await Task.Run(() => _serviceClient.RetrieveMultiple(query), ct);
+            var entity = await RetrieveEntityAsync(Prefixed("evaluatortype"), evaluatorTypeId, columnSet, ct);
             
-            if (result.Entities.Count == 0)
+            if (entity == null)
             {
                 _logger.LogWarning("Evaluator type {EvaluatorTypeId} not found", evaluatorTypeId);
                 return null;
             }
-
-            var entity = result.Entities[0];
+            
+            // Check if active
+            var stateCode = GetIntValue(entity, "statecode");
+            if (stateCode != 0)
+            {
+                _logger.LogWarning("Evaluator type {EvaluatorTypeId} is not active (statecode={StateCode})", evaluatorTypeId, stateCode);
+                return null;
+            }
             
             return new EvaluatorType
             {
@@ -973,11 +991,7 @@ public class DataverseService : IDataverseService, IDisposable
     public async Task<List<EvaluatorType>> GetEvaluatorTypesForRunAsync(Guid evaluationRunId, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Getting evaluator types for evaluation run {EvaluationRunId}", evaluationRunId);
-        
-        if (_serviceClient == null || !_serviceClient.IsReady)
-        {
-            throw new InvalidOperationException($"Dataverse service client is not ready. Connection error: {_connectionError}");
-        }
+        EnsureClientReady();
 
         return await _resilientService.ExecuteAsync(async ct =>
         {
@@ -1029,12 +1043,12 @@ public class DataverseService : IDataverseService, IDisposable
                 }
             };
 
-            var result = await Task.Run(() => _serviceClient.RetrieveMultiple(query), ct);
+            var allEntities = await RetrieveAllPagesAsync(query, ct);
             
             _logger.LogInformation("Found {Count} evaluator types for evaluation run {EvaluationRunId}", 
-                result.Entities.Count, evaluationRunId);
+                allEntities.Count, evaluationRunId);
 
-            return result.Entities.Select(entity => new EvaluatorType
+            return allEntities.Select(entity => new EvaluatorType
             {
                 Id = entity.Id,
                 Name = entity.GetAttributeValue<string>(Prefixed("name")) ?? string.Empty,
@@ -1056,49 +1070,40 @@ public class DataverseService : IDataverseService, IDisposable
     public async Task<JudgeAgent?> GetJudgeAgentAsync(Guid judgeAgentId, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Getting judge agent {JudgeAgentId}", judgeAgentId);
-        
-        if (_serviceClient == null || !_serviceClient.IsReady)
-        {
-            throw new InvalidOperationException($"Dataverse service client is not ready. Connection error: {_connectionError}");
-        }
+        EnsureClientReady();
 
         return await _resilientService.ExecuteAsync(async ct =>
         {
-            var query = new QueryExpression(Prefixed("judgeagent"))
-            {
-                ColumnSet = new ColumnSet(
-                    Prefixed("judgeagentid"),
-                    Prefixed("name"),
-                    Prefixed("judgetype"),
-                    Prefixed("aoaiendpoint"),
-                    Prefixed("aoaideploymentname"),
-                    Prefixed("directlineurl"),
-                    Prefixed("modelname"),
-                    Prefixed("description"),
-                    "statecode",
-                    "statuscode",
-                    "createdon",
-                    "modifiedon"
-                ),
-                Criteria = new FilterExpression
-                {
-                    Conditions =
-                    {
-                        new ConditionExpression(Prefixed("judgeagentid"), ConditionOperator.Equal, judgeAgentId),
-                        new ConditionExpression("statecode", ConditionOperator.Equal, 0) // Active only
-                    }
-                }
-            };
+            var columnSet = new ColumnSet(
+                Prefixed("judgeagentid"),
+                Prefixed("name"),
+                Prefixed("judgetype"),
+                Prefixed("aoaiendpoint"),
+                Prefixed("aoaideploymentname"),
+                Prefixed("directlineurl"),
+                Prefixed("modelname"),
+                Prefixed("description"),
+                "statecode",
+                "statuscode",
+                "createdon",
+                "modifiedon"
+            );
 
-            var result = await Task.Run(() => _serviceClient.RetrieveMultiple(query), ct);
+            var entity = await RetrieveEntityAsync(Prefixed("judgeagent"), judgeAgentId, columnSet, ct);
             
-            if (result.Entities.Count == 0)
+            if (entity == null)
             {
                 _logger.LogWarning("Judge agent {JudgeAgentId} not found", judgeAgentId);
                 return null;
             }
-
-            var entity = result.Entities[0];
+            
+            // Check if active
+            var stateCode = GetIntValue(entity, "statecode");
+            if (stateCode != 0)
+            {
+                _logger.LogWarning("Judge agent {JudgeAgentId} is not active (statecode={StateCode})", judgeAgentId, stateCode);
+                return null;
+            }
             
             return new JudgeAgent
             {
@@ -1123,44 +1128,35 @@ public class DataverseService : IDataverseService, IDisposable
     public async Task<AgentToEval?> GetAgentToEvalAsync(Guid agentToEvalId, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Getting agent to eval {AgentToEvalId}", agentToEvalId);
-        
-        if (_serviceClient == null || !_serviceClient.IsReady)
-        {
-            throw new InvalidOperationException($"Dataverse service client is not ready. Connection error: {_connectionError}");
-        }
+        EnsureClientReady();
 
         return await _resilientService.ExecuteAsync(async ct =>
         {
-            var query = new QueryExpression(Prefixed("agenttoeval"))
-            {
-                ColumnSet = new ColumnSet(
-                    Prefixed("agenttoevalid"),
-                    Prefixed("name"),
-                    Prefixed("directlinespeechurl"),
-                    "statecode",
-                    "statuscode",
-                    "createdon",
-                    "modifiedon"
-                ),
-                Criteria = new FilterExpression
-                {
-                    Conditions =
-                    {
-                        new ConditionExpression(Prefixed("agenttoevalid"), ConditionOperator.Equal, agentToEvalId),
-                        new ConditionExpression("statecode", ConditionOperator.Equal, 0) // Active only
-                    }
-                }
-            };
+            var columnSet = new ColumnSet(
+                Prefixed("agenttoevalid"),
+                Prefixed("name"),
+                Prefixed("directlinespeechurl"),
+                "statecode",
+                "statuscode",
+                "createdon",
+                "modifiedon"
+            );
 
-            var result = await Task.Run(() => _serviceClient.RetrieveMultiple(query), ct);
+            var entity = await RetrieveEntityAsync(Prefixed("agenttoeval"), agentToEvalId, columnSet, ct);
             
-            if (result.Entities.Count == 0)
+            if (entity == null)
             {
                 _logger.LogWarning("Agent to eval {AgentToEvalId} not found", agentToEvalId);
                 return null;
             }
-
-            var entity = result.Entities[0];
+            
+            // Check if active
+            var stateCode = entity.GetAttributeValue<OptionSetValue>("statecode")?.Value ?? 0;
+            if (stateCode != 0)
+            {
+                _logger.LogWarning("Agent to eval {AgentToEvalId} is not active (statecode={StateCode})", agentToEvalId, stateCode);
+                return null;
+            }
             
             return new AgentToEval
             {
@@ -1203,11 +1199,7 @@ public class DataverseService : IDataverseService, IDisposable
     public async Task<List<TestCaseTurn>> GetTestCaseTurnsAsync(Guid testCaseId, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Getting turns for test case {TestCaseId}", testCaseId);
-        
-        if (_serviceClient == null || !_serviceClient.IsReady)
-        {
-            throw new InvalidOperationException("Dataverse service client is not ready");
-        }
+        EnsureClientReady();
 
         return await _resilientService.ExecuteAsync(async ct =>
         {
@@ -1234,14 +1226,13 @@ public class DataverseService : IDataverseService, IDisposable
                 Orders =
                 {
                     new OrderExpression(Prefixed("sequence"), OrderType.Ascending)
-                }
+                },
+                PageInfo = new PagingInfo { Count = 5000, PageNumber = 1 }
             };
 
-            var result = await Task.Run(() => _serviceClient.RetrieveMultiple(query), ct);
+            var allEntities = await RetrieveAllPagesAsync(query, ct);
             
-            var turns = new List<TestCaseTurn>();
-            
-            foreach (var entity in result.Entities)
+            var turns = allEntities.Select(entity =>
             {
                 var testCaseRef = entity.GetAttributeValue<EntityReference>(Prefixed("testcaseid"));
                 var promptText = entity.GetAttributeValue<string>(Prefixed("prompttext")) ?? string.Empty;
@@ -1250,7 +1241,7 @@ public class DataverseService : IDataverseService, IDisposable
                 _logger.LogInformation("Retrieved turn from Dataverse: sequence={Sequence}, promptText='{PromptText}'", 
                     sequence, promptText);
                 
-                turns.Add(new TestCaseTurn
+                return new TestCaseTurn
                 {
                     Id = entity.Id,
                     Name = entity.GetAttributeValue<string>(Prefixed("name")) ?? string.Empty,
@@ -1260,8 +1251,8 @@ public class DataverseService : IDataverseService, IDisposable
                     ExpectedResponse = entity.GetAttributeValue<string>(Prefixed("expectedresponse")),
                     CreatedOn = entity.GetAttributeValue<DateTime>("createdon"),
                     ModifiedOn = entity.GetAttributeValue<DateTime>("modifiedon")
-                });
-            }
+                };
+            }).ToList();
             
             _logger.LogInformation("Retrieved {Count} turns for test case {TestCaseId}", 
                 turns.Count, testCaseId);
@@ -1272,140 +1263,115 @@ public class DataverseService : IDataverseService, IDisposable
         cancellationToken);
     }
 
-    public async Task<Guid> CreateAggregateEvaluationResultAsync(MultiTurnExecutionContext context, CancellationToken cancellationToken = default)
-    {
-        _logger.LogInformation("Creating aggregate evaluation result for test case {TestCaseId}", context.TestCase.Id);
-        
-        if (_serviceClient == null || !_serviceClient.IsReady)
-        {
-            throw new InvalidOperationException("Dataverse service client is not ready");
-        }
-
-        return await _resilientService.ExecuteAsync(async ct =>
-        {
-            var resultEntity = new Entity(Prefixed("evaluationresults"));
-            resultEntity[Prefixed("testcase")] = new EntityReference(Prefixed("testcases"), context.TestCase.Id);
-            resultEntity[Prefixed("evaluation")] = new EntityReference(Prefixed("evaluationruns"), context.TestRunId);
-            resultEntity[Prefixed("isaggregate")] = true;
-            
-            if (!string.IsNullOrEmpty(context.ConversationId))
-                resultEntity[Prefixed("conversationid")] = context.ConversationId;
-
-            // Calculate aggregate metrics
-            var passRate = context.PassRate;
-            
-            // Calculate average score from all turn results
-            var turnScores = context.TurnResults.Values
-                .Where(r => r.Score.HasValue)
-                .Select(r => r.Score!.Value)
-                .ToList();
-            
-            var averageScore = turnScores.Any() 
-                ? Convert.ToDouble(turnScores.Average()) 
-                : 0.0;
-            
-            // Check if average score meets the passing threshold
-            var passedOverall = averageScore >= Convert.ToDouble(context.PassingThreshold);
-            
-            resultEntity[Prefixed("score")] = averageScore;
-            resultEntity[Prefixed("passed")] = passedOverall;
-
-            // Create summary reasoning
-            var summary = $"Multi-turn test case completed: {context.PassedTurns}/{context.TotalTurns} turns passed ({passRate:P0} pass rate), average score: {averageScore:F2}, threshold: {context.PassingThreshold:F2}, overall: {(passedOverall ? "PASSED" : "FAILED")}";
-            resultEntity[Prefixed("reasoning")] = summary;
-
-            // Calculate average execution time
-            var avgExecutionTime = context.TurnResults.Values
-                .Where(r => r.ExecutionTimeMs.HasValue)
-                .Select(r => r.ExecutionTimeMs!.Value)
-                .DefaultIfEmpty(0)
-                .Average();
-            resultEntity[Prefixed("executiontime")] = (int)avgExecutionTime;
-
-            var resultId = await Task.Run(() => _serviceClient.Create(resultEntity), ct);
-            
-            _logger.LogInformation("Successfully created aggregate evaluation result {ResultId} for test case {TestCaseId}", 
-                resultId, context.TestCase.Id);
-            
-            return resultId;
-        }, "CreateAggregateEvaluationResult",
-        exception => exception is FaultException<OrganizationServiceFault>,
-        cancellationToken);
-    }
-
-    public async Task<EvaluationResult?> GetAggregateResultForTestCaseAsync(
-        Guid evaluationRunId, 
-        Guid testCaseId, 
+    public async Task<Dictionary<Guid, List<TestCaseTurn>>> GetAllTurnsForTestCasesAsync(
+        Guid testSetId, 
         CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Getting aggregate result for test case {TestCaseId} in evaluation run {EvaluationRunId}", 
-            testCaseId, evaluationRunId);
-        
-        if (_serviceClient == null || !_serviceClient.IsReady)
-        {
-            throw new InvalidOperationException("Dataverse service client is not ready");
-        }
+        _logger.LogInformation("Batch-fetching turns for test cases in test set {TestSetId}", testSetId);
+        EnsureClientReady();
 
         return await _resilientService.ExecuteAsync(async ct =>
         {
-            var query = new QueryExpression(Prefixed("evaluationresults"))
+            // Build query joining testcaseturn to testcases via testcaseid
+            // This avoids the IN operator which can fail with large lists
+            var query = new QueryExpression(Prefixed("testcaseturn"))
             {
                 ColumnSet = new ColumnSet(
-                    Prefixed("evaluationresultsid"),
-                    Prefixed("evaluationresultname"),
-                    Prefixed("evaluation"),
-                    Prefixed("testcase"),
-                    Prefixed("isaggregate"),
-                    Prefixed("score"),
-                    Prefixed("passed"),
-                    "statuscode",
-                    "statecode",
-                    "createdon"
+                    Prefixed("testcaseturnid"),
+                    Prefixed("name"),
+                    Prefixed("testcaseid"),
+                    Prefixed("sequence"),
+                    Prefixed("prompttext"),
+                    Prefixed("expectedresponse"),
+                    "createdon",
+                    "modifiedon"
                 ),
                 Criteria = new FilterExpression
                 {
                     Conditions =
                     {
-                        new ConditionExpression(Prefixed("evaluation"), ConditionOperator.Equal, evaluationRunId),
-                        new ConditionExpression(Prefixed("testcase"), ConditionOperator.Equal, testCaseId),
-                        new ConditionExpression(Prefixed("isaggregate"), ConditionOperator.Equal, true)
+                        new ConditionExpression("statecode", ConditionOperator.Equal, 0) // Active only
                     }
                 },
-                TopCount = 1
-            };
-
-            var result = await Task.Run(() => _serviceClient.RetrieveMultiple(query), ct);
-            
-            if (result.Entities.Count == 0)
-            {
-                _logger.LogInformation("No aggregate result found for test case {TestCaseId} in evaluation run {EvaluationRunId}", 
-                    testCaseId, evaluationRunId);
-                return null;
-            }
-
-            var entity = result.Entities[0];
-            
-            var evaluationResult = new EvaluationResult
-            {
-                Id = entity.Id,
-                Name = entity.GetAttributeValue<string>(Prefixed("evaluationresultname")) ?? string.Empty,
-                EvaluationRunId = entity.GetAttributeValue<EntityReference>(Prefixed("evaluation"))?.Id ?? Guid.Empty,
-                TestCaseId = entity.GetAttributeValue<EntityReference>(Prefixed("testcase"))?.Id ?? Guid.Empty,
-                IsAggregate = entity.GetAttributeValue<bool>(Prefixed("isaggregate")),
-                Score = GetDecimalValue(entity, Prefixed("score")),
-                Passed = entity.GetAttributeValue<bool?>(Prefixed("passed")),
-                StateCode = GetIntValue(entity, "statecode"),
-                StatusCode = entity.GetAttributeValue<OptionSetValue>("statuscode")?.Value ?? 1,
-                CreatedOn = entity.GetAttributeValue<DateTime>("createdon")
+                Orders =
+                {
+                    new OrderExpression(Prefixed("testcaseid"), OrderType.Ascending),
+                    new OrderExpression(Prefixed("sequence"), OrderType.Ascending)
+                },
+                PageInfo = new PagingInfo { Count = 5000, PageNumber = 1 }
             };
             
-            _logger.LogInformation("Found aggregate result {ResultId} with StatusCode {StatusCode} for test case {TestCaseId}", 
-                evaluationResult.Id, evaluationResult.StatusCode, testCaseId);
+            // Add link to testcases table to filter by testset
+            var testCaseLink = query.AddLink(
+                Prefixed("testcases"),
+                Prefixed("testcaseid"),
+                Prefixed("testcasesid"),
+                JoinOperator.Inner);
+            testCaseLink.LinkCriteria.AddCondition(Prefixed("testset"), ConditionOperator.Equal, testSetId);
+            testCaseLink.LinkCriteria.AddCondition("statecode", ConditionOperator.Equal, 0); // Active test cases only
+
+            // Handle pagination using helper
+            var allEntities = await RetrieveAllPagesAsync(query, ct);
             
-            return evaluationResult;
-        }, "GetAggregateResultForTestCase",
+            _logger.LogInformation("Retrieved {TotalTurns} turns for test set {TestSetId}", 
+                allEntities.Count, testSetId);
+            
+            // Group turns by test case ID
+            // LINQ grouping is more efficient and readable than parallelization here
+            // This is in-memory object construction (no I/O), grouping is O(n), and we avoid
+            // lock contention on the Dictionary that would be required for parallel writes
+            var turnsByTestCase = allEntities
+                .Select(entity =>
+                {
+                    var testCaseRef = entity.GetAttributeValue<EntityReference>(Prefixed("testcaseid"));
+                    var testCaseId = testCaseRef?.Id ?? Guid.Empty;
+                    
+                    if (testCaseId == Guid.Empty)
+                    {
+                        _logger.LogWarning("Turn {TurnId} has invalid test case reference", entity.Id);
+                        return null;
+                    }
+                    
+                    return new TestCaseTurn
+                    {
+                        Id = entity.Id,
+                        Name = entity.GetAttributeValue<string>(Prefixed("name")) ?? string.Empty,
+                        TestCaseId = testCaseId,
+                        Sequence = entity.GetAttributeValue<int>(Prefixed("sequence")),
+                        PromptText = entity.GetAttributeValue<string>(Prefixed("prompttext")) ?? string.Empty,
+                        ExpectedResponse = entity.GetAttributeValue<string>(Prefixed("expectedresponse")),
+                        CreatedOn = entity.GetAttributeValue<DateTime>("createdon"),
+                        ModifiedOn = entity.GetAttributeValue<DateTime>("modifiedon")
+                    };
+                })
+                .Where(turn => turn != null)
+                .Cast<TestCaseTurn>()
+                .GroupBy(turn => turn.TestCaseId)
+                .ToDictionary(
+                    group => group.Key,
+                    group => group.ToList()
+                );
+            
+            _logger.LogInformation("Retrieved {TotalTurns} turns for {TestCaseCount} test cases", 
+                allEntities.Count, turnsByTestCase.Count);
+            
+            return turnsByTestCase;
+        }, "GetAllTurnsForTestCases",
         exception => exception is FaultException<OrganizationServiceFault>,
         cancellationToken);
+    }
+
+    /// <summary>
+    /// Gets the first aggregate result for a test case in an evaluation run.
+    /// Legacy method for single-evaluator scenarios - delegates to GetAggregateResultsForTestCaseAsync.
+    /// </summary>
+    public async Task<EvaluationResult?> GetAggregateResultForTestCaseAsync(
+        Guid evaluationRunId, 
+        Guid testCaseId, 
+        CancellationToken cancellationToken = default)
+    {
+        var results = await GetAggregateResultsForTestCaseAsync(evaluationRunId, testCaseId, cancellationToken);
+        return results.FirstOrDefault();
     }
     
     /// <summary>
@@ -1419,11 +1385,7 @@ public class DataverseService : IDataverseService, IDisposable
     {
         _logger.LogInformation("Getting all aggregate results for test case {TestCaseId} in evaluation run {EvaluationRunId}", 
             testCaseId, evaluationRunId);
-        
-        if (_serviceClient == null || !_serviceClient.IsReady)
-        {
-            throw new InvalidOperationException("Dataverse service client is not ready");
-        }
+        EnsureClientReady();
 
         return await _resilientService.ExecuteAsync(async ct =>
         {
@@ -1450,16 +1412,16 @@ public class DataverseService : IDataverseService, IDisposable
                         new ConditionExpression(Prefixed("testcase"), ConditionOperator.Equal, testCaseId),
                         new ConditionExpression(Prefixed("isaggregate"), ConditionOperator.Equal, true)
                     }
-                }
-                // No TopCount - return ALL aggregates for all evaluators
+                },
+                PageInfo = new PagingInfo { Count = 5000, PageNumber = 1 }
             };
 
-            var result = await Task.Run(() => _serviceClient.RetrieveMultiple(query), ct);
+            var allEntities = await RetrieveAllPagesAsync(query, ct);
             
             _logger.LogInformation("Found {Count} aggregate results for test case {TestCaseId} in evaluation run {EvaluationRunId}", 
-                result.Entities.Count, testCaseId, evaluationRunId);
+                allEntities.Count, testCaseId, evaluationRunId);
 
-            return result.Entities.Select(entity => new EvaluationResult
+            return allEntities.Select(entity => new EvaluationResult
             {
                 Id = entity.Id,
                 Name = entity.GetAttributeValue<string>(Prefixed("evaluationresultname")) ?? string.Empty,
@@ -1486,11 +1448,7 @@ public class DataverseService : IDataverseService, IDisposable
     {
         _logger.LogInformation("Getting all aggregate results for evaluation run {EvaluationRunId} (batch query)", 
             evaluationRunId);
-        
-        if (_serviceClient == null || !_serviceClient.IsReady)
-        {
-            throw new InvalidOperationException("Dataverse service client is not ready");
-        }
+        EnsureClientReady();
 
         return await _resilientService.ExecuteAsync(async cancellationToken =>
         {
@@ -1516,15 +1474,17 @@ public class DataverseService : IDataverseService, IDisposable
                         new ConditionExpression(Prefixed("evaluation"), ConditionOperator.Equal, evaluationRunId),
                         new ConditionExpression(Prefixed("isaggregate"), ConditionOperator.Equal, true)
                     }
-                }
+                },
+                PageInfo = new PagingInfo { Count = 5000, PageNumber = 1 }
             };
 
-            var result = await Task.Run(() => _serviceClient.RetrieveMultiple(query), cancellationToken);
+            // Handle pagination using helper
+            var allEntities = await RetrieveAllPagesAsync(query, cancellationToken);
             
             _logger.LogInformation("Fetched {Count} aggregate results for evaluation run {EvaluationRunId}", 
-                result.Entities.Count, evaluationRunId);
+                allEntities.Count, evaluationRunId);
 
-            return result.Entities.Select(entity => new EvaluationResult
+            return allEntities.Select(entity => new EvaluationResult
             {
                 Id = entity.Id,
                 Name = entity.GetAttributeValue<string>(Prefixed("evaluationresultname")) ?? string.Empty,
@@ -1558,11 +1518,7 @@ public class DataverseService : IDataverseService, IDisposable
     {
         _logger.LogInformation("Updating aggregate result {ResultId} with score={Score}, passed={Passed}, statusCode={StatusCode}", 
             resultId, score, passed, statusCode);
-        
-        if (_serviceClient == null || !_serviceClient.IsReady)
-        {
-            throw new InvalidOperationException("Dataverse service client is not ready");
-        }
+        EnsureClientReady();
 
         await _resilientService.ExecuteAsync(async ct =>
         {
@@ -1575,7 +1531,7 @@ public class DataverseService : IDataverseService, IDisposable
             updateEntity[Prefixed("executiontime")] = executionTimeMs;
             updateEntity["statuscode"] = new OptionSetValue(statusCode);
 
-            await Task.Run(() => _serviceClient.Update(updateEntity), ct);
+            await Task.Run(() => _serviceClient!.Update(updateEntity), ct);
             
             _logger.LogInformation("Successfully updated aggregate result {ResultId}", resultId);
         }, "UpdateAggregateResult",
@@ -1590,53 +1546,39 @@ public class DataverseService : IDataverseService, IDisposable
     {
         try
         {
-            var query = new QueryExpression("mcicaps_evaluationresults")
-            {
-                ColumnSet = new ColumnSet(
-                    "mcicaps_evaluationresultsid",
-                    "mcicaps_evaluationresultname",
-                    "mcicaps_evaluation",
-                    "mcicaps_testcase",
-                    "mcicaps_evaluatortypeid",
-                    "mcicaps_testcaseturnid",
-                    "mcicaps_isaggregate",
-                    "mcicaps_actualresponse",
-                    "mcicaps_score",
-                    "mcicaps_passed",
-                    "mcicaps_reasoning",
-                    "mcicaps_conversationid",
-                    "mcicaps_executiontime",
-                    "mcicaps_mcsexecutiontime",
-                    "mcicaps_errormessage",
-                    "mcicaps_metadata",
-                    "statecode",
-                    "statuscode",
-                    "createdon",
-                    "modifiedon"
-                ),
-                Criteria = new FilterExpression
-                {
-                    Conditions =
-                    {
-                        new ConditionExpression("mcicaps_evaluationresultsid", ConditionOperator.Equal, resultId)
-                    }
-                }
-            };
+            EnsureClientReady();
 
-            if (_serviceClient == null)
-            {
-                throw new InvalidOperationException("Dataverse service client is not initialized");
-            }
+            var columnSet = new ColumnSet(
+                Prefixed("evaluationresultsid"),
+                Prefixed("evaluationresultname"),
+                Prefixed("evaluation"),
+                Prefixed("testcase"),
+                Prefixed("evaluatortypeid"),
+                Prefixed("testcaseturnid"),
+                Prefixed("isaggregate"),
+                Prefixed("actualresponse"),
+                Prefixed("score"),
+                Prefixed("passed"),
+                Prefixed("reasoning"),
+                Prefixed("conversationid"),
+                Prefixed("executiontime"),
+                Prefixed("mcsexecutiontime"),
+                Prefixed("errormessage"),
+                Prefixed("metadata"),
+                "statecode",
+                "statuscode",
+                "createdon",
+                "modifiedon"
+            );
 
-            var results = await _serviceClient.RetrieveMultipleAsync(query, cancellationToken);
+            var entity = await RetrieveEntityAsync(Prefixed("evaluationresults"), resultId, columnSet, cancellationToken);
             
-            if (results.Entities.Count == 0)
+            if (entity == null)
             {
                 _logger.LogWarning("Evaluation result {ResultId} not found", resultId);
                 return null;
             }
-
-            var entity = results.Entities[0];
+            
             return new EvaluationResult
             {
                 Id = entity.Id,
@@ -1675,7 +1617,7 @@ public class DataverseService : IDataverseService, IDisposable
     {
         try
         {
-            var entity = new Entity("mcicaps_evaluationresults")
+            var entity = new Entity(Prefixed("evaluationresults"))
             {
                 Id = resultId
             };
@@ -1683,19 +1625,19 @@ public class DataverseService : IDataverseService, IDisposable
             entity["statuscode"] = new OptionSetValue(request.StatusCode);
 
             if (request.Score.HasValue)
-                entity["mcicaps_score"] = request.Score.Value;
+                entity[Prefixed("score")] = request.Score.Value;
 
             if (request.Passed.HasValue)
-                entity["mcicaps_passed"] = request.Passed.Value;
+                entity[Prefixed("passed")] = request.Passed.Value;
 
             if (!string.IsNullOrWhiteSpace(request.Reasoning))
-                entity["mcicaps_reasoning"] = request.Reasoning;
+                entity[Prefixed("reasoning")] = request.Reasoning;
 
             if (request.ExecutionTimeMs.HasValue)
-                entity["mcicaps_executiontime"] = request.ExecutionTimeMs.Value;
+                entity[Prefixed("executiontime")] = request.ExecutionTimeMs.Value;
 
             if (!string.IsNullOrWhiteSpace(request.ErrorMessage))
-                entity["mcicaps_errormessage"] = request.ErrorMessage;
+                entity[Prefixed("errormessage")] = request.ErrorMessage;
 
             if (_serviceClient == null)
             {
@@ -1725,36 +1667,37 @@ public class DataverseService : IDataverseService, IDisposable
 
         try
         {
-            var query = new QueryExpression("mcicaps_evaluationresults")
+            var query = new QueryExpression(Prefixed("evaluationresults"))
             {
                 ColumnSet = new ColumnSet(
-                    "mcicaps_evaluationresultsid",
-                    "mcicaps_evaluation",
-                    "mcicaps_testcase",
-                    "mcicaps_evaluatortypeid",
-                    "mcicaps_isaggregate",
+                    Prefixed("evaluationresultsid"),
+                    Prefixed("evaluation"),
+                    Prefixed("testcase"),
+                    Prefixed("evaluatortypeid"),
+                    Prefixed("isaggregate"),
                     "statuscode"
                 ),
-                Criteria = new FilterExpression(LogicalOperator.And)
+                Criteria = new FilterExpression(LogicalOperator.And),
+                PageInfo = new PagingInfo { Count = 1000, PageNumber = 1 }
             };
 
             // Filter: IsAggregate = true AND StatusCode = Pending (1)
-            query.Criteria.AddCondition("mcicaps_isaggregate", ConditionOperator.Equal, true);
+            query.Criteria.AddCondition(Prefixed("isaggregate"), ConditionOperator.Equal, true);
             query.Criteria.AddCondition("statuscode", ConditionOperator.Equal, EvaluationResultStatus.Pending);
 
-            var results = await _serviceClient.RetrieveMultipleAsync(query, cancellationToken);
+            var allResults = await RetrieveAllPagesAsync(query, cancellationToken);
             
             _logger.LogInformation(
                 "Found {Count} pending aggregate results",
-                results.Entities.Count);
+                allResults.Count);
 
-            return results.Entities.Select(entity => new EvaluationResult
+            return allResults.Select(entity => new EvaluationResult
             {
-                Id = entity.GetAttributeValue<Guid>("mcicaps_evaluationresultsid"),
-                EvaluationRunId = entity.GetAttributeValue<EntityReference>("mcicaps_evaluation")?.Id ?? Guid.Empty,
-                TestCaseId = entity.GetAttributeValue<EntityReference>("mcicaps_testcase")?.Id ?? Guid.Empty,
-                EvaluatorTypeId = entity.GetAttributeValue<EntityReference>("mcicaps_evaluatortypeid")?.Id,
-                IsAggregate = entity.GetAttributeValue<bool>("mcicaps_isaggregate"),
+                Id = entity.GetAttributeValue<Guid>(Prefixed("evaluationresultsid")),
+                EvaluationRunId = entity.GetAttributeValue<EntityReference>(Prefixed("evaluation"))?.Id ?? Guid.Empty,
+                TestCaseId = entity.GetAttributeValue<EntityReference>(Prefixed("testcase"))?.Id ?? Guid.Empty,
+                EvaluatorTypeId = entity.GetAttributeValue<EntityReference>(Prefixed("evaluatortypeid"))?.Id,
+                IsAggregate = entity.GetAttributeValue<bool>(Prefixed("isaggregate")),
                 StatusCode = entity.GetAttributeValue<OptionSetValue>("statuscode")?.Value ?? 1
             }).ToList();
         }
@@ -1782,41 +1725,42 @@ public class DataverseService : IDataverseService, IDisposable
                 "Querying turn results: TestCase={TestCaseId}, Run={RunId}, Evaluator={EvaluatorId}",
                 testCaseId, evaluationRunId, evaluatorTypeId);
             
-            var query = new QueryExpression("mcicaps_evaluationresults")
+            var query = new QueryExpression(Prefixed("evaluationresults"))
             {
                 ColumnSet = new ColumnSet(
-                    "mcicaps_evaluationresultsid",
-                    "mcicaps_score",
-                    "mcicaps_passed",
-                    "mcicaps_executiontime",
-                    "mcicaps_errormessage",
-                    "mcicaps_isaggregate",
+                    Prefixed("evaluationresultsid"),
+                    Prefixed("score"),
+                    Prefixed("passed"),
+                    Prefixed("executiontime"),
+                    Prefixed("errormessage"),
+                    Prefixed("isaggregate"),
                     "statuscode"
                 ),
-                Criteria = new FilterExpression(LogicalOperator.And)
+                Criteria = new FilterExpression(LogicalOperator.And),
+                PageInfo = new PagingInfo { Count = 1000, PageNumber = 1 }
             };
 
             // Filter: TestCaseId AND EvaluationRunId AND EvaluatorTypeId AND IsAggregate = false
             // For lookup fields, use the relationship name directly
-            query.Criteria.AddCondition("mcicaps_testcase", ConditionOperator.Equal, testCaseId);
-            query.Criteria.AddCondition("mcicaps_evaluation", ConditionOperator.Equal, evaluationRunId);
-            query.Criteria.AddCondition("mcicaps_evaluatortypeid", ConditionOperator.Equal, evaluatorTypeId);
-            query.Criteria.AddCondition("mcicaps_isaggregate", ConditionOperator.Equal, false);
+            query.Criteria.AddCondition(Prefixed("testcase"), ConditionOperator.Equal, testCaseId);
+            query.Criteria.AddCondition(Prefixed("evaluation"), ConditionOperator.Equal, evaluationRunId);
+            query.Criteria.AddCondition(Prefixed("evaluatortypeid"), ConditionOperator.Equal, evaluatorTypeId);
+            query.Criteria.AddCondition(Prefixed("isaggregate"), ConditionOperator.Equal, false);
 
-            var results = await _serviceClient.RetrieveMultipleAsync(query, cancellationToken);
+            var allResults = await RetrieveAllPagesAsync(query, cancellationToken);
             
             _logger.LogInformation(
                 "Found {Count} turn results for test case {TestCaseId}, run {RunId}, evaluator {EvaluatorId}",
-                results.Entities.Count, testCaseId, evaluationRunId, evaluatorTypeId);
+                allResults.Count, testCaseId, evaluationRunId, evaluatorTypeId);
 
-            return results.Entities.Select(entity => new EvaluationResult
+            return allResults.Select(entity => new EvaluationResult
             {
-                Id = entity.GetAttributeValue<Guid>("mcicaps_evaluationresultsid"),
-                Score = entity.Contains("mcicaps_score") ? (decimal)entity.GetAttributeValue<double>("mcicaps_score") : (decimal?)null,
-                Passed = entity.Contains("mcicaps_passed") ? entity.GetAttributeValue<bool>("mcicaps_passed") : (bool?)null,
-                ExecutionTimeMs = entity.Contains("mcicaps_executiontime") ? entity.GetAttributeValue<int>("mcicaps_executiontime") : (int?)null,
-                ErrorMessage = entity.Contains("mcicaps_errormessage") ? entity.GetAttributeValue<string>("mcicaps_errormessage") : null,
-                IsAggregate = entity.GetAttributeValue<bool>("mcicaps_isaggregate"),
+                Id = entity.GetAttributeValue<Guid>(Prefixed("evaluationresultsid")),
+                Score = entity.Contains(Prefixed("score")) ? (decimal)entity.GetAttributeValue<double>(Prefixed("score")) : (decimal?)null,
+                Passed = entity.Contains(Prefixed("passed")) ? entity.GetAttributeValue<bool>(Prefixed("passed")) : (bool?)null,
+                ExecutionTimeMs = entity.Contains(Prefixed("executiontime")) ? entity.GetAttributeValue<int>(Prefixed("executiontime")) : (int?)null,
+                ErrorMessage = entity.Contains(Prefixed("errormessage")) ? entity.GetAttributeValue<string>(Prefixed("errormessage")) : null,
+                IsAggregate = entity.GetAttributeValue<bool>(Prefixed("isaggregate")),
                 StatusCode = entity.GetAttributeValue<OptionSetValue>("statuscode")?.Value ?? 1
             }).ToList();
         }

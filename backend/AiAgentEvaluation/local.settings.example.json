@@ -45,6 +45,10 @@
     "_README5": "=== APPLICATION CONFIGURATION ===",
     "DefaultEvaluationTimeoutMinutes": "5",
     "PromptTemplateContainerName": "evaluation-prompts",
+    "_Evaluation__MaxRunningTimeMinutes": "120",
+    "_Evaluation__StalePendingThresholdMinutes": "60",
+    "_README5A": "StalePendingThresholdMinutes: Detects stalled runs with no progress for this duration (default: 60 minutes)",
+    "_README5B": "Note: Monitors LastProgressUpdate on evaluation run to avoid false positives during legitimate queue delays",
     "_AzureOpenAI__MaxRetryAttempts": "5",
     "_AzureOpenAI__TimeoutSeconds": "60",
     

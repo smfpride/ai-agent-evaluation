@@ -27,7 +27,16 @@ public interface IDataverseService
     Task<AgentToEval?> GetAgentToEvalAsync(Guid agentToEvalId, CancellationToken cancellationToken = default);
     Task<bool> CheckHealthAsync(CancellationToken cancellationToken = default);
     Task<List<TestCaseTurn>> GetTestCaseTurnsAsync(Guid testCaseId, CancellationToken cancellationToken = default);
-    Task<Guid> CreateAggregateEvaluationResultAsync(MultiTurnExecutionContext context, CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Batch-fetches all turns for test cases in a test set in a single optimized query
+    /// Returns a dictionary mapping testCaseId to its list of turns
+    /// Used by orchestrator to avoid N+1 query problem when processing multi-turn test cases
+    /// Uses a join to testcases table instead of IN operator to handle large test sets
+    /// </summary>
+    Task<Dictionary<Guid, List<TestCaseTurn>>> GetAllTurnsForTestCasesAsync(
+        Guid testSetId, 
+        CancellationToken cancellationToken = default);
     
     /// <summary>
     /// Gets the aggregate result for a test case in an evaluation run

@@ -102,8 +102,9 @@ public class PerformanceTests
         Assert.True(stopwatch.ElapsedMilliseconds < 30000, 
             $"Orchestrator took {stopwatch.ElapsedMilliseconds}ms, expected < 30000ms");
         
-        // Verify all messages were queued (50K test cases, 1 message each with 1 evaluator)
-        _mockServiceBusService.Verify(x => x.SendAgentCallMessageAsync(It.IsAny<AgentCallMessage>(), It.IsAny<CancellationToken>()), Times.Exactly(50000));
+        // Verify orchestration message sent (async background processing)
+        _mockServiceBusService.Verify(x => x.SendOrchestrationMessageAsync(
+            It.Is<StartOrchestrationMessage>(m => m.EvaluationRunId == evaluationRunId), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     #endregion
@@ -178,10 +179,10 @@ public class PerformanceTests
         Assert.True(stopwatch.ElapsedMilliseconds < 60000, 
             "Concurrent runs took too long, possible contention");
         
-        // Verify Service Bus was called correctly (10 runs × 5,000 test cases per run = 50,000 messages)
-        _mockServiceBusService.Verify(x => x.SendAgentCallMessageAsync(
-            It.IsAny<AgentCallMessage>(), 
-            It.IsAny<CancellationToken>()), Times.Exactly(50000));
+        // Verify orchestration messages sent (10 runs = 10 orchestration messages for async background processing)
+        _mockServiceBusService.Verify(x => x.SendOrchestrationMessageAsync(
+            It.IsAny<StartOrchestrationMessage>(), 
+            It.IsAny<CancellationToken>()), Times.Exactly(10));
     }
 
     #endregion

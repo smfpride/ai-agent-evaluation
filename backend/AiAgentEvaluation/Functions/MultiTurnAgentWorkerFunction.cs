@@ -110,7 +110,7 @@ public class MultiTurnAgentWorkerFunction
                     copilotResponse.ErrorMessage);
 
                 // Retry logic with exponential backoff
-                if (message.RetryCount < (_settings.AzureOpenAI?.MaxRetryAttempts ?? 3))
+                if (message.RetryCount < (_settings.Evaluation?.MaxRetryAttempts ?? 3))
                 {
                     var nextRetryCount = message.RetryCount + 1;
                     var retryDelaySeconds = (_settings.Evaluation?.RetryDelaySeconds ?? 30) * nextRetryCount;
@@ -122,7 +122,7 @@ public class MultiTurnAgentWorkerFunction
                         message.TestCaseId,
                         retryDelaySeconds,
                         nextRetryCount,
-                        _settings.AzureOpenAI?.MaxRetryAttempts ?? 3);
+                        _settings.Evaluation?.MaxRetryAttempts ?? 3);
 
                     // Re-queue with incremented retry count and scheduled time
                     var retryMessage = new MultiTurnAgentCallMessage
@@ -248,38 +248,11 @@ public class MultiTurnAgentWorkerFunction
             await Task.WhenAll(evaluatorJobsTasks);
 
             // Queue next turn if not last turn
-            if (message.TurnSequence < message.TotalTurns)
-            {
-                var nextTurnMessage = new MultiTurnAgentCallMessage
-                {
-                    EvaluationRunId = message.EvaluationRunId,
-                    TestCaseId = message.TestCaseId,
-                    EvaluatorTypeIds = message.EvaluatorTypeIds,
-                    TurnSequence = message.TurnSequence + 1,
-                    TotalTurns = message.TotalTurns,
-                    DirectLineUrl = message.DirectLineUrl,
-                    ConversationId = copilotResponse.ConversationId, // Pass conversation context
-                    DirectLineToken = copilotResponse.DirectLineToken ?? message.DirectLineToken, // Preserve token
-                    PassingThreshold = message.PassingThreshold,
-                    RetryCount = 0 // Reset retry count for next turn
-                };
-
-                await _serviceBusService.SendMultiTurnAgentCallMessageAsync(nextTurnMessage, cancellationToken);
-
-                _logger.LogInformation(
-                    "Queued next turn {NextTurn}/{TotalTurns} for test case {TestCaseId}",
-                    message.TurnSequence + 1,
-                    message.TotalTurns,
-                    message.TestCaseId);
-            }
-            else
-            {
-                _logger.LogInformation(
-                    "Completed last turn {TurnSequence}/{TotalTurns} for test case {TestCaseId}",
-                    message.TurnSequence,
-                    message.TotalTurns,
-                    message.TestCaseId);
-            }
+            await QueueNextTurnIfNeeded(
+                message, 
+                copilotResponse.ConversationId, 
+                copilotResponse.DirectLineToken ?? message.DirectLineToken,
+                cancellationToken);
 
             stopwatch.Stop();
             _logger.LogInformation(
@@ -309,25 +282,31 @@ public class MultiTurnAgentWorkerFunction
     }
 
     /// <summary>
-    /// Handles multi-turn agent call errors by creating error results for all evaluators for this turn
-    /// Does NOT queue next turn when error occurs
+    /// Handles multi-turn agent call errors by creating error results for the CURRENT turn only
+    /// and queueing the NEXT turn to allow subsequent turns to proceed normally
     /// </summary>
     private async Task HandleMultiTurnAgentCallError(MultiTurnAgentCallMessage message, string errorMessage, CancellationToken cancellationToken)
     {
         try
         {
             _logger.LogError(
-                "Handling multi-turn agent call error for test case {TestCaseId}, turn {TurnSequence}: {ErrorMessage}",
+                "Handling multi-turn agent call error for test case {TestCaseId}, turn {TurnSequence}/{TotalTurns}: {ErrorMessage}",
                 message.TestCaseId,
                 message.TurnSequence,
+                message.TotalTurns,
                 errorMessage);
 
-            // Get the turn details to get the turn ID
+            // Get the current turn details
             var turns = await _dataverseService.GetTestCaseTurnsAsync(message.TestCaseId, cancellationToken);
             var currentTurn = turns.FirstOrDefault(t => t.Sequence == message.TurnSequence);
             var turnId = currentTurn?.Id;
 
-            // Create error results for ALL evaluators (since agent call failed, all evaluations fail)
+            _logger.LogInformation(
+                "Creating error results for turn {TurnSequence} with {EvaluatorCount} evaluators",
+                message.TurnSequence,
+                message.EvaluatorTypeIds.Count);
+
+            // Create error results for ALL evaluators for ONLY the current turn
             var errorResultTasks = message.EvaluatorTypeIds.Select(async evaluatorTypeId =>
             {
                 try
@@ -364,9 +343,17 @@ public class MultiTurnAgentWorkerFunction
             await Task.WhenAll(errorResultTasks);
 
             _logger.LogInformation(
-                "Created error results for {Count} evaluators for turn {TurnSequence}. Next turn will NOT be queued.",
+                "Created {Count} error results for turn {TurnSequence}",
                 message.EvaluatorTypeIds.Count,
                 message.TurnSequence);
+
+            // Queue next turn if not last turn - allow subsequent turns to proceed (conversation reset)
+            await QueueNextTurnIfNeeded(
+                message,
+                conversationId: null,  // Reset conversation - cannot continue with broken conversation
+                directLineToken: null, // Reset token
+                cancellationToken,
+                "conversation reset due to error");
         }
         catch (Exception ex)
         {
@@ -375,6 +362,59 @@ public class MultiTurnAgentWorkerFunction
                 "Error handling multi-turn agent call error for test case {TestCaseId}, turn {TurnSequence}",
                 message.TestCaseId,
                 message.TurnSequence);
+        }
+    }
+
+    /// <summary>
+    /// Queues the next turn if the current turn is not the last turn
+    /// </summary>
+    /// <param name="message">Current turn message</param>
+    /// <param name="conversationId">Conversation ID to pass to next turn (null to reset)</param>
+    /// <param name="directLineToken">Direct Line token to pass to next turn (null to reset)</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <param name="additionalContext">Additional context to include in log message (optional)</param>
+    private async Task QueueNextTurnIfNeeded(
+        MultiTurnAgentCallMessage message,
+        string? conversationId,
+        string? directLineToken,
+        CancellationToken cancellationToken,
+        string? additionalContext = null)
+    {
+        if (message.TurnSequence < message.TotalTurns)
+        {
+            var nextTurnMessage = new MultiTurnAgentCallMessage
+            {
+                EvaluationRunId = message.EvaluationRunId,
+                TestCaseId = message.TestCaseId,
+                EvaluatorTypeIds = message.EvaluatorTypeIds,
+                TurnSequence = message.TurnSequence + 1,
+                TotalTurns = message.TotalTurns,
+                DirectLineUrl = message.DirectLineUrl,
+                ConversationId = conversationId,
+                DirectLineToken = directLineToken,
+                PassingThreshold = message.PassingThreshold,
+                RetryCount = 0 // Reset retry count for next turn
+            };
+
+            await _serviceBusService.SendMultiTurnAgentCallMessageAsync(nextTurnMessage, cancellationToken);
+
+            var contextSuffix = string.IsNullOrEmpty(additionalContext) ? "" : $" ({additionalContext})";
+            _logger.LogInformation(
+                "Queued next turn {NextTurn}/{TotalTurns} for test case {TestCaseId}{Context}",
+                message.TurnSequence + 1,
+                message.TotalTurns,
+                message.TestCaseId,
+                contextSuffix);
+        }
+        else
+        {
+            var contextSuffix = string.IsNullOrEmpty(additionalContext) ? "" : $" ({additionalContext})";
+            _logger.LogInformation(
+                "Completed last turn {TurnSequence}/{TotalTurns} for test case {TestCaseId}{Context}",
+                message.TurnSequence,
+                message.TotalTurns,
+                message.TestCaseId,
+                contextSuffix);
         }
     }
 }

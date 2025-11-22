@@ -21,7 +21,7 @@ public class ResilientService
             logger,
             maxRetries: appSettings.Evaluation.MaxRetryAttempts,
             baseDelay: TimeSpan.FromSeconds(appSettings.Evaluation.RetryDelaySeconds),
-            maxDelay: TimeSpan.FromMinutes(5),
+            maxDelay: TimeSpan.FromSeconds(appSettings.Evaluation.MaxRetryAttempts * appSettings.Evaluation.RetryDelaySeconds),
             useJitter: true
         );
 

@@ -36,7 +36,7 @@ public class EvaluatorWorkerFunction
         _llmJudgeServiceFactory = llmJudgeServiceFactory;
         _serviceBusService = serviceBusService;
         _settings = settings.Value;
-        _maxRetryCount = _settings.AzureOpenAI?.MaxRetryAttempts ?? 3; // Default to 3 if not configured
+        _maxRetryCount = _settings.Evaluation?.MaxRetryAttempts ?? 3; // Default to 3 if not configured
     }
 
     [Function("ProcessEvaluatorJob")]

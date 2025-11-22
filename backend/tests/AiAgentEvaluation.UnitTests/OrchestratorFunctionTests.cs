@@ -92,21 +92,14 @@ public class OrchestratorFunctionTests
         // Assert
         Assert.Equal(HttpStatusCode.Accepted, result.StatusCode);
         
-        // Verify status updated to Running
-        _mockDataverseService.Verify(x => x.UpdateEvaluationRunStatusAsync(
-            evaluationRunId, EvaluationRunStatus.Running, It.IsAny<CancellationToken>()), Times.Once);
+        // Verify orchestration message queued (async architecture - no synchronous Dataverse updates in StartEvaluationRun)
+        _mockServiceBusService.Verify(x => x.SendOrchestrationMessageAsync(
+            It.Is<StartOrchestrationMessage>(m => m.EvaluationRunId == evaluationRunId),
+            It.IsAny<CancellationToken>()), Times.Once);
         
-        // Verify start time set
-        _mockDataverseService.Verify(x => x.SetEvaluationRunStartTimeAsync(
-            evaluationRunId, It.IsAny<DateTime>(), It.IsAny<CancellationToken>()), Times.Once);
-        
-        // Verify total test cases initialized (NEW) - 2 test cases × 1 evaluator = 2 units
-        _mockDataverseService.Verify(x => x.SetEvaluationRunTotalTestCasesAsync(
-            evaluationRunId, 2, It.IsAny<CancellationToken>()), Times.Once);
-        
-        // Verify messages sent to Service Bus (1 message per test case with all evaluator IDs)
-        _mockServiceBusService.Verify(x => x.SendAgentCallMessageAsync(
-            It.IsAny<AgentCallMessage>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
+        // Verify orchestration message sent to Service Bus (async background processing)
+        _mockServiceBusService.Verify(x => x.SendOrchestrationMessageAsync(
+            It.Is<StartOrchestrationMessage>(m => m.EvaluationRunId == evaluationRunId), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     #endregion
@@ -158,13 +151,9 @@ public class OrchestratorFunctionTests
         // Assert
         Assert.Equal(HttpStatusCode.Accepted, result.StatusCode);
         
-        // Verify total test cases set to 50000 (NEW) - 50K test cases × 1 evaluator = 50K units
-        _mockDataverseService.Verify(x => x.SetEvaluationRunTotalTestCasesAsync(
-            evaluationRunId, 50000, It.IsAny<CancellationToken>()), Times.Once);
-        
-        // Verify all 50K messages sent (1 per test case)
-        _mockServiceBusService.Verify(x => x.SendAgentCallMessageAsync(
-            It.IsAny<AgentCallMessage>(), It.IsAny<CancellationToken>()), Times.Exactly(50000));
+        // Verify orchestration message queued (async architecture - OrchestrationProcessor will handle test case counting)
+        _mockServiceBusService.Verify(x => x.SendOrchestrationMessageAsync(
+            It.Is<StartOrchestrationMessage>(m => m.EvaluationRunId == evaluationRunId), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     #endregion
@@ -195,8 +184,8 @@ public class OrchestratorFunctionTests
         // Verify no status updates or messages sent
         _mockDataverseService.Verify(x => x.UpdateEvaluationRunStatusAsync(
             It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
-        _mockServiceBusService.Verify(x => x.SendAgentCallMessageAsync(
-            It.IsAny<AgentCallMessage>(), It.IsAny<CancellationToken>()), Times.Never);
+        _mockServiceBusService.Verify(x => x.SendOrchestrationMessageAsync(
+            It.IsAny<StartOrchestrationMessage>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     #endregion
@@ -265,19 +254,21 @@ public class OrchestratorFunctionTests
 
         var httpRequestData = CreateMockHttpRequestData(request);
 
+        // Setup agent and evaluator types to allow orchestration
+        _mockDataverseService.Setup(x => x.GetAgentToEvalAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AgentToEval { Id = Guid.NewGuid(), DirectLineSpeechUrl = "https://test.com" });
+        _mockDataverseService.Setup(x => x.GetEvaluatorTypesForRunAsync(evaluationRunId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<EvaluatorType> { new() { Id = Guid.NewGuid() } });
+
         // Act
         var result = await _orchestratorFunction.StartEvaluationRun(httpRequestData, CancellationToken.None);
 
-        // Assert
-        Assert.Equal(HttpStatusCode.BadRequest, result.StatusCode);
+        // Assert - Returns Accepted for async processing even with empty test cases
+        Assert.Equal(HttpStatusCode.Accepted, result.StatusCode);
         
-        // Verify run completed immediately
-        _mockDataverseService.Verify(x => x.UpdateEvaluationRunStatusAsync(
-            evaluationRunId, EvaluationRunStatus.Completed, It.IsAny<CancellationToken>()), Times.Once);
-        
-        // Verify no messages sent
-        _mockServiceBusService.Verify(x => x.SendAgentCallMessageAsync(
-            It.IsAny<AgentCallMessage>(), It.IsAny<CancellationToken>()), Times.Never);
+        // Verify orchestration message queued (async architecture - OrchestrationProcessor will discover 0 test cases and complete)
+        _mockServiceBusService.Verify(x => x.SendOrchestrationMessageAsync(
+            It.Is<StartOrchestrationMessage>(m => m.EvaluationRunId == evaluationRunId), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     #endregion
@@ -315,16 +306,16 @@ public class OrchestratorFunctionTests
             .ReturnsAsync(testCases);
         _mockDataverseService.Setup(x => x.GetEvaluatorTypesForRunAsync(evaluationRunId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<EvaluatorType> { new() { Id = Guid.NewGuid(), Name = "Similarity", RequiresExpectedResponse = false } });
-        _mockServiceBusService.Setup(x => x.SendAgentCallMessageAsync(
-            It.IsAny<AgentCallMessage>(), It.IsAny<CancellationToken>()))
+        _mockServiceBusService.Setup(x => x.SendOrchestrationMessageAsync(
+            It.IsAny<StartOrchestrationMessage>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("Service Bus unavailable"));
 
         var httpRequestData = CreateMockHttpRequestData(request);
 
         // Act
         var result = await _orchestratorFunction.StartEvaluationRun(httpRequestData, CancellationToken.None);
-
-        // Assert
+        
+        // Assert - StartEvaluationRun catches exceptions and returns HTTP 500 (not propagated)
         Assert.Equal(HttpStatusCode.InternalServerError, result.StatusCode);
     }
 

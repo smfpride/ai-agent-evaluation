@@ -67,11 +67,6 @@ public class CopilotStudioSettings
     public int TimeoutSeconds { get; set; } = 60;
     
     /// <summary>
-    /// Maximum retry attempts for failed requests
-    /// </summary>
-    public int MaxRetryAttempts { get; set; } = 3;
-    
-    /// <summary>
     /// Maximum time to wait for bot response in seconds (polling timeout)
     /// </summary>
     public int BotResponseTimeoutSeconds { get; set; } = 60;
@@ -122,8 +117,6 @@ public class AzureOpenAISettings
     public string ApiVersion { get; set; } = "2024-02-01";
     public int MaxTokens { get; set; } = 4000;
     public double Temperature { get; set; } = 0.0;
-    public int TimeoutSeconds { get; set; } = 60;
-    public int MaxRetryAttempts { get; set; } = 5; // Increased from 3 to 5 for better rate limit handling
 }
 
 public class ServiceBusSettings
@@ -156,4 +149,21 @@ public class EvaluationSettings
     public bool EnableDetailedLogging { get; set; } = true;
     public double MinScore { get; set; } = 0.0;
     public double MaxScore { get; set; } = 10.0;
+    
+    /// <summary>
+    /// Maximum runtime for an evaluation run in minutes before marking as errored
+    /// Default: 120 minutes (2 hours)
+    /// Monitored by MonitorFunction timer trigger
+    /// Override via Azure app setting: Evaluation__MaxRunningTimeMinutes
+    /// </summary>
+    public int MaxRunningTimeMinutes { get; set; } = 120;
+    
+    /// <summary>
+    /// Threshold in minutes for detecting stalled evaluation runs (no progress)
+    /// If an evaluation run shows no progress (completed/failed/NA count unchanged) for this duration,
+    /// StalePendingResultRecoveryFunction will trigger recovery of stuck pending results
+    /// Default: 60 minutes
+    /// Override via Azure app setting: Evaluation__StalePendingThresholdMinutes
+    /// </summary>
+    public int StalePendingThresholdMinutes { get; set; } = 60;
 }
