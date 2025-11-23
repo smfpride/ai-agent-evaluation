@@ -14,8 +14,8 @@ public class BasicHealthFunction
     private readonly ILogger<BasicHealthFunction> _logger;
     
     // Build timestamp to track deployments - updated with each build
-    private static readonly string BuildTimestamp = "2025-11-22T02:00:00Z";
-    private static readonly string DeploymentVersion = "1.0.57"; // Dataverse IsMultiTurn field diagnostic logging
+    private static readonly string BuildTimestamp = "2025-11-23T07:45:00Z";
+    private static readonly string DeploymentVersion = "1.0.63"; // Fix circuit breaker tripping on user errors (PSA-1009)
 
     public BasicHealthFunction(ILogger<BasicHealthFunction> logger)
     {

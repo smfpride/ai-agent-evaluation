@@ -1,7 +1,5 @@
-backend/AiAgentEvaluation/deployment.zip
-backend/AiAgentEvaluation/publish.zip
-
-# Integration tests build artifacts
-backend/tests/AiAgentEvaluation.IntegrationTests/bin/
-backend/tests/AiAgentEvaluation.IntegrationTests/obj/
-backend/AiAgentEvaluation/deploy.zip
+bin
+obj
+deploy.zip
+deployment.zip
+publish.zip

@@ -244,7 +244,35 @@ public class CopilotStudioService : ICopilotStudioService, IDisposable
                     
                     if (isError)
                     {
-                        _logger.LogWarning("Copilot Studio returned an error response in conversation {ConversationId}: {ErrorMessage}. Response will be retried.", 
+                        // Check if this is a user error (4xx) or system error (5xx)
+                        bool isUserError = errorMessage != null && (
+                            errorMessage.Contains("PSA-1009") || // Unsupported intent
+                            errorMessage.Contains("PSA-1000") || // Bad request
+                            errorMessage.Contains("Status: 400") || // General 400 errors
+                            errorMessage.Contains("Status: 404")); // Not found
+                        
+                        if (isUserError)
+                        {
+                            // User errors should NOT be retried or trip circuit breaker
+                            // Return failure response so test is marked as failed, but don't throw
+                            _logger.LogWarning("Copilot Studio returned user error in conversation {ConversationId}: {ErrorMessage}. Marking as failed without retry.", 
+                                actualConversationId, errorMessage ?? "Unknown error");
+                            
+                            stopwatch.Stop();
+                            return new CopilotDirectLineResponse
+                            {
+                                ConversationId = actualConversationId,
+                                Response = formattedResponse ?? string.Empty,
+                                ExecutionTimeMs = (int)stopwatch.ElapsedMilliseconds,
+                                Success = false,
+                                ErrorMessage = errorMessage,
+                                RawActivityJson = rawActivityJson,
+                                DirectLineToken = actualDirectLineToken
+                            };
+                        }
+                        
+                        // System errors (5xx, timeouts, etc.) should be retried
+                        _logger.LogWarning("Copilot Studio returned system error in conversation {ConversationId}: {ErrorMessage}. Response will be retried.", 
                             actualConversationId, errorMessage ?? "Unknown error");
                         throw new InvalidOperationException($"Copilot Studio returned an error response in conversation {actualConversationId}: {errorMessage ?? "Unknown error"}");
                     }
@@ -349,12 +377,34 @@ public class CopilotStudioService : ICopilotStudioService, IDisposable
         
         var response = await _httpClient.SendAsync(request, cancellationToken);
         
-        // If we get 403 and we didn't use a conversation-specific token, try with a fresh token from Copilot Studio
-        if (response.StatusCode == System.Net.HttpStatusCode.Forbidden && string.IsNullOrEmpty(directLineToken))
+        // If we get 403 and we have a token, try refreshing it once
+        if (response.StatusCode == System.Net.HttpStatusCode.Forbidden && !string.IsNullOrEmpty(directLineToken))
         {
-            _logger.LogWarning("Got 403 Forbidden, refreshing token and retrying...");
-            request = await CreateAuthenticatedRequestAsync(HttpMethod.Post, directLineSpeechUrl, fullUrl, content, true, cancellationToken);
-            response = await _httpClient.SendAsync(request, cancellationToken);
+            _logger.LogWarning(
+                "Got 403 Forbidden for conversation {ConversationId} - attempting to refresh DirectLine token",
+                conversationId);
+            
+            try
+            {
+                // Try to refresh the token for the existing conversation
+                var refreshedToken = await RefreshConversationTokenAsync(directLineSpeechUrl, directLineBaseUrl, directLineToken, cancellationToken);
+                
+                // Retry with refreshed token
+                request = new HttpRequestMessage(HttpMethod.Post, fullUrl);
+                request.Headers.Add("Authorization", $"Bearer {refreshedToken}");
+                request.Content = content;
+                
+                response = await _httpClient.SendAsync(request, cancellationToken);
+                
+                if (response.IsSuccessStatusCode)
+                {
+                    _logger.LogInformation("Successfully sent activity after token refresh for conversation {ConversationId}", conversationId);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to refresh token for conversation {ConversationId}", conversationId);
+            }
         }
         
         response.EnsureSuccessStatusCode();
@@ -532,6 +582,46 @@ public class CopilotStudioService : ICopilotStudioService, IDisposable
             
             return (conversationResponse.ConversationId, token);
         }, "StartConversation",
+        exception => exception is HttpRequestException || exception is TaskCanceledException,
+        cancellationToken);
+    }
+
+    /// <summary>
+    /// Refreshes the Direct Line token for an existing conversation
+    /// This allows continuing the same conversation with a fresh token when the old one expires
+    /// </summary>
+    private async Task<string> RefreshConversationTokenAsync(string directLineSpeechUrl, string directLineBaseUrl, string expiredToken, CancellationToken cancellationToken = default)
+    {
+        return await _resilientService.ExecuteAsync(async (ct) =>
+        {
+            _logger.LogInformation("Refreshing DirectLine token for existing conversation");
+            
+            var fullUrl = $"{directLineBaseUrl}/v3/directline/tokens/refresh";
+            var request = new HttpRequestMessage(HttpMethod.Post, fullUrl);
+            request.Headers.Add("Authorization", $"Bearer {expiredToken}");
+            
+            var response = await _httpClient.SendAsync(request, ct);
+            
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Token refresh failed with status {StatusCode}, will get fresh token from Copilot Studio", 
+                    response.StatusCode);
+                // Fall back to getting a new token from Copilot Studio API
+                return await GetValidTokenAsync(directLineSpeechUrl, true, ct);
+            }
+            
+            var content = await response.Content.ReadAsStringAsync(ct);
+            var tokenResponse = JsonSerializer.Deserialize<DirectLineConversationResponse>(content, _jsonOptions);
+            
+            if (string.IsNullOrEmpty(tokenResponse?.Token))
+            {
+                _logger.LogWarning("Token refresh returned empty token, will get fresh token from Copilot Studio");
+                return await GetValidTokenAsync(directLineSpeechUrl, true, ct);
+            }
+            
+            _logger.LogInformation("Successfully refreshed DirectLine token");
+            return tokenResponse.Token;
+        }, "RefreshToken",
         exception => exception is HttpRequestException || exception is TaskCanceledException,
         cancellationToken);
     }

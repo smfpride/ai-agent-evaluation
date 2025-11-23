@@ -46,23 +46,41 @@ public class AggregateEvaluationProcessorFunction
                 return;
             }
 
-            _logger.LogInformation("Found {Count} pending aggregate results - processing...", pendingAggregates.Count);
+            // CRITICAL: Process only first 20 aggregates per run to avoid timeout with large result sets
+            // With 30 sec timeout per aggregate and 5 parallel, this ensures we complete in ~2 minutes
+            // Function runs every 30 seconds, so it will catch up over multiple runs
+            var batchSize = 20;
+            var batch = pendingAggregates.Take(batchSize).ToList();
             
-            foreach (var agg in pendingAggregates)
-            {
-                _logger.LogInformation("  - Aggregate {ResultId}: TestCase={TestCaseId}, Run={RunId}, Evaluator={EvaluatorId}",
-                    agg.Id, agg.TestCaseId, agg.EvaluationRunId, agg.EvaluatorTypeId);
-            }
+            _logger.LogInformation(
+                "Processing batch of {BatchSize} aggregates out of {TotalCount} pending",
+                batch.Count, pendingAggregates.Count);
 
-            // Process aggregates in parallel for better performance
+            // Process aggregates in parallel for better performance (limit to 5 concurrent to reduce load)
+            var parallelOptions = new ParallelOptions
+            {
+                MaxDegreeOfParallelism = 5,
+                CancellationToken = cancellationToken
+            };
+            
             await Parallel.ForEachAsync(
-                pendingAggregates,
-                cancellationToken,
+                batch,
+                parallelOptions,
                 async (aggregate, ct) =>
                 {
                     try
                     {
-                        await ProcessSingleAggregate(aggregate, ct);
+                        // Add per-aggregate timeout to prevent one slow query from blocking everything
+                        using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
+                        
+                        await ProcessSingleAggregate(aggregate, linkedCts.Token);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        _logger.LogWarning(
+                            "Aggregate {ResultId} processing timed out after 30 seconds - skipping",
+                            aggregate.Id);
                     }
                     catch (Exception ex)
                     {
@@ -71,6 +89,10 @@ public class AggregateEvaluationProcessorFunction
                             aggregate.Id, aggregate.TestCaseId);
                     }
                 });
+                
+            _logger.LogInformation(
+                "Completed processing batch - {BatchSize} processed, {Remaining} still pending",
+                batch.Count, pendingAggregates.Count - batch.Count);
         }
         catch (Exception ex)
         {
@@ -90,6 +112,50 @@ public class AggregateEvaluationProcessorFunction
             _logger.LogWarning(
                 "Aggregate {ResultId} missing required fields: TestCaseId={TestCaseId}, EvaluatorTypeId={EvaluatorTypeId}",
                 aggregate.Id, aggregate.TestCaseId, aggregate.EvaluatorTypeId);
+            return;
+        }
+
+        // CRITICAL: Check if the evaluation run is still active
+        // If the run has completed/errored/stopped, mark orphaned aggregates as NotApplicable
+        // This prevents 2000+ pending aggregates from clogging the queue when runs fail
+        var evaluationRun = await _dataverseService.GetEvaluationRunAsync(
+            aggregate.EvaluationRunId,
+            cancellationToken);
+        
+        if (evaluationRun == null)
+        {
+            _logger.LogWarning(
+                "Evaluation run {RunId} not found for aggregate {ResultId} - marking as NotApplicable",
+                aggregate.EvaluationRunId, aggregate.Id);
+            
+            await _dataverseService.UpdateEvaluationResultAsync(
+                aggregate.Id,
+                new UpdateEvaluationResultRequest
+                {
+                    StatusCode = EvaluationResultStatus.NotApplicable,
+                    ErrorMessage = "Evaluation run not found",
+                    Reasoning = "Orphaned aggregate - parent run no longer exists"
+                },
+                cancellationToken);
+            return;
+        }
+
+        // Check if run is in a terminal state (not Running)
+        if (evaluationRun.StatusCode != EvaluationRunStatus.Running)
+        {
+            _logger.LogInformation(
+                "Evaluation run {RunId} is in terminal state {Status} - marking aggregate {ResultId} as NotApplicable",
+                aggregate.EvaluationRunId, evaluationRun.StatusCode, aggregate.Id);
+            
+            await _dataverseService.UpdateEvaluationResultAsync(
+                aggregate.Id,
+                new UpdateEvaluationResultRequest
+                {
+                    StatusCode = EvaluationResultStatus.NotApplicable,
+                    ErrorMessage = $"Evaluation run ended in state: {evaluationRun.StatusCode}",
+                    Reasoning = $"Orphaned aggregate - parent run stopped in state {evaluationRun.StatusCode} before aggregate could complete"
+                },
+                cancellationToken);
             return;
         }
 
@@ -193,11 +259,11 @@ public class AggregateEvaluationProcessorFunction
             // Calculate average score from completed turns
             aggregateScore = completedTurns.Average(r => r.Score ?? 0m);
             
-            // Get passing threshold from evaluation run
-            var evaluationRun = await _dataverseService.GetEvaluationRunAsync(
+            // Get passing threshold from evaluation run (already fetched earlier, but fetch again for latest data)
+            var runForThreshold = await _dataverseService.GetEvaluationRunAsync(
                 aggregate.EvaluationRunId,
                 cancellationToken);
-            var passingThreshold = evaluationRun?.PassingThreshold ?? 0.7m;
+            var passingThreshold = runForThreshold?.PassingThreshold ?? 0.7m;
             
             aggregatePassed = aggregateScore >= passingThreshold;
             statusCode = EvaluationResultStatus.Completed;

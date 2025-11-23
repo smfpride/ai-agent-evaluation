@@ -16,10 +16,12 @@ public class DataverseService : IDataverseService, IDisposable
 {
     private readonly ILogger<DataverseService> _logger;
     private readonly AppSettings _settings;
-    private readonly ServiceClient? _serviceClient;
+    private ServiceClient? _serviceClient;
     private readonly ResilientService _resilientService;
-    private readonly string? _connectionError;
+    private string? _connectionError;
     private bool _disposed;
+    private DateTime _lastConnectionAttempt = DateTime.MinValue;
+    private readonly object _connectionLock = new object();
 
     /// <summary>
     /// Helper method to add configured schema prefix to Dataverse logical names (tables, fields, etc.)
@@ -143,13 +145,86 @@ public class DataverseService : IDataverseService, IDisposable
     }
 
     /// <summary>
-    /// Validates that the service client is ready, throwing an exception if not
+    /// Validates that the service client is ready, attempting reconnection if necessary
     /// </summary>
     private void EnsureClientReady()
     {
-        if (_serviceClient == null || !_serviceClient.IsReady)
+        // If client is ready, we're good
+        if (_serviceClient != null && _serviceClient.IsReady)
+        {
+            return;
+        }
+
+        // If no connection string configured, fail permanently
+        if (string.IsNullOrWhiteSpace(_settings.Dataverse.ConnectionString))
         {
             throw new InvalidOperationException($"Dataverse service client is not ready. Connection error: {_connectionError}");
+        }
+
+        // Attempt reconnection (with throttling - max once per 30 seconds)
+        lock (_connectionLock)
+        {
+            // Double-check after acquiring lock
+            if (_serviceClient != null && _serviceClient.IsReady)
+            {
+                return;
+            }
+
+            // Throttle reconnection attempts to prevent overwhelming the service
+            var timeSinceLastAttempt = DateTime.UtcNow - _lastConnectionAttempt;
+            if (timeSinceLastAttempt.TotalSeconds < 30)
+            {
+                throw new InvalidOperationException($"Dataverse service client is not ready. Last connection attempt was {timeSinceLastAttempt.TotalSeconds:F0}s ago. Connection error: {_connectionError}");
+            }
+
+            _lastConnectionAttempt = DateTime.UtcNow;
+            _logger.LogWarning("Attempting to reconnect to Dataverse after connection failure. Last error: {Error}", _connectionError);
+
+            try
+            {
+                // Dispose old client if exists
+                if (_serviceClient != null)
+                {
+                    _serviceClient.Dispose();
+                    _serviceClient = null;
+                }
+
+                // Create new client
+                _serviceClient = new ServiceClient(_settings.Dataverse.ConnectionString);
+
+                if (!_serviceClient.IsReady)
+                {
+                    var detailedError = _serviceClient.LastError ?? "Unknown error";
+                    _connectionError = $"Failed to reconnect to Dataverse: {detailedError}";
+                    
+                    _logger.LogError("Dataverse reconnection failed. Error: {Error}, LastException: {LastException}", 
+                        detailedError, _serviceClient.LastException?.ToString() ?? "None");
+                    
+                    _serviceClient.Dispose();
+                    _serviceClient = null;
+                    
+                    throw new InvalidOperationException($"Dataverse service client is not ready. Connection error: {_connectionError}");
+                }
+
+                _logger.LogInformation("Successfully reconnected to Dataverse. Org: {OrgName}", 
+                    _serviceClient.ConnectedOrgFriendlyName);
+                
+                // Clear error on successful reconnection
+                _connectionError = null;
+            }
+            catch (Exception ex)
+            {
+                _connectionError = $"Error reconnecting to Dataverse: {ex.Message}";
+                _logger.LogError(ex, "Failed to reconnect to Dataverse");
+                
+                if (_serviceClient != null)
+                {
+                    _serviceClient.Dispose();
+                    _serviceClient = null;
+                }
+                
+                throw new InvalidOperationException($"Dataverse service client is not ready. Connection error: {_connectionError}", ex);
+            }
         }
     }
 
@@ -1678,7 +1753,7 @@ public class DataverseService : IDataverseService, IDisposable
                     "statuscode"
                 ),
                 Criteria = new FilterExpression(LogicalOperator.And),
-                PageInfo = new PagingInfo { Count = 1000, PageNumber = 1 }
+                PageInfo = new PagingInfo { Count = 500, PageNumber = 1 } // Limit page size to avoid timeout
             };
 
             // Filter: IsAggregate = true AND StatusCode = Pending (1)
