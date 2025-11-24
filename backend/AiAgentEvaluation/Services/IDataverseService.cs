@@ -19,6 +19,26 @@ public interface IDataverseService
     Task SetEvaluationRunEndTimeAsync(Guid evaluationRunId, DateTime endTime, CancellationToken cancellationToken = default);
     Task<List<EvaluationRun>> GetRunningEvaluationRunsAsync(CancellationToken cancellationToken = default);
     Task<List<EvaluationResult>> GetEvaluationResultsAsync(Guid evaluationRunId, CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Efficiently gets evaluation result counts without loading all records into memory.
+    /// Uses aggregate queries to count directly in Dataverse.
+    /// Returns (completedCount, failedCount, notApplicableCount)
+    /// </summary>
+    Task<(int completedCount, int failedCount, int notApplicableCount)> GetEvaluationResultCountsAsync(
+        Guid evaluationRunId, 
+        CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Efficiently gets count of evaluation results for a specific status code.
+    /// Only counts test-case level results (excludes individual turn results).
+    /// Uses aggregate query to count directly in Dataverse without loading records into memory.
+    /// </summary>
+    Task<int> GetEvaluationResultCountAsync(
+        Guid evaluationRunId,
+        int statusCode,
+        CancellationToken cancellationToken = default);
+    
     Task UpdateEvaluationRunCompletionAsync(Guid evaluationRunId, int statusCode, decimal? overallScore, bool? overallPass, DateTime endTime, CancellationToken cancellationToken = default);
     Task IncrementCompletedTestCasesAsync(Guid evaluationRunId, bool failed, CancellationToken cancellationToken = default);
     Task<EvaluatorType?> GetEvaluatorTypeAsync(Guid evaluatorTypeId, CancellationToken cancellationToken = default);

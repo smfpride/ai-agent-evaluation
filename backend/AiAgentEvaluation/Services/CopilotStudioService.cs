@@ -247,7 +247,8 @@ public class CopilotStudioService : ICopilotStudioService, IDisposable
                         // Check if this is a user error (4xx) or system error (5xx)
                         bool isUserError = errorMessage != null && (
                             errorMessage.Contains("PSA-1009") || // Unsupported intent
-                            errorMessage.Contains("PSA-1000") || // Bad request
+                            errorMessage.Contains("PSA-1010") || // Content was filtered due to policy violations
+                            errorMessage.Contains("PSA-1011") || // Content was filtered due to policy violations
                             errorMessage.Contains("Status: 400") || // General 400 errors
                             errorMessage.Contains("Status: 404")); // Not found
                         

@@ -43,6 +43,20 @@ public class MultiTurnAgentWorkerFunction
     {
         _logger.LogInformation("Processing multi-turn agent call message: {MessageBody}", messageBody);
 
+        // Apply random delay to distribute load across instances (configurable)
+        if (_settings.Evaluation.RandomDelayMaxMs > 0)
+        {
+            var delayMs = Random.Shared.Next(
+                _settings.Evaluation.RandomDelayMinMs,
+                _settings.Evaluation.RandomDelayMaxMs);
+            
+            if (delayMs > 0)
+            {
+                _logger.LogDebug("Applying random startup delay: {DelayMs}ms", delayMs);
+                await Task.Delay(delayMs, cancellationToken);
+            }
+        }
+
         MultiTurnAgentCallMessage? message = null;
         var stopwatch = Stopwatch.StartNew();
 
@@ -108,6 +122,25 @@ public class MultiTurnAgentWorkerFunction
                     message.TestCaseId,
                     message.TurnSequence,
                     copilotResponse.ErrorMessage);
+
+                // Check if this is a user error (should NOT be retried)
+                bool isUserError = copilotResponse.ErrorMessage != null && (
+                    copilotResponse.ErrorMessage.Contains("PSA-1009") ||
+                    copilotResponse.ErrorMessage.Contains("PSA-1010") ||
+                    copilotResponse.ErrorMessage.Contains("PSA-1011") ||
+                    copilotResponse.ErrorMessage.Contains("Status: 400") ||
+                    copilotResponse.ErrorMessage.Contains("Status: 404"));
+
+                if (isUserError)
+                {
+                    // User errors indicate bad test data - mark as failed immediately without retry
+                    _logger.LogWarning(
+                        "User error detected for test case {TestCaseId}, turn {TurnSequence} - marking as failed without retry",
+                        message.TestCaseId,
+                        message.TurnSequence);
+                    await HandleMultiTurnAgentCallError(message, copilotResponse.ErrorMessage ?? "User error", cancellationToken);
+                    return;
+                }
 
                 // Retry logic with exponential backoff
                 if (message.RetryCount < (_settings.Evaluation?.MaxRetryAttempts ?? 3))

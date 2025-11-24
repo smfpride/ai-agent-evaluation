@@ -43,6 +43,20 @@ public class AgentWorkerFunction
     {
         _logger.LogInformation("Processing agent call message: {MessageBody}", messageBody);
 
+        // Apply random delay to distribute load across instances (configurable)
+        if (_settings.Evaluation.RandomDelayMaxMs > 0)
+        {
+            var delayMs = Random.Shared.Next(
+                _settings.Evaluation.RandomDelayMinMs,
+                _settings.Evaluation.RandomDelayMaxMs);
+            
+            if (delayMs > 0)
+            {
+                _logger.LogDebug("Applying random startup delay: {DelayMs}ms", delayMs);
+                await Task.Delay(delayMs, cancellationToken);
+            }
+        }
+
         AgentCallMessage? message = null;
         var stopwatch = Stopwatch.StartNew();
 
@@ -84,6 +98,24 @@ public class AgentWorkerFunction
                     "Copilot Studio call failed for test case {TestCaseId}: {ErrorMessage}",
                     message.TestCaseId,
                     copilotResponse.ErrorMessage);
+
+                // Check if this is a user error (should NOT be retried)
+                bool isUserError = copilotResponse.ErrorMessage != null && (
+                    copilotResponse.ErrorMessage.Contains("PSA-1009") ||
+                    copilotResponse.ErrorMessage.Contains("PSA-1010") ||
+                    copilotResponse.ErrorMessage.Contains("PSA-1011") ||
+                    copilotResponse.ErrorMessage.Contains("Status: 400") ||
+                    copilotResponse.ErrorMessage.Contains("Status: 404"));
+
+                if (isUserError)
+                {
+                    // User errors indicate bad test data - mark as failed immediately without retry
+                    _logger.LogWarning(
+                        "User error detected for test case {TestCaseId} - marking as failed without retry",
+                        message.TestCaseId);
+                    await HandleAgentCallError(message, copilotResponse.ErrorMessage ?? "User error", cancellationToken);
+                    return;
+                }
 
                 // Retry logic with exponential backoff (Service Bus-level retry in addition to ResilientService retries)
                 var maxRetries = _settings.Evaluation?.MaxRetryAttempts ?? 3;

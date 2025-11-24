@@ -898,6 +898,180 @@ public class DataverseService : IDataverseService, IDisposable
         cancellationToken);
     }
 
+    /// <summary>
+    /// Efficiently gets evaluation result counts without loading all records into memory.
+    /// Uses aggregate queries to count directly in Dataverse.
+    /// </summary>
+    public async Task<(int completedCount, int failedCount, int notApplicableCount)> GetEvaluationResultCountsAsync(
+        Guid evaluationRunId, 
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Getting evaluation result counts for evaluation run {EvaluationRunId}", evaluationRunId);
+        EnsureClientReady();
+
+        return await _resilientService.ExecuteAsync(async ct =>
+        {
+            // Build filter for test-case-level results only (exclude individual turn results)
+            // Multi-turn: IsAggregate = true (aggregate result for entire sequence)
+            // Single-turn: TestCaseTurnId = null AND IsAggregate = false
+            var testCaseFilter = new FilterExpression(LogicalOperator.Or);
+            testCaseFilter.AddCondition(Prefixed("isaggregate"), ConditionOperator.Equal, true);
+            
+            var singleTurnFilter = new FilterExpression(LogicalOperator.And);
+            singleTurnFilter.AddCondition(Prefixed("testcaseturnid"), ConditionOperator.Null);
+            singleTurnFilter.AddCondition(Prefixed("isaggregate"), ConditionOperator.Equal, false);
+            testCaseFilter.AddFilter(singleTurnFilter);
+
+            // Count completed results (statuscode = 778760002 = Completed)
+            var completedQuery = new QueryExpression(Prefixed("evaluationresults"))
+            {
+                ColumnSet = new ColumnSet(Prefixed("evaluationresultsid")),
+                Criteria = new FilterExpression(LogicalOperator.And)
+                {
+                    Conditions =
+                    {
+                        new ConditionExpression(Prefixed("evaluation"), ConditionOperator.Equal, evaluationRunId),
+                        new ConditionExpression("statecode", ConditionOperator.Equal, 0), // Active
+                        new ConditionExpression("statuscode", ConditionOperator.Equal, 778760002) // Completed
+                    }
+                }
+            };
+            completedQuery.Criteria.AddFilter(testCaseFilter);
+
+            // Count errored results (statuscode = 778760003 = Errored)
+            var failedQuery = new QueryExpression(Prefixed("evaluationresults"))
+            {
+                ColumnSet = new ColumnSet(Prefixed("evaluationresultsid")),
+                Criteria = new FilterExpression(LogicalOperator.And)
+                {
+                    Conditions =
+                    {
+                        new ConditionExpression(Prefixed("evaluation"), ConditionOperator.Equal, evaluationRunId),
+                        new ConditionExpression("statecode", ConditionOperator.Equal, 0),
+                        new ConditionExpression("statuscode", ConditionOperator.Equal, 778760003) // Errored
+                    }
+                }
+            };
+            var failedTestCaseFilter = new FilterExpression(LogicalOperator.Or);
+            failedTestCaseFilter.AddCondition(Prefixed("isaggregate"), ConditionOperator.Equal, true);
+            var failedSingleTurnFilter = new FilterExpression(LogicalOperator.And);
+            failedSingleTurnFilter.AddCondition(Prefixed("testcaseturnid"), ConditionOperator.Null);
+            failedSingleTurnFilter.AddCondition(Prefixed("isaggregate"), ConditionOperator.Equal, false);
+            failedTestCaseFilter.AddFilter(failedSingleTurnFilter);
+            failedQuery.Criteria.AddFilter(failedTestCaseFilter);
+
+            // Count N/A results (statuscode = 778760004 = Not Applicable)
+            var naQuery = new QueryExpression(Prefixed("evaluationresults"))
+            {
+                ColumnSet = new ColumnSet(Prefixed("evaluationresultsid")),
+                Criteria = new FilterExpression(LogicalOperator.And)
+                {
+                    Conditions =
+                    {
+                        new ConditionExpression(Prefixed("evaluation"), ConditionOperator.Equal, evaluationRunId),
+                        new ConditionExpression("statecode", ConditionOperator.Equal, 0),
+                        new ConditionExpression("statuscode", ConditionOperator.Equal, 778760004) // NotApplicable
+                    }
+                }
+            };
+            var naTestCaseFilter = new FilterExpression(LogicalOperator.Or);
+            naTestCaseFilter.AddCondition(Prefixed("isaggregate"), ConditionOperator.Equal, true);
+            var naSingleTurnFilter = new FilterExpression(LogicalOperator.And);
+            naSingleTurnFilter.AddCondition(Prefixed("testcaseturnid"), ConditionOperator.Null);
+            naSingleTurnFilter.AddCondition(Prefixed("isaggregate"), ConditionOperator.Equal, false);
+            naTestCaseFilter.AddFilter(naSingleTurnFilter);
+            naQuery.Criteria.AddFilter(naTestCaseFilter);
+
+            // Execute all counts in parallel using RetrieveMultiple with top=1 and count total records
+            var completedTask = Task.Run(() =>
+            {
+                completedQuery.PageInfo = new PagingInfo { Count = 1, PageNumber = 1, ReturnTotalRecordCount = true };
+                var result = _serviceClient!.RetrieveMultiple(completedQuery);
+                return result.TotalRecordCount;
+            }, ct);
+
+            var failedTask = Task.Run(() =>
+            {
+                failedQuery.PageInfo = new PagingInfo { Count = 1, PageNumber = 1, ReturnTotalRecordCount = true };
+                var result = _serviceClient!.RetrieveMultiple(failedQuery);
+                return result.TotalRecordCount;
+            }, ct);
+
+            var naTask = Task.Run(() =>
+            {
+                naQuery.PageInfo = new PagingInfo { Count = 1, PageNumber = 1, ReturnTotalRecordCount = true };
+                var result = _serviceClient!.RetrieveMultiple(naQuery);
+                return result.TotalRecordCount;
+            }, ct);
+
+            await Task.WhenAll(completedTask, failedTask, naTask);
+
+            var completedCount = completedTask.Result;
+            var failedCount = failedTask.Result;
+            var notApplicableCount = naTask.Result;
+
+            _logger.LogInformation(
+                "Result counts for {EvaluationRunId}: completed={Completed}, failed={Failed}, notApplicable={NotApplicable}",
+                evaluationRunId, completedCount, failedCount, notApplicableCount);
+
+            return (completedCount, failedCount, notApplicableCount);
+        }, "GetEvaluationResultCounts",
+        exception => exception is FaultException<OrganizationServiceFault>,
+        cancellationToken);
+    }
+
+    /// <summary>
+    /// Efficiently gets count of evaluation results for a specific status code without loading records into memory.
+    /// Uses ReturnTotalRecordCount to get count without fetching data.
+    /// </summary>
+    public async Task<int> GetEvaluationResultCountAsync(
+        Guid evaluationRunId,
+        int statusCode,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Getting evaluation result count for run {EvaluationRunId} with status {StatusCode}", 
+            evaluationRunId, statusCode);
+        EnsureClientReady();
+
+        return await _resilientService.ExecuteAsync(async ct =>
+        {
+            // Build filter for test-case-level results only (exclude individual turn results)
+            var testCaseFilter = new FilterExpression(LogicalOperator.Or);
+            testCaseFilter.AddCondition(Prefixed("isaggregate"), ConditionOperator.Equal, true);
+            
+            var singleTurnFilter = new FilterExpression(LogicalOperator.And);
+            singleTurnFilter.AddCondition(Prefixed("testcaseturnid"), ConditionOperator.Null);
+            singleTurnFilter.AddCondition(Prefixed("isaggregate"), ConditionOperator.Equal, false);
+            testCaseFilter.AddFilter(singleTurnFilter);
+
+            var query = new QueryExpression(Prefixed("evaluationresults"))
+            {
+                ColumnSet = new ColumnSet(Prefixed("evaluationresultsid")),
+                Criteria = new FilterExpression(LogicalOperator.And)
+                {
+                    Conditions =
+                    {
+                        new ConditionExpression(Prefixed("evaluation"), ConditionOperator.Equal, evaluationRunId),
+                        new ConditionExpression("statecode", ConditionOperator.Equal, 0), // Active
+                        new ConditionExpression("statuscode", ConditionOperator.Equal, statusCode)
+                    }
+                },
+                PageInfo = new PagingInfo { Count = 1, PageNumber = 1, ReturnTotalRecordCount = true }
+            };
+            query.Criteria.AddFilter(testCaseFilter);
+
+            var result = await Task.Run(() => _serviceClient!.RetrieveMultiple(query), ct);
+            var count = result.TotalRecordCount;
+
+            _logger.LogInformation("Found {Count} results for run {EvaluationRunId} with status {StatusCode}", 
+                count, evaluationRunId, statusCode);
+
+            return count;
+        }, "GetEvaluationResultCount",
+        exception => exception is FaultException<OrganizationServiceFault>,
+        cancellationToken);
+    }
+
     public async Task UpdateEvaluationRunCompletionAsync(Guid evaluationRunId, int statusCode, decimal? overallScore, bool? overallPass, DateTime endTime, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Updating evaluation run {EvaluationRunId} completion: status={StatusCode}, score={OverallScore}, pass={OverallPass}", 
@@ -933,13 +1107,10 @@ public class DataverseService : IDataverseService, IDisposable
 
         await _resilientService.ExecuteAsync(async ct =>
         {
-            // Get all evaluation results to calculate actual counts
-            var results = await GetEvaluationResultsAsync(evaluationRunId, ct);
+            // Get counts efficiently without loading all results into memory
+            var (completedCount, failedCount, notApplicableCount) = await GetEvaluationResultCountsAsync(evaluationRunId, ct);
             
-            // Calculate counts from actual results using shared logic
-            var (completedCount, failedCount, notApplicableCount) = CalculateTestCaseCounts(results);
-            
-            _logger.LogInformation("Recalculated counts for {EvaluationRunId}: completed={Completed}, failed={Failed}, notApplicable={NotApplicable}", 
+            _logger.LogInformation("Retrieved counts for {EvaluationRunId}: completed={Completed}, failed={Failed}, notApplicable={NotApplicable}", 
                 evaluationRunId, completedCount, failedCount, notApplicableCount);
 
             // Retrieve current counts and total test cases

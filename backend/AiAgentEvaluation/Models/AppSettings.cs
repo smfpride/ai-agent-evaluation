@@ -166,4 +166,19 @@ public class EvaluationSettings
     /// Override via Azure app setting: Evaluation__StalePendingThresholdMinutes
     /// </summary>
     public int StalePendingThresholdMinutes { get; set; } = 60;
+    
+    /// <summary>
+    /// Random startup delay range for worker functions to distribute load (milliseconds)
+    /// Helps prevent thundering herd when many instances start simultaneously
+    /// Min delay in milliseconds (default: 100ms)
+    /// Set both to 0 to disable random delay
+    /// Override via Azure app setting: Evaluation__RandomDelayMinMs and Evaluation__RandomDelayMaxMs
+    /// </summary>
+    public int RandomDelayMinMs { get; set; } = 100;
+    
+    /// <summary>
+    /// Maximum random startup delay in milliseconds (default: 500ms)
+    /// Since calls take 17-45 seconds, a 100-500ms delay is negligible but helps distribute load
+    /// </summary>
+    public int RandomDelayMaxMs { get; set; } = 500;
 }
