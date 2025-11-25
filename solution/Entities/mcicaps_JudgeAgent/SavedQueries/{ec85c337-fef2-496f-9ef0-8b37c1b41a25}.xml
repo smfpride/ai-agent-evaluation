@@ -1,0 +1,47 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<savedqueries xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <savedquery>
+    <IsCustomizable>1</IsCustomizable>
+    <CanBeDeleted>0</CanBeDeleted>
+    <isquickfindquery>0</isquickfindquery>
+    <isprivate>0</isprivate>
+    <isdefault>1</isdefault>
+    <savedqueryid>{ec85c337-fef2-496f-9ef0-8b37c1b41a25}</savedqueryid>
+    <layoutxml>
+      <grid name="resultset" jump="mcicaps_name" select="1" icon="1" preview="1">
+        <row name="result" id="mcicaps_judgeagentid">
+          <cell name="mcicaps_name" width="104" />
+          <cell name="mcicaps_description" width="106" />
+          <cell name="mcicaps_judgetype" width="104" />
+          <cell name="mcicaps_aoaiendpoint" width="134" />
+          <cell name="mcicaps_aoaideploymentname" width="189" />
+          <cell name="mcicaps_directlineurl" width="136" />
+          <cell name="mcicaps_modelname" width="114" />
+        </row>
+      </grid>
+    </layoutxml>
+    <querytype>0</querytype>
+    <fetchxml>
+      <fetch version="1.0" mapping="logical">
+        <entity name="mcicaps_judgeagent">
+          <attribute name="mcicaps_judgeagentid" />
+          <attribute name="mcicaps_name" />
+          <order attribute="mcicaps_name" descending="false" />
+          <filter type="and">
+            <condition attribute="statecode" operator="eq" value="0" />
+          </filter>
+          <attribute name="mcicaps_judgetype" />
+          <attribute name="mcicaps_aoaiendpoint" />
+          <attribute name="mcicaps_aoaideploymentname" />
+          <attribute name="mcicaps_directlineurl" />
+          <attribute name="mcicaps_modelname" />
+          <attribute name="mcicaps_description" />
+        </entity>
+      </fetch>
+    </fetchxml>
+    <IntroducedVersion>1.0</IntroducedVersion>
+    <LocalizedNames>
+      <LocalizedName description="Active Judge Agents" languagecode="1033" />
+    </LocalizedNames>
+  </savedquery>
+</savedqueries>
