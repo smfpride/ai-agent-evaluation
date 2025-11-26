@@ -1,9 +1,32 @@
-# Last Turn Aggregate Optimization - Implementation Plan
+# Multi-Turn Aggregate Optimization - Implementation Plan
 
-**Date**: November 23, 2025  
+**Date Created**: November 23, 2025  
+**Last Updated**: November 26, 2025  
 **Author**: Planning Agent  
-**Status**: Proposed  
+**Status**: ⚠️ **PROPOSED - NOT YET IMPLEMENTED**  
 **Related Stories**: Story 09 (Multi-Evaluator), Story 11 (Service Bus Migration)
+
+---
+
+## ⚠️ IMPORTANT: Current Implementation Status
+
+**This document describes a PROPOSED optimization that has NOT been implemented yet.**
+
+### Current State (As of November 26, 2025)
+- ✅ Multi-turn evaluations use `MultiTurnAgentWorkerFunction` and `EvaluatorWorkerFunction`
+- ✅ Aggregates are calculated by `AggregateEvaluationProcessorFunction` (timer-based, every 30 seconds)
+- ✅ `EvaluatorJobMessage` does NOT contain multi-turn metadata (no IsMultiTurn flag)
+- ✅ No event-driven aggregate calculation implemented yet
+
+### What This Document Proposes
+- 🔮 Add `IsMultiTurn` flag and metadata to `EvaluatorJobMessage`
+- 🔮 Trigger aggregate calculation immediately when all turns complete
+- 🔮 Eliminate timer lag for aggregate completion
+- 🔮 Keep timer function as fallback safety net
+
+**To implement this optimization, follow the steps outlined in this document.**
+
+---
 
 ## Executive Summary
 

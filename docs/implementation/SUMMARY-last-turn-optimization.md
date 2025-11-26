@@ -1,9 +1,22 @@
-# Last Turn Aggregate Optimization - Executive Summary
+# Multi-Turn Aggregate Optimization - Executive Summary
 
-**Date**: November 23, 2025  
-**Status**: Proposed  
+**Date Created**: November 23, 2025  
+**Last Updated**: November 26, 2025  
+**Status**: ⚠️ **PROPOSED - NOT YET IMPLEMENTED**  
 **Estimated Effort**: 2-3 weeks  
 **Impact**: High (Performance + Reliability)
+
+---
+
+## ⚠️ Implementation Status
+
+**THIS OPTIMIZATION HAS NOT BEEN IMPLEMENTED YET.**
+
+The current codebase (as of November 26, 2025) still uses the timer-based approach for calculating multi-turn aggregates. This document describes a proposed enhancement that would provide near real-time aggregate completion.
+
+See the detailed implementation plan in `last-turn-aggregate-optimization.md` for step-by-step instructions.
+
+---
 
 ---
 
