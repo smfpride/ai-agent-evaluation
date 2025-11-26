@@ -737,4 +737,96 @@ public class MultiTurnAgentWorkerFunctionTests
                 It.IsAny<CancellationToken>()),
             Times.Exactly(3));
     }
+
+    [Fact]
+    public async Task ProcessMultiTurnAgentCall_SetsMultiTurnMetadataInEvaluatorMessage()
+    {
+        // Arrange
+        var evaluatorTypeId = Guid.NewGuid();
+        var testCaseId = Guid.NewGuid();
+        var evaluationRunId = Guid.NewGuid();
+
+        var message = new MultiTurnAgentCallMessage
+        {
+            EvaluationRunId = evaluationRunId,
+            TestCaseId = testCaseId,
+            EvaluatorTypeIds = new List<Guid> { evaluatorTypeId },
+            TurnSequence = 2,
+            TotalTurns = 3,
+            DirectLineUrl = "https://test.directline.com",
+            ConversationId = "conv-123",
+            DirectLineToken = "token-abc",
+            PassingThreshold = 0.7m,
+            RetryCount = 0
+        };
+
+        var turn2 = new TestCaseTurn
+        {
+            Id = Guid.NewGuid(),
+            TestCaseId = testCaseId,
+            Sequence = 2,
+            PromptText = "Tell me more",
+            ExpectedResponse = "More details"
+        };
+
+        var copilotResponse = new CopilotDirectLineResponse
+        {
+            Success = true,
+            Response = "More details about the product...",
+            ConversationId = "conv-123",
+            DirectLineToken = "token-abc",
+            ExecutionTimeMs = 1000
+        };
+
+        _mockDataverseService
+            .Setup(x => x.GetTestCaseTurnsAsync(testCaseId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<TestCaseTurn> { turn2 });
+
+        _mockCopilotStudioService
+            .Setup(x => x.SendMessageAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<string?>(),
+                It.IsAny<string?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(copilotResponse);
+
+        _mockDataverseService
+            .Setup(x => x.GetEvaluatorTypeAsync(evaluatorTypeId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new EvaluatorType 
+            { 
+                Id = evaluatorTypeId, 
+                Name = "Accuracy", 
+                RequiresExpectedResponse = true 
+            });
+
+        _mockDataverseService
+            .Setup(x => x.CreateEvaluationResultAsync(It.IsAny<CreateEvaluationResultRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Guid.NewGuid());
+
+        _mockServiceBusService
+            .Setup(x => x.SendEvaluatorJobMessageAsync(It.IsAny<EvaluatorJobMessage>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        _mockServiceBusService
+            .Setup(x => x.SendMultiTurnAgentCallMessageAsync(It.IsAny<MultiTurnAgentCallMessage>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var messageBody = JsonSerializer.Serialize(message);
+
+        // Act
+        await _multiTurnWorker.ProcessMultiTurnAgentCall(messageBody, CancellationToken.None);
+
+        // Assert - Evaluator job message contains multi-turn metadata
+        _mockServiceBusService.Verify(
+            x => x.SendEvaluatorJobMessageAsync(
+                It.Is<EvaluatorJobMessage>(m =>
+                    m.IsMultiTurn == true &&
+                    m.TestCaseId == testCaseId &&
+                    m.EvaluatorTypeId == evaluatorTypeId &&
+                    m.TurnSequence == 2 &&
+                    m.TotalTurns == 3),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
 }

@@ -254,16 +254,24 @@ public class MultiTurnAgentWorkerFunction
                         evaluatorTypeId,
                         message.TurnSequence);
 
-                    // Queue evaluator job
+                    // Queue evaluator job with multi-turn metadata for aggregate optimization
+                    // Worker will check for completion after EVERY turn (not just last)
                     await _serviceBusService.SendEvaluatorJobMessageAsync(new EvaluatorJobMessage
                     {
                         EvaluationResultId = resultId,
-                        EvaluationRunId = message.EvaluationRunId
+                        EvaluationRunId = message.EvaluationRunId,
+                        IsMultiTurn = true, // Always true for multi-turn agent worker
+                        TestCaseId = message.TestCaseId,
+                        EvaluatorTypeId = evaluatorTypeId,
+                        TurnSequence = message.TurnSequence,
+                        TotalTurns = message.TotalTurns
                     }, cancellationToken);
 
                     _logger.LogInformation(
-                        "Queued evaluator job for result {ResultId}",
-                        resultId);
+                        "Queued evaluator job for result {ResultId} (Multi-turn, Turn {TurnSequence}/{TotalTurns})",
+                        resultId,
+                        message.TurnSequence,
+                        message.TotalTurns);
                 }
                 catch (Exception ex)
                 {
