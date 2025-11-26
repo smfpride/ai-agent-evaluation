@@ -117,7 +117,11 @@ HTTP Trigger → Orchestrator Function → Service Bus Queue → Worker Function
 1. Timer-triggered function (every 1 minute)
 2. Query evaluation runs with status `778760002` (Running)
 3. Check completion status based on test case count vs results count
-4. Detect stalls: No progress for 30+ minutes or total runtime > 120 minutes
+4. Detect stalls: No progress for configurable threshold (default 30 minutes)
+   - Uses `LastProgressUpdate` timestamp to track progress
+   - Falls back to `StartTime` if no progress updates yet
+   - Configuration: `Evaluation__MaxNoProgressMinutes`
+   - **Note:** No total runtime limit - evaluations can run as long as they make progress
 5. Calculate overall metrics (average score, pass/fail rate)
 6. Update evaluation run status to `778760004` (Completed) or `778760003` (Errored) as appropriate
 7. Set end time and progress percentage to 100%

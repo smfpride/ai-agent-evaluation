@@ -52,11 +52,20 @@ As a system, I want to monitor running evaluation runs and calculate final resul
 **So that** the system doesn't have permanently running evaluations
 
 **Acceptance Criteria:**
-- [ ] Detect evaluations running longer than expected duration
-- [ ] Check for evaluations with no progress in extended period
-- [ ] Mark stalled evaluations as errored with appropriate reason
-- [ ] Send alerts for stalled evaluation detection
+- [x] Check for evaluations with no progress in extended period (progress-based timeout)
+- [x] Use configurable threshold for timeout detection (`Evaluation__MaxNoProgressMinutes`)
+- [x] Mark stalled evaluations as errored with appropriate reason
+- [x] Allow evaluations to run indefinitely as long as they make progress
+- [x] Fallback to StartTime if LastProgressUpdate is null
+- [ ] Send alerts for stalled evaluation detection (currently logs warnings)
 - [ ] Provide manual intervention capabilities
+
+**Implementation Notes (Nov 2025):**
+- Removed total runtime timeout (previously 120 minutes) in favor of pure progress-based detection
+- Timeout is now based solely on `LastProgressUpdate` timestamp
+- Configuration moved from hard-coded constant to `AppSettings.Evaluation.MaxNoProgressMinutes`
+- Default threshold: 30 minutes (same as previous hard-coded value)
+- Large evaluations can now run for hours as long as they show continuous progress
 
 ### Story 5: Provide Status Updates
 **As a** monitoring system  

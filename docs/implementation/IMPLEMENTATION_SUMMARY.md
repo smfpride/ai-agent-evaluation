@@ -141,7 +141,7 @@ This document summarizes the implementation work completed to address gaps ident
 - Added `LastProgressUpdate` field to `EvaluationRun` model (maps to `mcicaps_lastprogressupdate`)
 - DataverseService sets this timestamp on every progress increment
 - Monitor function now checks:
-  - **Total runtime stall:** Running > 120 minutes (unchanged)
+  - **Total runtime stall:** Running > 120 minutes (LEGACY - planned for removal)
   - **Progress stall:** No progress for > 30 minutes (NEW)
     - Compares current time to LastProgressUpdate
     - Falls back to StartTime if no progress updates yet
@@ -151,6 +151,11 @@ This document summarizes the implementation work completed to address gaps ident
 - `Models/EvaluationRun.cs` - Added LastProgressUpdate property
 - `Services/DataverseService.cs` - Set timestamp on increment, query field
 - `Functions/MonitorFunction.cs` - Added progress-based stall detection logic
+
+**Future Enhancement (Planned - Nov 2025):**
+- Remove total runtime timeout entirely
+- Use only progress-based detection (configurable threshold)
+- See: `docs/implementation/progress-based-timeout-implementation-plan.md`
 
 ---
 

@@ -151,12 +151,14 @@ public class EvaluationSettings
     public double MaxScore { get; set; } = 10.0;
     
     /// <summary>
-    /// Maximum runtime for an evaluation run in minutes before marking as errored
-    /// Default: 120 minutes (2 hours)
+    /// Maximum time without progress before marking evaluation as stalled (minutes)
+    /// If an evaluation shows no progress updates for this duration, it's marked as Errored
+    /// This allows long evaluations to run as long as they make continuous progress
+    /// Default: 30 minutes
     /// Monitored by MonitorFunction timer trigger
-    /// Override via Azure app setting: Evaluation__MaxRunningTimeMinutes
+    /// Override via Azure app setting: Evaluation__MaxNoProgressMinutes
     /// </summary>
-    public int MaxRunningTimeMinutes { get; set; } = 120;
+    public int MaxNoProgressMinutes { get; set; } = 30;
     
     /// <summary>
     /// Threshold in minutes for detecting stalled evaluation runs (no progress)

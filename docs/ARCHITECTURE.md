@@ -228,8 +228,14 @@ flowchart TB
 - Check completion based on total evaluation units vs completed results count
 - Calculate overall metrics (average score, pass/fail rate)
 - Update run status to "Completed" or "Errored"
-- Detect stalls (no progress for 30+ minutes or runtime > 120 minutes)
+- Detect stalls using progress-based timeout (no progress for configurable threshold, default 30 minutes)
 - Handle timeout scenarios
+
+**Timeout Mechanism** (as of Nov 2025):
+- Pure progress-based detection: Evaluations can run indefinitely as long as they show continuous progress
+- Timeout threshold: Configurable via `Evaluation__MaxNoProgressMinutes` (default: 30 minutes)
+- Fallback: Uses `StartTime` if `LastProgressUpdate` is null (evaluation hasn't started processing)
+- Rationale: Allows large evaluations to complete while quickly detecting truly stalled runs
 
 **Key Features**:
 - Automatic progress tracking

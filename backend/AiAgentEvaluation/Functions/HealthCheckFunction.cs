@@ -17,8 +17,8 @@ public class HealthCheckFunction
     private readonly IServiceBusService _serviceBusService;
     
     // Build timestamp to track deployments - updated with each build
-    private static readonly string BuildTimestamp = "2025-11-23T15:00:00Z";
-    private static readonly string DeploymentVersion = "1.0.68"; // Add PSA-1010 to user error handling
+    private static readonly string BuildTimestamp = "2025-11-26T19:30:00Z";
+    private static readonly string DeploymentVersion = "1.0.69"; // Progress-based timeout implementation
 
     public HealthCheckFunction(
         ILogger<HealthCheckFunction> logger,
