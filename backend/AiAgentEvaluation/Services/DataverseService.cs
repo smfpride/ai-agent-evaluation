@@ -2053,6 +2053,8 @@ public class DataverseService : IDataverseService, IDisposable
             }
 
             // Check if any are still pending
+            // Note: "Complete" here means "finished processing" (not pending), regardless of success/failure.
+            // The aggregate calculation handles different statuses (Completed, Errored, NotApplicable).
             var pendingCount = turnResults.Count(r => r.StatusCode == EvaluationResultStatus.Pending);
             
             _logger.LogInformation(
@@ -2206,6 +2208,9 @@ public class DataverseService : IDataverseService, IDisposable
                 Criteria = new FilterExpression(LogicalOperator.And),
                 PageInfo = new PagingInfo { Count = 1, PageNumber = 1 }
             };
+
+            // Add explicit ordering to ensure deterministic result if multiple exist
+            query.AddOrder("createdon", OrderType.Ascending);
 
             query.Criteria.AddCondition(Prefixed("testcase"), ConditionOperator.Equal, testCaseId);
             query.Criteria.AddCondition(Prefixed("evaluation"), ConditionOperator.Equal, evaluationRunId);

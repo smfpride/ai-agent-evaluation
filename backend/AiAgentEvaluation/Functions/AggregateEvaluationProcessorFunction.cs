@@ -298,7 +298,7 @@ public class AggregateEvaluationProcessorFunction
                 Passed = aggregatePassed,
                 ErrorMessage = errorMessage,
                 ExecutionTimeMs = totalExecutionTime,
-                Reasoning = $"Aggregate of {turnResults.Count} turns: {completedTurns.Count} completed, {erroredTurns.Count} errored, {notApplicableTurns.Count} NA (calculated by timer fallback)"
+                Reasoning = $"Aggregate of {turnResults.Count} turns: {completedTurns.Count} completed, {erroredTurns.Count} errored, {notApplicableTurns.Count} NA (calculated by timer fallback at {DateTime.UtcNow:o})"
             },
             cancellationToken);
 

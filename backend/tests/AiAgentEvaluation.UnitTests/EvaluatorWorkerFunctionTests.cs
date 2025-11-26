@@ -686,7 +686,7 @@ public class EvaluatorWorkerFunctionTests
             IsMultiTurn = true,
             TestCaseId = testCaseId,
             EvaluatorTypeId = evaluatorTypeId,
-            TurnSequence = 2, // Not the last turn
+            TurnSequence = 2, // Turn 2 of 3, but test verifies behavior when not all turns complete
             TotalTurns = 3
         };
 
@@ -974,5 +974,133 @@ public class EvaluatorWorkerFunctionTests
                     r.StatusCode == EvaluationResultStatus.Completed),
                 It.IsAny<CancellationToken>()),
             Times.Once);
+    }
+
+    [Fact]
+    public async Task ProcessEvaluatorJob_AggregateAlreadyProcessed_HandlesGracefully()
+    {
+        // Arrange - tests race condition where aggregate was already processed by another worker
+        var resultId = Guid.NewGuid();
+        var evaluationRunId = Guid.NewGuid();
+        var testCaseId = Guid.NewGuid();
+        var evaluatorTypeId = Guid.NewGuid();
+
+        var message = new EvaluatorJobMessage
+        {
+            EvaluationResultId = resultId,
+            EvaluationRunId = evaluationRunId,
+            IsMultiTurn = true,
+            TestCaseId = testCaseId,
+            EvaluatorTypeId = evaluatorTypeId,
+            TurnSequence = 3,
+            TotalTurns = 3
+        };
+
+        var pendingResult = new EvaluationResult
+        {
+            Id = resultId,
+            EvaluationRunId = evaluationRunId,
+            TestCaseId = testCaseId,
+            EvaluatorTypeId = evaluatorTypeId,
+            StatusCode = EvaluationResultStatus.Pending,
+            ActualResponse = "Response"
+        };
+
+        var testCase = new TestCase
+        {
+            Id = testCaseId,
+            UserInput = "Prompt",
+            ExpectedResponse = "Expected"
+        };
+
+        var evaluatorType = new EvaluatorType
+        {
+            Id = evaluatorTypeId,
+            Name = "Accuracy"
+        };
+
+        var judgeResponse = new LLMJudgeResponse
+        {
+            Success = true,
+            Score = 0.9m,
+            Reasoning = "Good",
+            ExecutionTimeMs = 500
+        };
+
+        _mockDataverseService
+            .Setup(x => x.GetEvaluationResultAsync(resultId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(pendingResult);
+
+        _mockDataverseService
+            .Setup(x => x.GetTestCaseAsync(testCaseId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(testCase);
+
+        _mockDataverseService
+            .Setup(x => x.GetEvaluatorTypeAsync(evaluatorTypeId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(evaluatorType);
+
+        _mockDataverseService
+            .Setup(x => x.GetEvaluationRunAsync(evaluationRunId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new EvaluationRun
+            {
+                Id = evaluationRunId,
+                PassingThreshold = 0.7m
+            });
+
+        _mockLLMJudgeService
+            .Setup(x => x.EvaluateResponseAsync(It.IsAny<LLMJudgeRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(judgeResponse);
+
+        _mockDataverseService
+            .Setup(x => x.UpdateEvaluationResultAsync(resultId, It.IsAny<UpdateEvaluationResultRequest>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        _mockDataverseService
+            .Setup(x => x.IncrementCompletedTestCasesAsync(evaluationRunId, It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        // All turns are complete
+        _mockDataverseService
+            .Setup(x => x.CheckIfAllTurnsCompleteForEvaluatorAsync(
+                testCaseId, evaluationRunId, evaluatorTypeId, 3, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        // Aggregate already processed by another worker (returns null)
+        _mockDataverseService
+            .Setup(x => x.GetAggregateResultForTestCaseAndEvaluatorAsync(
+                testCaseId, evaluationRunId, evaluatorTypeId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((EvaluationResult?)null);
+
+        var messageBody = JsonSerializer.Serialize(message);
+
+        // Act - Should complete successfully even though aggregate was already processed
+        await _evaluatorWorker.ProcessEvaluatorJob(messageBody, CancellationToken.None);
+
+        // Assert - Main result was still updated successfully
+        _mockDataverseService.Verify(
+            x => x.UpdateEvaluationResultAsync(
+                resultId,
+                It.Is<UpdateEvaluationResultRequest>(r =>
+                    r.StatusCode == EvaluationResultStatus.Completed),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        // Assert - Aggregate check was performed
+        _mockDataverseService.Verify(
+            x => x.CheckIfAllTurnsCompleteForEvaluatorAsync(
+                testCaseId, evaluationRunId, evaluatorTypeId, 3, It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        // Assert - Aggregate retrieval was attempted
+        _mockDataverseService.Verify(
+            x => x.GetAggregateResultForTestCaseAndEvaluatorAsync(
+                testCaseId, evaluationRunId, evaluatorTypeId, It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        // Assert - CalculateAndUpdateAggregateAsync was NOT called (aggregate already processed)
+        _mockDataverseService.Verify(
+            x => x.CalculateAndUpdateAggregateAsync(
+                It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 }

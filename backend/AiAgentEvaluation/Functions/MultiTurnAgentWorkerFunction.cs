@@ -255,7 +255,8 @@ public class MultiTurnAgentWorkerFunction
                         message.TurnSequence);
 
                     // Queue evaluator job with multi-turn metadata for aggregate optimization
-                    // Worker will check for completion after EVERY turn (not just last)
+                    // Worker will check for completion after EVERY turn (not just last) to handle
+                    // out-of-order completion (e.g., Turn 3 finishing before Turn 2 due to parallel execution)
                     await _serviceBusService.SendEvaluatorJobMessageAsync(new EvaluatorJobMessage
                     {
                         EvaluationResultId = resultId,

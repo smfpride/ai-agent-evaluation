@@ -821,7 +821,7 @@ public class MultiTurnAgentWorkerFunctionTests
         _mockServiceBusService.Verify(
             x => x.SendEvaluatorJobMessageAsync(
                 It.Is<EvaluatorJobMessage>(m =>
-                    m.IsMultiTurn == true &&
+                    m.IsMultiTurn &&
                     m.TestCaseId == testCaseId &&
                     m.EvaluatorTypeId == evaluatorTypeId &&
                     m.TurnSequence == 2 &&

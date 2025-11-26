@@ -352,8 +352,11 @@ public class EvaluatorWorkerFunction
                 catch (Exception ex)
                 {
                     _logger.LogError(ex,
-                        "Error during aggregate calculation check (turn {TurnSequence}) - timer will pick up as fallback",
-                        message.TurnSequence);
+                        "Error during aggregate calculation for TestCase={TestCaseId}, Evaluator={EvaluatorId}, Turn={TurnSequence} - timer will pick up as fallback. Error: {ErrorType}",
+                        message.TestCaseId,
+                        message.EvaluatorTypeId,
+                        message.TurnSequence,
+                        ex.GetType().Name);
                     // Don't throw - allow timer to handle as fallback
                 }
             }

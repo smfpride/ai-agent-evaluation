@@ -163,6 +163,11 @@ public interface IDataverseService
     /// Gets the pending aggregate result for a test case and evaluator type combination.
     /// Used to find the aggregate result to update when the last turn completes.
     /// </summary>
+    /// <param name="testCaseId">Test case ID</param>
+    /// <param name="evaluationRunId">Evaluation run ID</param>
+    /// <param name="evaluatorTypeId">Evaluator type ID</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>The pending aggregate result if found, otherwise null</returns>
     Task<EvaluationResult?> GetAggregateResultForTestCaseAndEvaluatorAsync(
         Guid testCaseId,
         Guid evaluationRunId,

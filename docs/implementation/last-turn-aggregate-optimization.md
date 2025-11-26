@@ -24,7 +24,7 @@
 ### How It Works
 1. When `MultiTurnAgentWorkerFunction` queues an evaluator job, it includes IsMultiTurn=true and metadata
 2. After `EvaluatorWorkerFunction` completes an evaluation, it checks if this is a multi-turn test
-3. If multi-turn, it queries Dataverse to check if ALL turns are now complete for that evaluator
+3. If multi-turn, it queries Dataverse to check if ALL turns are now complete for that evaluator (this check happens after EVERY turn, enabling out-of-order completion handling)
 4. If all turns complete, it immediately calculates and updates the aggregate result
 5. The timer function (`AggregateEvaluationProcessorFunction`) serves as a fallback safety net
 
