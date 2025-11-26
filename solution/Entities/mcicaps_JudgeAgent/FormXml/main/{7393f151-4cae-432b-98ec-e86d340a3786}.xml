@@ -1,0 +1,146 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<forms xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <systemform>
+    <formid>{7393f151-4cae-432b-98ec-e86d340a3786}</formid>
+    <IntroducedVersion>1.0</IntroducedVersion>
+    <FormPresentation>1</FormPresentation>
+    <FormActivationState>1</FormActivationState>
+    <form headerdensity="HighWithControls">
+      <tabs>
+        <tab verticallayout="true" id="{cb7e233e-568f-452b-b73b-3225a8c292f5}" IsUserDefined="1">
+          <labels>
+            <label description="General" languagecode="1033" />
+          </labels>
+          <columns>
+            <column width="100%">
+              <sections>
+                <section showlabel="false" showbar="false" IsUserDefined="0" id="{3adde024-9b7c-494b-b5c4-b35dcc629204}">
+                  <labels>
+                    <label description="General" languagecode="1033" />
+                  </labels>
+                  <rows>
+                    <row>
+                      <cell id="{6b76748c-b076-468c-9fc4-6656436d2124}">
+                        <labels>
+                          <label description="Name" languagecode="1033" />
+                        </labels>
+                        <control id="mcicaps_name" classid="{4273EDBD-AC1D-40d3-9FB2-095C621B552D}" datafieldname="mcicaps_name" />
+                      </cell>
+                    </row>
+                    <row>
+                      <cell id="{b30b8fde-e6a5-4c5e-975f-5ab84b48cac7}" locklevel="0" colspan="1" rowspan="1">
+                        <labels>
+                          <label description="Description" languagecode="1033" />
+                        </labels>
+                        <control id="mcicaps_description" classid="{E0DECE4B-6FC8-4A8F-A065-082708572369}" datafieldname="mcicaps_description" disabled="false" />
+                      </cell>
+                    </row>
+                    <row>
+                      <cell id="{e0a5a4ef-fa83-47a4-9962-fa58f929aac6}" locklevel="0" colspan="1" rowspan="1">
+                        <labels>
+                          <label description="Judge Type" languagecode="1033" />
+                        </labels>
+                        <control id="mcicaps_judgetype" classid="{3EF39988-22BB-4F0B-BBBE-64B5A3748AEE}" datafieldname="mcicaps_judgetype" disabled="false" />
+                      </cell>
+                    </row>
+                    <row>
+                      <cell id="{155eeba9-5693-463e-b005-cece165ce9d0}" locklevel="0" colspan="1" rowspan="1">
+                        <labels>
+                          <label description="AOAI Endpoint " languagecode="1033" />
+                        </labels>
+                        <control id="mcicaps_aoaiendpoint" classid="{4273EDBD-AC1D-40D3-9FB2-095C621B552D}" datafieldname="mcicaps_aoaiendpoint" disabled="false" />
+                      </cell>
+                    </row>
+                    <row>
+                      <cell id="{406bbe38-92a4-4293-9059-aa760ac74770}" locklevel="0" colspan="1" rowspan="1">
+                        <labels>
+                          <label description="AOAI Deployment Name " languagecode="1033" />
+                        </labels>
+                        <control id="mcicaps_aoaideploymentname" classid="{4273EDBD-AC1D-40D3-9FB2-095C621B552D}" datafieldname="mcicaps_aoaideploymentname" disabled="false" />
+                      </cell>
+                    </row>
+                    <row>
+                      <cell id="{a2d717cf-6f3d-4b90-bafa-1c4a4a0819ca}" locklevel="0" colspan="1" rowspan="1">
+                        <labels>
+                          <label description="Direct Line URL" languagecode="1033" />
+                        </labels>
+                        <control id="mcicaps_directlineurl" classid="{4273EDBD-AC1D-40D3-9FB2-095C621B552D}" datafieldname="mcicaps_directlineurl" disabled="false" />
+                      </cell>
+                    </row>
+                    <row>
+                      <cell id="{9db3f480-dfd1-4936-b455-b21a2b605bdf}" locklevel="0" colspan="1" rowspan="1">
+                        <labels>
+                          <label description="Model Name" languagecode="1033" />
+                        </labels>
+                        <control id="mcicaps_modelname" classid="{4273EDBD-AC1D-40D3-9FB2-095C621B552D}" datafieldname="mcicaps_modelname" disabled="false" />
+                      </cell>
+                    </row>
+                  </rows>
+                </section>
+              </sections>
+            </column>
+          </columns>
+        </tab>
+      </tabs>
+      <header id="{0e660679-3046-4491-8b66-f6647d7504d8}" celllabelposition="Top" columns="111" labelwidth="115" celllabelalignment="Left">
+        <rows>
+          <row>
+            <cell id="{db40af7e-837f-4fdf-a42f-bd0edc92eda4}" showlabel="false">
+              <labels>
+                <label description="" languagecode="1033" />
+              </labels>
+            </cell>
+            <cell id="{36d6a6de-caee-4ffe-b52d-7eaa4665df53}" showlabel="false">
+              <labels>
+                <label description="" languagecode="1033" />
+              </labels>
+            </cell>
+            <cell id="{686f2a3e-0fc6-47b7-9df9-71183329110e}" showlabel="false">
+              <labels>
+                <label description="" languagecode="1033" />
+              </labels>
+            </cell>
+            <cell id="{0a88b06d-82bc-4858-ad84-75e050845410}" colspan="1" rowspan="1">
+              <labels>
+                <label description="Owner" languagecode="1033" />
+              </labels>
+              <control id="header_ownerid" classid="{270BD3DB-D9AF-4782-9025-509E298DEC0A}" datafieldname="ownerid" />
+            </cell>
+          </row>
+        </rows>
+      </header>
+      <footer id="{b617502c-b4d2-4d81-9b1b-89a9de21e960}" celllabelposition="Top" columns="111" labelwidth="115" celllabelalignment="Left">
+        <rows>
+          <row>
+            <cell id="{96a37150-9460-4f56-8af2-cb7b856f303f}" showlabel="false">
+              <labels>
+                <label description="" languagecode="1033" />
+              </labels>
+            </cell>
+            <cell id="{39f93c5c-c70d-4bb5-b664-a0a7b3d9b4de}" showlabel="false">
+              <labels>
+                <label description="" languagecode="1033" />
+              </labels>
+            </cell>
+            <cell id="{db005d1d-b8cf-48b7-a879-baa7141c8e47}" showlabel="false">
+              <labels>
+                <label description="" languagecode="1033" />
+              </labels>
+            </cell>
+          </row>
+        </rows>
+      </footer>
+      <DisplayConditions Order="0" FallbackForm="true">
+        <Everyone />
+      </DisplayConditions>
+    </form>
+    <IsCustomizable>1</IsCustomizable>
+    <CanBeDeleted>1</CanBeDeleted>
+    <LocalizedNames>
+      <LocalizedName description="Information" languagecode="1033" />
+    </LocalizedNames>
+    <Descriptions>
+      <Description description="A form for this entity." languagecode="1033" />
+    </Descriptions>
+  </systemform>
+</forms>

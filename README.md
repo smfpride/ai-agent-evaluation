@@ -71,7 +71,8 @@ Copilot Studio + Azure OpenAI → Dataverse (Results)
 - **Comprehensive Monitoring**: 
   - Application Insights integration with custom metrics and dashboards
   - Real-time progress tracking with percentages
-  - Stall detection (30 min no progress or 120 min total runtime)
+  - Progress-based stall detection (configurable threshold, default 30 min)
+  - Allows long evaluations to run as long as they make continuous progress
   - Detailed logging and distributed tracing
 
 ## Technology Stack

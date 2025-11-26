@@ -1,5 +1,6 @@
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using AiAgentEvaluation.Models;
 using AiAgentEvaluation.Services;
 
@@ -13,18 +14,19 @@ public class MonitorFunction
     private readonly ILogger<MonitorFunction> _logger;
     private readonly IDataverseService _dataverseService;
     private readonly IServiceBusService _serviceBusService;
-    private const int MaxRunningTimeMinutes = 120; // 2 hours max runtime
-    private const int MaxNoProgressMinutes = 30; // 30 minutes with no progress = stalled
+    private readonly AppSettings _settings;
     private const decimal DefaultPassingThreshold = 0.7m; // 70% default threshold
 
     public MonitorFunction(
         ILogger<MonitorFunction> logger,
         IDataverseService dataverseService,
-        IServiceBusService serviceBusService)
+        IServiceBusService serviceBusService,
+        IOptions<AppSettings> settings)
     {
         _logger = logger;
         _dataverseService = dataverseService;
         _serviceBusService = serviceBusService;
+        _settings = settings.Value;
     }
 
     [Function("MonitorEvaluationRuns")]
@@ -81,34 +83,26 @@ public class MonitorFunction
         _logger.LogInformation("Processing evaluation run {EvaluationRunId} ({EvaluationRunName}): {CompletedTestCases}/{TotalTestCases} completed",
             evaluationRun.Id, evaluationRun.Name, evaluationRun.CompletedTestCases, evaluationRun.TotalTestCases);
 
-        // Check if evaluation has stalled (running longer than max time)
-        if (evaluationRun.StartTime.HasValue)
+        // Skip if TotalTestCases hasn't been initialized yet by orchestrator (race condition)
+        if (evaluationRun.TotalTestCases == 0)
         {
-            var runningTime = DateTime.UtcNow - evaluationRun.StartTime.Value;
-            if (runningTime.TotalMinutes > MaxRunningTimeMinutes)
-            {
-                _logger.LogWarning("Evaluation run {EvaluationRunId} has been running for {Minutes} minutes, marking as errored",
-                    evaluationRun.Id, runningTime.TotalMinutes);
-                
-                await _dataverseService.UpdateEvaluationRunCompletionAsync(
-                    evaluationRun.Id,
-                    EvaluationRunStatus.Errored,
-                    null,
-                    false,
-                    DateTime.UtcNow,
-                    cancellationToken);
-                return;
-            }
+            _logger.LogInformation("Evaluation run {EvaluationRunId} has TotalTestCases=0, skipping (orchestrator still initializing)",
+                evaluationRun.Id);
+            return;
         }
 
-        // Check if evaluation has made no progress for extended period
+        // Check if evaluation has made no progress for extended period (progress-based timeout)
+        // This allows evaluations to run indefinitely as long as they make continuous progress
+        var maxNoProgressMinutes = _settings.Evaluation.MaxNoProgressMinutes;
+        
         if (evaluationRun.LastProgressUpdate.HasValue)
         {
             var timeSinceProgress = DateTime.UtcNow - evaluationRun.LastProgressUpdate.Value;
-            if (timeSinceProgress.TotalMinutes > MaxNoProgressMinutes)
+            if (timeSinceProgress.TotalMinutes > maxNoProgressMinutes)
             {
-                _logger.LogWarning("Evaluation run {EvaluationRunId} has made no progress for {Minutes} minutes, marking as errored",
-                    evaluationRun.Id, timeSinceProgress.TotalMinutes);
+                _logger.LogWarning(
+                    "Evaluation run {EvaluationRunId} has made no progress for {Minutes} minutes (threshold: {MaxMinutes}), marking as errored",
+                    evaluationRun.Id, timeSinceProgress.TotalMinutes, maxNoProgressMinutes);
                 
                 await _dataverseService.UpdateEvaluationRunCompletionAsync(
                     evaluationRun.Id,
@@ -124,10 +118,11 @@ public class MonitorFunction
         {
             // If no progress update yet, use start time as baseline
             var timeSinceStart = DateTime.UtcNow - evaluationRun.StartTime.Value;
-            if (timeSinceStart.TotalMinutes > MaxNoProgressMinutes)
+            if (timeSinceStart.TotalMinutes > maxNoProgressMinutes)
             {
-                _logger.LogWarning("Evaluation run {EvaluationRunId} has had no progress since start ({Minutes} minutes), marking as errored",
-                    evaluationRun.Id, timeSinceStart.TotalMinutes);
+                _logger.LogWarning(
+                    "Evaluation run {EvaluationRunId} has had no progress since start ({Minutes} minutes, threshold: {MaxMinutes}), marking as errored",
+                    evaluationRun.Id, timeSinceStart.TotalMinutes, maxNoProgressMinutes);
                 
                 await _dataverseService.UpdateEvaluationRunCompletionAsync(
                     evaluationRun.Id,
@@ -140,24 +135,37 @@ public class MonitorFunction
             }
         }
 
-        // Get all evaluation results to calculate actual counts
-        var results = await _dataverseService.GetEvaluationResultsAsync(evaluationRun.Id, cancellationToken);
-        
-        // Calculate completed and failed counts from actual results
-        // Only count test case level results, not individual turns:
+        // Use efficient database-side counting instead of loading all results into memory
+        // Count test case level results only (excludes individual turn results):
         // - Single-turn: TestCaseTurnId is null AND isaggregate is false
         // - Multi-turn: isaggregate is true (the aggregate result for the entire multi-turn sequence)
-        var testCaseResults = results.Where(r => 
-            r.IsAggregate == true ||  // Multi-turn aggregate result
-            (r.TestCaseTurnId == null && r.IsAggregate == false)  // Single-turn result
-        ).ToList();
-        
-        // Only count results with StatusCode = 778760002 (Completed) as completed
-        var completedCount = testCaseResults.Count(r => r.StatusCode == 778760002);
-        var failedCount = testCaseResults.Count(r => r.StatusCode == 778760003);
-        var notApplicableCount = testCaseResults.Count(r => r.StatusCode == 778760004);
-        var pendingCount = testCaseResults.Count(r => 
-            r.StatusCode == 1 || r.StatusCode == 778760001);
+        var completedCount = await _dataverseService.GetEvaluationResultCountAsync(
+            evaluationRun.Id, 
+            778760002, // Completed
+            cancellationToken);
+            
+        var failedCount = await _dataverseService.GetEvaluationResultCountAsync(
+            evaluationRun.Id,
+            778760003, // Failed
+            cancellationToken);
+            
+        var notApplicableCount = await _dataverseService.GetEvaluationResultCountAsync(
+            evaluationRun.Id,
+            778760004, // Not Applicable
+            cancellationToken);
+            
+        // For pending count, we need to sum Created (1) and Execute (778760001) statuses
+        var createdCount = await _dataverseService.GetEvaluationResultCountAsync(
+            evaluationRun.Id,
+            1, // Created
+            cancellationToken);
+            
+        var executeCount = await _dataverseService.GetEvaluationResultCountAsync(
+            evaluationRun.Id,
+            778760001, // Execute
+            cancellationToken);
+            
+        var pendingCount = createdCount + executeCount;
 
         _logger.LogInformation("Evaluation run {EvaluationRunId} progress: {CompletedCount} completed, {FailedCount} failed, {NotApplicableCount} not applicable, {PendingCount} pending (excluding individual turn results)",
             evaluationRun.Id, completedCount, failedCount, notApplicableCount, pendingCount);
@@ -176,6 +184,15 @@ public class MonitorFunction
 
         _logger.LogInformation("Evaluation run {EvaluationRunId} completed all test cases, calculating final metrics",
             evaluationRun.Id);
+        
+        // Now load results only for final metrics calculation (when evaluation is complete)
+        var results = await _dataverseService.GetEvaluationResultsAsync(evaluationRun.Id, cancellationToken);
+        
+        // Filter to only test case level results (same logic as before)
+        var testCaseResults = results.Where(r => 
+            r.IsAggregate == true ||  // Multi-turn aggregate result
+            (r.TestCaseTurnId == null && r.IsAggregate == false)  // Single-turn result
+        ).ToList();
         
         // Filter to only completed, failed, and not applicable results for metrics calculation
         var finalResults = testCaseResults.Where(r => 

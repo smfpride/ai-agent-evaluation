@@ -1,0 +1,69 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<forms xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <systemform>
+    <formid>{b7a4d280-3dd5-4c31-a81d-cc3b5f0131d9}</formid>
+    <IntroducedVersion>1.0</IntroducedVersion>
+    <FormPresentation>1</FormPresentation>
+    <FormActivationState>1</FormActivationState>
+    <form>
+      <tabs>
+        <tab verticallayout="true" id="{a2140a25-5dd0-4331-b5e0-3d523c12cbdb}" IsUserDefined="1">
+          <labels>
+            <label description="" languagecode="1033" />
+          </labels>
+          <columns>
+            <column width="100%">
+              <sections>
+                <section showlabel="false" showbar="false" IsUserDefined="0" id="{126b4b61-8b83-4b21-802a-e8b66679de98}">
+                  <labels>
+                    <label description="GENERAL" languagecode="1033" />
+                  </labels>
+                  <rows>
+                    <row>
+                      <cell id="{64809607-bfca-4a4e-af77-cf34181eb271}" visible="false">
+                        <labels>
+                          <label description="Owner" languagecode="1033" />
+                        </labels>
+                        <control id="ownerid" classid="{270BD3DB-D9AF-4782-9025-509E298DEC0A}" datafieldname="ownerid" />
+                      </cell>
+                    </row>
+                    <row>
+                      <cell id="{a6b2af3c-f746-4e7f-8f02-31ed5af7dbe8}" locklevel="0" colspan="1" rowspan="4" auto="true">
+                        <labels>
+                          <label description="Prompt" languagecode="1033" />
+                        </labels>
+                        <control id="mcicaps_prompt" classid="{E0DECE4B-6FC8-4A8F-A065-082708572369}" datafieldname="mcicaps_prompt" disabled="false" />
+                      </cell>
+                    </row>
+                    <row />
+                    <row />
+                    <row />
+                    <row>
+                      <cell id="{d28540d0-9cb4-4071-affe-031706c2ed66}" locklevel="0" colspan="1" rowspan="4" auto="true">
+                        <labels>
+                          <label description="Expected Response" languagecode="1033" />
+                        </labels>
+                        <control id="mcicaps_expectedresponse" classid="{E0DECE4B-6FC8-4A8F-A065-082708572369}" datafieldname="mcicaps_expectedresponse" disabled="false" />
+                      </cell>
+                    </row>
+                    <row />
+                    <row />
+                    <row />
+                  </rows>
+                </section>
+              </sections>
+            </column>
+          </columns>
+        </tab>
+      </tabs>
+      <DisplayConditions Order="0" FallbackForm="true">
+        <Everyone />
+      </DisplayConditions>
+    </form>
+    <IsCustomizable>1</IsCustomizable>
+    <CanBeDeleted>1</CanBeDeleted>
+    <LocalizedNames>
+      <LocalizedName description="Information" languagecode="1033" />
+    </LocalizedNames>
+  </systemform>
+</forms>

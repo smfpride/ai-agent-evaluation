@@ -1,0 +1,136 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<forms xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <systemform>
+    <formid>{e3774919-c81e-4dfd-91cb-396b4263af7a}</formid>
+    <IntroducedVersion>1.0</IntroducedVersion>
+    <FormPresentation>1</FormPresentation>
+    <FormActivationState>1</FormActivationState>
+    <form headerdensity="HighWithControls">
+      <tabs>
+        <tab verticallayout="true" id="{48ffc3e9-33d5-4592-91e0-840716eeddcc}" IsUserDefined="1">
+          <labels>
+            <label description="General" languagecode="1033" />
+          </labels>
+          <columns>
+            <column width="100%">
+              <sections>
+                <section showlabel="false" showbar="false" IsUserDefined="0" id="{7cd35854-eae1-4399-b744-a2b7123407aa}">
+                  <labels>
+                    <label description="General" languagecode="1033" />
+                  </labels>
+                  <rows>
+                    <row>
+                      <cell id="{b46b9498-fa5b-4e5e-95a9-315004e56ed7}" locklevel="0" colspan="1" rowspan="1">
+                        <labels>
+                          <label description="Test Case" languagecode="1033" />
+                        </labels>
+                        <control id="mcicaps_testcaseid" classid="{270BD3DB-D9AF-4782-9025-509E298DEC0A}" datafieldname="mcicaps_testcaseid" disabled="false" />
+                      </cell>
+                    </row>
+                    <row>
+                      <cell id="{061b6588-8047-4d71-a16f-6d005b99369d}" locklevel="0" colspan="1" rowspan="1">
+                        <labels>
+                          <label description="Sequence" languagecode="1033" />
+                        </labels>
+                        <control id="mcicaps_sequence" classid="{C6D124CA-7EDA-4A60-AEA9-7FB8D318B68F}" datafieldname="mcicaps_sequence" disabled="false" />
+                      </cell>
+                    </row>
+                    <row>
+                      <cell id="{85c990e0-33d7-4837-92a5-da0edd7d6c61}" locklevel="0" colspan="1" rowspan="8" auto="true">
+                        <labels>
+                          <label description="Prompt Text" languagecode="1033" />
+                        </labels>
+                        <control id="mcicaps_prompttext" classid="{E0DECE4B-6FC8-4A8F-A065-082708572369}" datafieldname="mcicaps_prompttext" disabled="false" />
+                      </cell>
+                    </row>
+                    <row />
+                    <row />
+                    <row />
+                    <row />
+                    <row />
+                    <row />
+                    <row />
+                    <row>
+                      <cell id="{7eae7e99-7a72-479e-bcbb-c3553e54ce02}" locklevel="0" colspan="1" rowspan="8" auto="true">
+                        <labels>
+                          <label description="Expected Response" languagecode="1033" />
+                        </labels>
+                        <control id="mcicaps_expectedresponse" classid="{E0DECE4B-6FC8-4A8F-A065-082708572369}" datafieldname="mcicaps_expectedresponse" disabled="false" />
+                      </cell>
+                    </row>
+                    <row />
+                    <row />
+                    <row />
+                    <row />
+                    <row />
+                    <row />
+                    <row />
+                  </rows>
+                </section>
+              </sections>
+            </column>
+          </columns>
+        </tab>
+      </tabs>
+      <header id="{e8a1d248-f76c-4a8c-a5a5-ec7413d6ab50}" celllabelposition="Top" columns="111" labelwidth="115" celllabelalignment="Left">
+        <rows>
+          <row>
+            <cell id="{04aef89c-401d-4eba-b99c-0d2eb5f3329c}" showlabel="false">
+              <labels>
+                <label description="" languagecode="1033" />
+              </labels>
+            </cell>
+            <cell id="{006d2adf-a6ad-4a20-a89e-e930b969cf8d}" showlabel="false">
+              <labels>
+                <label description="" languagecode="1033" />
+              </labels>
+            </cell>
+            <cell id="{3c8be2b0-9ce2-411a-a4ea-d4306accd486}" showlabel="false">
+              <labels>
+                <label description="" languagecode="1033" />
+              </labels>
+            </cell>
+            <cell id="{e201c087-ec11-4570-a1e0-2499931f793c}" colspan="1" rowspan="1">
+              <labels>
+                <label description="Owner" languagecode="1033" />
+              </labels>
+              <control id="header_ownerid" classid="{270BD3DB-D9AF-4782-9025-509E298DEC0A}" datafieldname="ownerid" />
+            </cell>
+          </row>
+        </rows>
+      </header>
+      <footer id="{b08b409a-51a7-408d-90db-6c4b3d46e3e5}" celllabelposition="Top" columns="111" labelwidth="115" celllabelalignment="Left">
+        <rows>
+          <row>
+            <cell id="{4ebc0973-4fcb-495f-8d1e-462e82a564aa}" showlabel="false">
+              <labels>
+                <label description="" languagecode="1033" />
+              </labels>
+            </cell>
+            <cell id="{4bc868a8-59be-46e5-ae87-c7c5f0644a64}" showlabel="false">
+              <labels>
+                <label description="" languagecode="1033" />
+              </labels>
+            </cell>
+            <cell id="{d7aeb27c-86ab-489a-b272-7e58542ed643}" showlabel="false">
+              <labels>
+                <label description="" languagecode="1033" />
+              </labels>
+            </cell>
+          </row>
+        </rows>
+      </footer>
+      <DisplayConditions Order="0" FallbackForm="true">
+        <Everyone />
+      </DisplayConditions>
+    </form>
+    <IsCustomizable>1</IsCustomizable>
+    <CanBeDeleted>1</CanBeDeleted>
+    <LocalizedNames>
+      <LocalizedName description="Information" languagecode="1033" />
+    </LocalizedNames>
+    <Descriptions>
+      <Description description="A form for this entity." languagecode="1033" />
+    </Descriptions>
+  </systemform>
+</forms>

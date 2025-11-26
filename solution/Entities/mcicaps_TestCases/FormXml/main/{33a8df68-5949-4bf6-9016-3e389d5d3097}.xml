@@ -1,0 +1,227 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<forms xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <systemform>
+    <formid>{33a8df68-5949-4bf6-9016-3e389d5d3097}</formid>
+    <IntroducedVersion>1.0</IntroducedVersion>
+    <FormPresentation>1</FormPresentation>
+    <FormActivationState>1</FormActivationState>
+    <form headerdensity="HighWithControls">
+      <tabs>
+        <tab verticallayout="true" id="{6edd232b-94ee-4592-8a14-67cafb0b5afe}" IsUserDefined="1">
+          <labels>
+            <label description="General" languagecode="1033" />
+          </labels>
+          <columns>
+            <column width="100%">
+              <sections>
+                <section showlabel="false" showbar="false" IsUserDefined="0" id="{0328a55d-78b1-4422-abfc-fcde54f1f111}" height="auto">
+                  <labels>
+                    <label description="General" languagecode="1033" />
+                  </labels>
+                  <rows>
+                    <row>
+                      <cell id="{c5722839-1204-4f8f-b3c3-3840180e55c0}" locklevel="0" colspan="1" rowspan="1">
+                        <labels>
+                          <label description="Test Set" languagecode="1033" />
+                        </labels>
+                        <control id="mcicaps_testset" classid="{270BD3DB-D9AF-4782-9025-509E298DEC0A}" datafieldname="mcicaps_testset" disabled="false">
+                          <parameters>
+                            <DisableMru>true</DisableMru>
+                          </parameters>
+                        </control>
+                      </cell>
+                    </row>
+                    <row>
+                      <cell id="{cff94ffd-8cc0-44fd-830e-66923da9ad17}" colspan="1" rowspan="1">
+                        <labels>
+                          <label description="Tags" languagecode="1033" />
+                        </labels>
+                        <control id="mcicaps_tags" classid="{F9A8A302-114E-466A-B582-6771B2AE0D92}" datafieldname="mcicaps_tags" uniqueid="{654154f7-0038-4b5a-96fc-8a10661c1a66}" />
+                      </cell>
+                    </row>
+                    <row>
+                      <cell id="{f808055a-a106-4670-9672-39b8f2a4429e}" locklevel="0" colspan="1" rowspan="1">
+                        <labels>
+                          <label description="Is Multi-Turn" languagecode="1033" />
+                        </labels>
+                        <control id="mcicaps_ismultiturn" classid="{67FAC785-CD58-4F9F-ABB3-4B7DDC6ED5ED}" datafieldname="mcicaps_ismultiturn" disabled="false" />
+                      </cell>
+                    </row>
+                    <row>
+                      <cell id="{8d44be28-0078-47cb-b6c4-83049b1168e2}" rowspan="8" visible="false" auto="true">
+                        <labels>
+                          <label description="Prompt" languagecode="1033" />
+                        </labels>
+                        <control id="mcicaps_prompt" classid="{e0dece4b-6fc8-4a8f-a065-082708572369}" datafieldname="mcicaps_prompt" uniqueid="{1077108c-7beb-099c-89c8-bce23adc1855}" />
+                      </cell>
+                    </row>
+                    <row />
+                    <row />
+                    <row />
+                    <row />
+                    <row />
+                    <row />
+                    <row />
+                    <row>
+                      <cell id="{918d7c7e-8367-4a29-b922-01e23be05db2}" rowspan="8" auto="true" visible="false">
+                        <labels>
+                          <label description="Expected Response" languagecode="1033" />
+                        </labels>
+                        <control id="mcicaps_expectedresponse" classid="{e0dece4b-6fc8-4a8f-a065-082708572369}" datafieldname="mcicaps_expectedresponse" uniqueid="{86e4dbc6-27b5-93bc-94d3-337be6328aa6}" />
+                      </cell>
+                    </row>
+                    <row />
+                    <row />
+                    <row />
+                    <row />
+                    <row />
+                    <row />
+                    <row height="auto" />
+                    <row>
+                      <cell locklevel="0" id="{ec79ce16-9219-4455-b0c9-9ef09ade4a1e}" rowspan="4" colspan="1" auto="true">
+                        <labels>
+                          <label description="Multi-Turn" languagecode="1033" />
+                        </labels>
+                        <control indicationOfSubgrid="true" id="Subgrid_new_1" classid="{E7A81278-8635-4D9E-8D4D-59480B391C5B}">
+                          <parameters>
+                            <RecordsPerPage>8</RecordsPerPage>
+                            <AutoExpand>Auto</AutoExpand>
+                            <EnableQuickFind>false</EnableQuickFind>
+                            <EnableViewPicker>false</EnableViewPicker>
+                            <EnableChartPicker>true</EnableChartPicker>
+                            <ChartGridMode>All</ChartGridMode>
+                            <RelationshipName>mcicaps_testcaseturn_TestCaseId_mcicaps_testcases</RelationshipName>
+                            <TargetEntityType>mcicaps_testcaseturn</TargetEntityType>
+                            <ViewId>{2BC53390-109D-4A01-A432-05978185FB02}</ViewId>
+                            <ViewIds>{2BC53390-109D-4A01-A432-05978185FB02}</ViewIds>
+                          </parameters>
+                        </control>
+                      </cell>
+                    </row>
+                    <row />
+                    <row />
+                    <row />
+                    <row height="auto" />
+                  </rows>
+                </section>
+              </sections>
+            </column>
+          </columns>
+        </tab>
+      </tabs>
+      <header id="{e6b99aea-250d-459e-9693-8a84d0384c4b}" celllabelposition="Top" columns="111" labelwidth="115" celllabelalignment="Left">
+        <rows>
+          <row>
+            <cell id="{91e3aa10-3764-4e9e-a2e7-993132396325}" showlabel="false">
+              <labels>
+                <label description="" languagecode="1033" />
+              </labels>
+            </cell>
+            <cell id="{af4a0c9f-3410-4755-ac03-0db425173848}" showlabel="false">
+              <labels>
+                <label description="" languagecode="1033" />
+              </labels>
+            </cell>
+            <cell id="{0991fe31-86e4-4355-9060-6e9b9fb21608}" showlabel="false">
+              <labels>
+                <label description="" languagecode="1033" />
+              </labels>
+            </cell>
+            <cell id="{e4210046-3e26-456c-8114-5f8fca733212}" colspan="1" rowspan="1">
+              <labels>
+                <label description="Owner" languagecode="1033" />
+              </labels>
+              <control id="header_ownerid" classid="{270BD3DB-D9AF-4782-9025-509E298DEC0A}" datafieldname="ownerid" />
+            </cell>
+          </row>
+        </rows>
+      </header>
+      <footer id="{4f2cca4d-0e2f-4069-bc43-23da73cc0905}" celllabelposition="Top" columns="111" labelwidth="115" celllabelalignment="Left">
+        <rows>
+          <row>
+            <cell id="{acf876da-81a0-41a0-bfb8-bf907b8d3cf0}" showlabel="false">
+              <labels>
+                <label description="" languagecode="1033" />
+              </labels>
+            </cell>
+            <cell id="{5821ecda-4b39-450b-9ac7-8f88289a6b83}" showlabel="false">
+              <labels>
+                <label description="" languagecode="1033" />
+              </labels>
+            </cell>
+            <cell id="{ce4b24f1-7c04-4394-9b8f-2cba54e64515}" showlabel="false">
+              <labels>
+                <label description="" languagecode="1033" />
+              </labels>
+            </cell>
+          </row>
+        </rows>
+      </footer>
+      <controlDescriptions>
+        <controlDescription forControl="{654154f7-0038-4b5a-96fc-8a10661c1a66}">
+          <customControl id="{4273EDBD-AC1D-40D3-9FB2-095C621B552D}">
+            <parameters>
+              <datafieldname>mcicaps_tags</datafieldname>
+            </parameters>
+          </customControl>
+          <customControl formFactor="0" name="MscrmControls.KbUnboundTagsControl.KbUnboundTagsControl">
+            <parameters>
+              <value type="SingleLine.Text">mcicaps_tags</value>
+            </parameters>
+          </customControl>
+          <customControl formFactor="2" name="MscrmControls.KbUnboundTagsControl.KbUnboundTagsControl">
+            <parameters>
+              <value type="SingleLine.Text">mcicaps_tags</value>
+            </parameters>
+          </customControl>
+          <customControl formFactor="1" name="MscrmControls.KbUnboundTagsControl.KbUnboundTagsControl">
+            <parameters>
+              <value type="SingleLine.Text">mcicaps_tags</value>
+            </parameters>
+          </customControl>
+        </controlDescription>
+      </controlDescriptions>
+      <Navigation>
+        <NavBar />
+        <NavBarAreas>
+          <NavBarArea Id="Info">
+            <Titles>
+              <Title LCID="1033" Text="Common" />
+            </Titles>
+          </NavBarArea>
+          <NavBarArea Id="Sales">
+            <Titles>
+              <Title LCID="1033" Text="Sales" />
+            </Titles>
+          </NavBarArea>
+          <NavBarArea Id="Service">
+            <Titles>
+              <Title LCID="1033" Text="Service" />
+            </Titles>
+          </NavBarArea>
+          <NavBarArea Id="Marketing">
+            <Titles>
+              <Title LCID="1033" Text="Marketing" />
+            </Titles>
+          </NavBarArea>
+          <NavBarArea Id="ProcessCenter">
+            <Titles>
+              <Title LCID="1033" Text="Process Sessions" />
+            </Titles>
+          </NavBarArea>
+        </NavBarAreas>
+      </Navigation>
+      <DisplayConditions Order="0" FallbackForm="true">
+        <Everyone />
+      </DisplayConditions>
+    </form>
+    <IsCustomizable>1</IsCustomizable>
+    <CanBeDeleted>1</CanBeDeleted>
+    <LocalizedNames>
+      <LocalizedName description="Information" languagecode="1033" />
+    </LocalizedNames>
+    <Descriptions>
+      <Description description="A form for this entity." languagecode="1033" />
+    </Descriptions>
+  </systemform>
+</forms>

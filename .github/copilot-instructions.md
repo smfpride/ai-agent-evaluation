@@ -258,26 +258,40 @@ Documentation updates:
 
 #### Deployment Steps
 
+**CRITICAL**: Use `dotnet publish --runtime win-x64` instead of `func azure functionapp publish` to ensure all native dependencies (like grpc_csharp_ext.x64.dll) are included in the deployment package.
+
 ```powershell
 # Navigate to function app directory
 cd backend/AiAgentEvaluation
 
-# 1. UPDATE VERSION IN HealthCheckFunction.cs FIRST (see above)
+# 1. UPDATE VERSION IN HealthCheckFunction.cs AND BasicHealthFunction.cs FIRST (see above)
 
 # 2. Build and test (mandatory)
 dotnet build --configuration Release
 dotnet test ../tests/AiAgentEvaluation.UnitTests/AiAgentEvaluation.UnitTests.csproj
 
-# 3. Deploy to Azure (staging environment)
-func azure functionapp publish func-aiestagingmbwc
+# 3. Publish with all dependencies including native libraries
+dotnet publish --configuration Release --runtime win-x64 --self-contained false --output .\publish
 
-# 4. Verify deployment took effect
+# 4. Create zip package and deploy to Azure
+cd publish
+Compress-Archive -Path * -DestinationPath ..\deploy.zip -Force
+cd ..
+az functionapp deployment source config-zip --resource-group rg-agent-eval-staging --name func-aiestagingmbwc --src deploy.zip
+
+# 5. Verify deployment took effect (wait 10 seconds for app to restart)
+Start-Sleep -Seconds 10
 curl https://func-aiestagingmbwc.azurewebsites.net/api/health/basic
 # Check that version and buildTimestamp match what you just set
 ```
 
 **Function app**: `func-aiestagingmbwc` (staging environment)
 **Resource group**: `rg-agent-eval-staging`
+
+**Why this deployment method?**
+- The standard `func azure functionapp publish` command was missing native dependencies required by gRPC and other libraries
+- Using `dotnet publish --runtime win-x64` ensures all platform-specific native libraries are included
+- This resolved "Function host is not running" errors caused by missing grpc_csharp_ext.x64.dll
 
 **Post-deployment verification**:
 - **FIRST**: Check `/api/health/basic` endpoint shows correct version/timestamp

@@ -69,19 +69,21 @@
 
 ### Error Handling Test Cases
 
-#### TC-MON-005: Stalled Evaluation Detection
-**Scenario:** Monitor detects evaluation stuck in Running state  
+#### TC-MON-005: Stalled Evaluation Detection (Progress-Based)
+**Scenario:** Monitor detects evaluation with no progress  
 **Given:**
-- Evaluation run running for more than 2 hours
-- No progress in last 30 minutes
-- Expected completion time exceeded significantly
+- Evaluation run with no progress in last 35 minutes (threshold: 30 minutes)
+- LastProgressUpdate timestamp is 35 minutes old
+- Evaluation may have been running for any duration (no total runtime limit)
 **When:** Monitor checks evaluation status
 **Then:**
-- Stalled evaluation detected
+- Stalled evaluation detected based on lack of progress
 - Status updated to 778760003 (Errored) 
-- Reason set to "Evaluation stalled - no progress detected"
-- Alert sent to system administrators
-- Remaining test cases marked as failed
+- Log message: "Evaluation run {Id} has made no progress for {Minutes} minutes (threshold: {MaxMinutes}), marking as errored"
+- Alert sent via logging (structured logs in Application Insights)
+- Remaining test cases not explicitly marked (evaluation terminated)
+
+**Note:** As of Nov 2025, there is no total runtime timeout. Evaluations can run for hours or days as long as they continue making progress (LastProgressUpdate is updated regularly).
 
 #### TC-MON-006: Dataverse Connection Failure During Monitoring
 **Scenario:** Monitor cannot connect to Dataverse  
@@ -93,6 +95,22 @@
 - If retries fail, monitoring skipped for this cycle
 - Error logged with correlation details
 - Next monitoring cycle continues normally
+
+#### TC-MON-005b: Long-Running Evaluation with Progress (Does Not Timeout)
+**Scenario:** Monitor allows long-running evaluation that continues making progress  
+**Given:**
+- Evaluation run started 3 hours ago (StartTime: 3 hours ago)
+- Last progress update was 5 minutes ago (LastProgressUpdate: 5 minutes ago)
+- Evaluation still has 2000 test cases remaining out of 10000 total
+**When:** Monitor checks evaluation status
+**Then:**
+- Evaluation NOT marked as errored (progress within threshold)
+- Status remains 778760002 (Running)
+- Log message: "Processing evaluation run {Id}: {Completed}/{Total} completed"
+- Evaluation continues processing normally
+- No timeout warnings generated
+
+**Note:** This validates that removing total runtime timeout allows large evaluations to complete successfully.
 
 #### TC-MON-007: Partial Results Scenario
 **Scenario:** Some test cases completed but others still processing  

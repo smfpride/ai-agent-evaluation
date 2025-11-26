@@ -1,0 +1,62 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<savedqueries xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <savedquery>
+    <IsCustomizable>1</IsCustomizable>
+    <CanBeDeleted>0</CanBeDeleted>
+    <isquickfindquery>0</isquickfindquery>
+    <isprivate>0</isprivate>
+    <isdefault>1</isdefault>
+    <savedqueryid>{f535e58f-9ada-46e1-9cce-dc2917dc6e37}</savedqueryid>
+    <layoutxml>
+      <grid name="resultset" jump="mcicaps_runname" select="1" icon="1" preview="1">
+        <row name="result" id="mcicaps_evaluationrunsid">
+          <cell name="mcicaps_runname" width="183" />
+          <cell name="statuscode" width="119" />
+          <cell name="mcicaps_progresspercentage" width="154" />
+          <cell name="mcicaps_passingthreshold" width="144" />
+          <cell name="mcicaps_overallscore" width="118" />
+          <cell name="mcicaps_overallpass" width="111" />
+          <cell name="mcicaps_testset" width="100" />
+          <cell name="modifiedon" width="113" />
+          <cell name="mcicaps_completedtestcases" width="165" />
+          <cell name="mcicaps_natestcases" width="127" />
+          <cell name="mcicaps_failedtestcases" width="138" />
+          <cell name="mcicaps_totaltestcases" width="132" />
+          <cell name="mcicaps_starttime" width="100" />
+          <cell name="mcicaps_endtime" width="100" />
+        </row>
+      </grid>
+    </layoutxml>
+    <querytype>0</querytype>
+    <fetchxml>
+      <fetch version="1.0" mapping="logical">
+        <entity name="mcicaps_evaluationruns">
+          <attribute name="mcicaps_evaluationrunsid" />
+          <attribute name="mcicaps_runname" />
+          <attribute name="createdon" />
+          <filter type="and">
+            <condition attribute="statecode" operator="eq" value="0" />
+          </filter>
+          <attribute name="mcicaps_overallscore" />
+          <attribute name="mcicaps_overallpass" />
+          <attribute name="mcicaps_testset" />
+          <attribute name="mcicaps_passingthreshold" />
+          <attribute name="statuscode" />
+          <attribute name="mcicaps_progresspercentage" />
+          <attribute name="mcicaps_completedtestcases" />
+          <attribute name="mcicaps_failedtestcases" />
+          <attribute name="mcicaps_totaltestcases" />
+          <attribute name="mcicaps_starttime" />
+          <attribute name="mcicaps_endtime" />
+          <attribute name="modifiedon" />
+          <order attribute="modifiedon" descending="true" />
+          <attribute name="mcicaps_natestcases" />
+        </entity>
+      </fetch>
+    </fetchxml>
+    <IntroducedVersion>1.0</IntroducedVersion>
+    <LocalizedNames>
+      <LocalizedName description="Active EvaluationRuns" languagecode="1033" />
+    </LocalizedNames>
+  </savedquery>
+</savedqueries>

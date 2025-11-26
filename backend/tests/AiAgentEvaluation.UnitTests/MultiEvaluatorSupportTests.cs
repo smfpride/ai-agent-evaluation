@@ -271,13 +271,10 @@ public class MultiEvaluatorSupportTests
         // Assert
         Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
 
-        // NEW ARCHITECTURE: NA detection moved to AgentWorkerFunction
-        // Orchestrator should still queue the message, and AgentWorkerFunction will handle NA scenario
-        _mockServiceBusService.Verify(x => x.SendAgentCallMessageAsync(
-            It.Is<AgentCallMessage>(m =>
-                m.EvaluationRunId == evaluationRunId &&
-                m.TestCaseId == testCaseId &&
-                m.EvaluatorTypeIds.Contains(evaluatorTypeId)),
+        // NEW ARCHITECTURE: Orchestrator queues single orchestration message for async background processing
+        // OrchestrationWorkerFunction will then queue individual agent call messages
+        _mockServiceBusService.Verify(x => x.SendOrchestrationMessageAsync(
+            It.Is<StartOrchestrationMessage>(m => m.EvaluationRunId == evaluationRunId),
             It.IsAny<CancellationToken>()), 
             Times.Once);
 
@@ -364,15 +361,10 @@ public class MultiEvaluatorSupportTests
         // Assert
         Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
 
-        // NEW ARCHITECTURE: Orchestrator queues message with ALL evaluator IDs
-        // AgentWorkerFunction will determine which are NA and handle accordingly
-        // Verify 1 message queued with all 3 evaluator IDs
-        _mockServiceBusService.Verify(x => x.SendAgentCallMessageAsync(
-            It.Is<AgentCallMessage>(m => 
-                m.EvaluatorTypeIds.Contains(accuracyEvaluatorId) &&
-                m.EvaluatorTypeIds.Contains(similarityEvaluatorId) && 
-                m.EvaluatorTypeIds.Contains(relevancyEvaluatorId) &&
-                m.EvaluatorTypeIds.Count == 3), 
+        // NEW ARCHITECTURE: Orchestrator queues single orchestration message for async background processing
+        // OrchestrationWorkerFunction will handle evaluator logic
+        _mockServiceBusService.Verify(x => x.SendOrchestrationMessageAsync(
+            It.Is<StartOrchestrationMessage>(m => m.EvaluationRunId == evaluationRunId), 
             It.IsAny<CancellationToken>()), 
             Times.Once);
     }
@@ -412,13 +404,13 @@ public class MultiEvaluatorSupportTests
         // Act
         var response = await _orchestratorFunction.StartEvaluationRun(request.Object, CancellationToken.None);
 
-        // Assert
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        // Assert - Returns Accepted for async processing even with no evaluators
+        // Background worker will handle the error condition
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
 
-        // Verify status was set to Errored
-        _mockDataverseService.Verify(x => x.UpdateEvaluationRunStatusAsync(
-            evaluationRunId, 
-            EvaluationRunStatus.Errored, 
+        // Verify orchestration message sent (background worker will detect no evaluators and handle)
+        _mockServiceBusService.Verify(x => x.SendOrchestrationMessageAsync(
+            It.Is<StartOrchestrationMessage>(m => m.EvaluationRunId == evaluationRunId), 
             It.IsAny<CancellationToken>()), 
             Times.Once);
     }

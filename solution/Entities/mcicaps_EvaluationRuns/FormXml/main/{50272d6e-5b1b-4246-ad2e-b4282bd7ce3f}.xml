@@ -1,0 +1,281 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<forms xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <systemform>
+    <formid>{50272d6e-5b1b-4246-ad2e-b4282bd7ce3f}</formid>
+    <IntroducedVersion>1.0</IntroducedVersion>
+    <FormPresentation>1</FormPresentation>
+    <FormActivationState>1</FormActivationState>
+    <form headerdensity="HighWithControls">
+      <tabs>
+        <tab verticallayout="true" id="{c3802694-00bf-4031-b9a3-ed7e752a844f}" IsUserDefined="1">
+          <labels>
+            <label description="General" languagecode="1033" />
+          </labels>
+          <columns>
+            <column width="100%">
+              <sections>
+                <section showlabel="false" showbar="false" IsUserDefined="0" id="{7c6ac0cd-cee7-40f9-9565-abf5a2caf5b5}">
+                  <labels>
+                    <label description="General" languagecode="1033" />
+                  </labels>
+                  <rows>
+                    <row>
+                      <cell id="{84780e24-fac1-4327-9828-a7424dc384da}" locklevel="0" colspan="1" rowspan="1">
+                        <labels>
+                          <label description="Test Set" languagecode="1033" />
+                        </labels>
+                        <control id="mcicaps_testset" classid="{270BD3DB-D9AF-4782-9025-509E298DEC0A}" datafieldname="mcicaps_testset" disabled="false" />
+                      </cell>
+                    </row>
+                    <row>
+                      <cell id="{2d35555d-2f19-4daf-94e7-58ba8ec86f79}" locklevel="0" colspan="1" rowspan="1">
+                        <labels>
+                          <label description="Agent to Eval" languagecode="1033" />
+                        </labels>
+                        <control id="mcicaps_agenttoeval" classid="{270BD3DB-D9AF-4782-9025-509E298DEC0A}" datafieldname="mcicaps_agenttoeval" disabled="false" />
+                      </cell>
+                    </row>
+                    <row>
+                      <cell id="{57d0a530-4316-4d74-a192-9b521edb2dbf}" locklevel="0" colspan="1" rowspan="1">
+                        <labels>
+                          <label description="Passing Threshold" languagecode="1033" />
+                        </labels>
+                        <control id="mcicaps_passingthreshold" classid="{0D2C745A-E5A8-4C8F-BA63-C6D3BB604660}" datafieldname="mcicaps_passingthreshold" disabled="false" />
+                      </cell>
+                    </row>
+                    <row>
+                      <cell id="{ae7baa10-ac24-20a9-0b81-15eea8212191}" showlabel="true" locklevel="0">
+                        <labels>
+                          <label description="Description" languagecode="1033" />
+                        </labels>
+                        <control id="mcicaps_description" classid="{E0DECE4B-6FC8-4a8f-A065-082708572369}" datafieldname="mcicaps_description" disabled="false" />
+                      </cell>
+                    </row>
+                    <row>
+                      <cell locklevel="0" id="{0436b236-41b1-4fb6-8649-5dcc11486731}" rowspan="4" colspan="1" auto="false">
+                        <labels>
+                          <label description="Evaluator Types" languagecode="1033" />
+                        </labels>
+                        <control indicationOfSubgrid="true" id="Subgrid_new_2" classid="{E7A81278-8635-4D9E-8D4D-59480B391C5B}">
+                          <parameters>
+                            <RecordsPerPage>4</RecordsPerPage>
+                            <AutoExpand>Fixed</AutoExpand>
+                            <EnableQuickFind>false</EnableQuickFind>
+                            <EnableViewPicker>false</EnableViewPicker>
+                            <EnableChartPicker>true</EnableChartPicker>
+                            <ChartGridMode>All</ChartGridMode>
+                            <RelationshipName>mcicaps_EvaluationRuns_mcicaps_EvaluatorType_mcicaps_EvaluatorType</RelationshipName>
+                            <TargetEntityType>mcicaps_evaluatortype</TargetEntityType>
+                            <ViewId>{DAF1ECAB-AC04-49DD-BDD4-61C6492B4FC1}</ViewId>
+                            <ViewIds>{DAF1ECAB-AC04-49DD-BDD4-61C6492B4FC1}</ViewIds>
+                          </parameters>
+                        </control>
+                      </cell>
+                    </row>
+                    <row />
+                    <row />
+                    <row />
+                  </rows>
+                </section>
+                <section name="null_section_3" id="77f0d34b-771c-4d7f-9f1d-16ee4de37c26" IsUserDefined="0" locklevel="0" showlabel="true" showbar="false" layout="varwidth" celllabelalignment="Left" celllabelposition="Left" columns="1111" labelwidth="115" availableforphone="true">
+                  <labels>
+                    <label description="Results" languagecode="1033" />
+                  </labels>
+                  <rows>
+                    <row>
+                      <cell id="{ff756e68-2f40-4945-aaa9-8d2e63995d67}" locklevel="0" colspan="2" rowspan="1">
+                        <labels>
+                          <label description="Overall Score" languagecode="1033" />
+                        </labels>
+                        <control id="mcicaps_overallscore" classid="{0D2C745A-E5A8-4C8F-BA63-C6D3BB604660}" datafieldname="mcicaps_overallscore" disabled="true" />
+                      </cell>
+                      <cell id="{dd559cc4-0b76-4f04-b474-6e3093288988}" locklevel="0" colspan="2" rowspan="1">
+                        <labels>
+                          <label description="Overall Pass" languagecode="1033" />
+                        </labels>
+                        <control id="mcicaps_overallpass" classid="{67FAC785-CD58-4F9F-ABB3-4B7DDC6ED5ED}" datafieldname="mcicaps_overallpass" disabled="true" />
+                      </cell>
+                    </row>
+                    <row>
+                      <cell id="{90562542-bf78-42be-9cfd-ea8f6e6b642b}" locklevel="0" colspan="1" rowspan="1" showlabel="true">
+                        <labels>
+                          <label description="Completed Test Cases" languagecode="1033" />
+                        </labels>
+                        <control id="mcicaps_completedtestcases" classid="{C6D124CA-7EDA-4A60-AEA9-7FB8D318B68F}" datafieldname="mcicaps_completedtestcases" disabled="true" uniqueid="{e2082deb-d667-6cdb-0d93-ea00450d208e}" />
+                      </cell>
+                      <cell id="{cda20d98-2957-a70b-84ba-b4ed8888924b}" showlabel="true" locklevel="0">
+                        <labels>
+                          <label description="N/A Test Cases" languagecode="1033" />
+                        </labels>
+                        <control id="mcicaps_natestcases" classid="{C6D124CA-7EDA-4a60-AEA9-7FB8D318B68F}" datafieldname="mcicaps_natestcases" disabled="true" uniqueid="{7886d9b4-4295-6754-463c-6a660742e66c}" />
+                      </cell>
+                      <cell id="{9df1417a-b330-45c2-aca6-eb1f2f291cf6}" locklevel="0" colspan="1" rowspan="1" showlabel="true">
+                        <labels>
+                          <label description="Errored Test Cases" languagecode="1033" />
+                        </labels>
+                        <control id="mcicaps_failedtestcases" classid="{C6D124CA-7EDA-4A60-AEA9-7FB8D318B68F}" datafieldname="mcicaps_failedtestcases" disabled="true" uniqueid="{174e1850-d19b-b842-8b84-4e747a96a6ec}" />
+                      </cell>
+                      <cell id="{a4486b0c-5c9d-4445-b606-e3c9ea0f8c30}" locklevel="0" colspan="1" rowspan="1" showlabel="true">
+                        <labels>
+                          <label description="Total Test Cases" languagecode="1033" />
+                        </labels>
+                        <control id="mcicaps_totaltestcases" classid="{C6D124CA-7EDA-4A60-AEA9-7FB8D318B68F}" datafieldname="mcicaps_totaltestcases" disabled="true" uniqueid="{7e727758-8681-ed55-9d25-e6ae6bded50c}" />
+                      </cell>
+                    </row>
+                    <row>
+                      <cell id="{c8db754d-fb62-489d-bdde-11236c324bf5}" locklevel="0" colspan="1" rowspan="1" showlabel="true">
+                        <labels>
+                          <label description="Progress Percentage" languagecode="1033" />
+                        </labels>
+                        <control id="mcicaps_progresspercentage" classid="{C3EFE0C3-0EC6-42BE-8349-CBD9079DFD8E}" datafieldname="mcicaps_progresspercentage" disabled="true" uniqueid="{18499aac-23c2-28b7-4dce-3c3632454820}" />
+                      </cell>
+                      <cell id="{311ff98d-ce1e-42be-bbfa-c2847dad7b53}" locklevel="0" colspan="1" rowspan="1" showlabel="true">
+                        <labels>
+                          <label description="Start Time" languagecode="1033" />
+                        </labels>
+                        <control id="mcicaps_starttime" classid="{5B773807-9FB2-42DB-97C3-7A91EFF8ADFF}" datafieldname="mcicaps_starttime" disabled="true" uniqueid="{201da34e-8891-34d2-7708-b9493a4a931b}" />
+                      </cell>
+                      <cell id="{25202a95-059f-4f66-88ee-827014840a0e}" locklevel="0" colspan="1" rowspan="1" showlabel="true">
+                        <labels>
+                          <label description="Last Progress Update" languagecode="1033" />
+                        </labels>
+                        <control id="mcicaps_lastprogressupdate" classid="{5B773807-9FB2-42DB-97C3-7A91EFF8ADFF}" datafieldname="mcicaps_lastprogressupdate" disabled="true" uniqueid="{98aa3e91-472d-adeb-15b4-039a7499429a}" />
+                      </cell>
+                      <cell id="{dbb14d7a-e40b-46f6-a935-3ae07949012b}" locklevel="0" colspan="1" rowspan="1" showlabel="true">
+                        <labels>
+                          <label description="End Time" languagecode="1033" />
+                        </labels>
+                        <control id="mcicaps_endtime" classid="{5B773807-9FB2-42DB-97C3-7A91EFF8ADFF}" datafieldname="mcicaps_endtime" disabled="true" uniqueid="{e7aa14a7-c094-04e3-9834-01b0ee8a632e}" />
+                      </cell>
+                    </row>
+                    <row>
+                      <cell locklevel="0" id="{4dcba785-f04b-46ec-92b0-b3c21eb51feb}" rowspan="4" colspan="4" auto="true">
+                        <labels>
+                          <label description="Evaluation Results" languagecode="1033" />
+                        </labels>
+                        <control indicationOfSubgrid="true" id="Subgrid_new_1" classid="{E7A81278-8635-4D9E-8D4D-59480B391C5B}">
+                          <parameters>
+                            <RecordsPerPage>25</RecordsPerPage>
+                            <AutoExpand>Auto</AutoExpand>
+                            <EnableQuickFind>false</EnableQuickFind>
+                            <EnableViewPicker>true</EnableViewPicker>
+                            <EnableChartPicker>false</EnableChartPicker>
+                            <ChartGridMode>Grid</ChartGridMode>
+                            <RelationshipName>mcicaps_evaluationresults_Evaluation_mcicaps_evaluationruns</RelationshipName>
+                            <TargetEntityType>mcicaps_evaluationresults</TargetEntityType>
+                            <ViewId>{ED78D5FE-2CC0-F011-BBD3-7C1E52018277}</ViewId>
+                            <ViewIds>{ED78D5FE-2CC0-F011-BBD3-7C1E52018277},{3FA22AD8-44C3-F011-8544-7C1E5247C096},{DFABC9FC-46C3-F011-8544-000D3A167600}</ViewIds>
+                          </parameters>
+                        </control>
+                      </cell>
+                    </row>
+                    <row />
+                    <row />
+                    <row />
+                    <row height="auto" />
+                  </rows>
+                </section>
+              </sections>
+            </column>
+          </columns>
+        </tab>
+      </tabs>
+      <header id="{7fed5036-f2e4-456f-bf23-cc818a6badfa}" celllabelposition="Top" columns="111" labelwidth="115" celllabelalignment="Left">
+        <rows>
+          <row>
+            <cell id="{9e683704-da0d-475b-8f54-e3c99e23067b}" showlabel="false">
+              <labels>
+                <label description="" languagecode="1033" />
+              </labels>
+            </cell>
+            <cell id="{2e58a0fd-e6ca-4022-9423-f5186d2a8257}" showlabel="false">
+              <labels>
+                <label description="" languagecode="1033" />
+              </labels>
+            </cell>
+            <cell id="{d521a4a7-be77-436f-85b0-66a25a364224}" showlabel="false">
+              <labels>
+                <label description="" languagecode="1033" />
+              </labels>
+            </cell>
+            <cell id="{fa8ffb09-8fcf-4ae7-9bbb-b540ac3b0829}" visible="true" colspan="1" rowspan="1">
+              <labels>
+                <label description="Owner" languagecode="1033" />
+              </labels>
+              <control id="header_ownerid" classid="{270BD3DB-D9AF-4782-9025-509E298DEC0A}" datafieldname="ownerid" />
+            </cell>
+            <cell id="{115470f1-d5aa-428a-bcc2-a0f74a501201}" locklevel="0" colspan="1" rowspan="1">
+              <labels>
+                <label description="Status Reason" languagecode="1033" />
+              </labels>
+              <control id="header_statuscode" classid="{3EF39988-22BB-4F0B-BBBE-64B5A3748AEE}" datafieldname="statuscode" disabled="false" />
+            </cell>
+          </row>
+        </rows>
+      </header>
+      <footer id="{b65b8793-4756-4eab-a417-ed3926270891}" celllabelposition="Top" columns="111" labelwidth="115" celllabelalignment="Left">
+        <rows>
+          <row>
+            <cell id="{74b8ff9f-0570-4c5b-b769-49e6c78fcea3}" showlabel="false">
+              <labels>
+                <label description="" languagecode="1033" />
+              </labels>
+            </cell>
+            <cell id="{5660b114-2940-481a-8111-80be5fd7bf51}" showlabel="false">
+              <labels>
+                <label description="" languagecode="1033" />
+              </labels>
+            </cell>
+            <cell id="{259d5e6d-dae5-44dd-b7c0-f32b3ee658d1}" showlabel="false">
+              <labels>
+                <label description="" languagecode="1033" />
+              </labels>
+            </cell>
+          </row>
+        </rows>
+      </footer>
+      <Navigation>
+        <NavBar />
+        <NavBarAreas>
+          <NavBarArea Id="Info">
+            <Titles>
+              <Title LCID="1033" Text="Common" />
+            </Titles>
+          </NavBarArea>
+          <NavBarArea Id="Sales">
+            <Titles>
+              <Title LCID="1033" Text="Sales" />
+            </Titles>
+          </NavBarArea>
+          <NavBarArea Id="Service">
+            <Titles>
+              <Title LCID="1033" Text="Service" />
+            </Titles>
+          </NavBarArea>
+          <NavBarArea Id="Marketing">
+            <Titles>
+              <Title LCID="1033" Text="Marketing" />
+            </Titles>
+          </NavBarArea>
+          <NavBarArea Id="ProcessCenter">
+            <Titles>
+              <Title LCID="1033" Text="Process Sessions" />
+            </Titles>
+          </NavBarArea>
+        </NavBarAreas>
+      </Navigation>
+      <controlDescriptions />
+      <DisplayConditions Order="0" FallbackForm="true">
+        <Everyone />
+      </DisplayConditions>
+    </form>
+    <IsCustomizable>1</IsCustomizable>
+    <CanBeDeleted>1</CanBeDeleted>
+    <LocalizedNames>
+      <LocalizedName description="Information" languagecode="1033" />
+    </LocalizedNames>
+    <Descriptions>
+      <Description description="A form for this entity." languagecode="1033" />
+    </Descriptions>
+  </systemform>
+</forms>

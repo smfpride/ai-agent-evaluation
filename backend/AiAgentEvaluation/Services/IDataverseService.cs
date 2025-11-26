@@ -19,6 +19,26 @@ public interface IDataverseService
     Task SetEvaluationRunEndTimeAsync(Guid evaluationRunId, DateTime endTime, CancellationToken cancellationToken = default);
     Task<List<EvaluationRun>> GetRunningEvaluationRunsAsync(CancellationToken cancellationToken = default);
     Task<List<EvaluationResult>> GetEvaluationResultsAsync(Guid evaluationRunId, CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Efficiently gets evaluation result counts without loading all records into memory.
+    /// Uses aggregate queries to count directly in Dataverse.
+    /// Returns (completedCount, failedCount, notApplicableCount)
+    /// </summary>
+    Task<(int completedCount, int failedCount, int notApplicableCount)> GetEvaluationResultCountsAsync(
+        Guid evaluationRunId, 
+        CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Efficiently gets count of evaluation results for a specific status code.
+    /// Only counts test-case level results (excludes individual turn results).
+    /// Uses aggregate query to count directly in Dataverse without loading records into memory.
+    /// </summary>
+    Task<int> GetEvaluationResultCountAsync(
+        Guid evaluationRunId,
+        int statusCode,
+        CancellationToken cancellationToken = default);
+    
     Task UpdateEvaluationRunCompletionAsync(Guid evaluationRunId, int statusCode, decimal? overallScore, bool? overallPass, DateTime endTime, CancellationToken cancellationToken = default);
     Task IncrementCompletedTestCasesAsync(Guid evaluationRunId, bool failed, CancellationToken cancellationToken = default);
     Task<EvaluatorType?> GetEvaluatorTypeAsync(Guid evaluatorTypeId, CancellationToken cancellationToken = default);
@@ -27,7 +47,16 @@ public interface IDataverseService
     Task<AgentToEval?> GetAgentToEvalAsync(Guid agentToEvalId, CancellationToken cancellationToken = default);
     Task<bool> CheckHealthAsync(CancellationToken cancellationToken = default);
     Task<List<TestCaseTurn>> GetTestCaseTurnsAsync(Guid testCaseId, CancellationToken cancellationToken = default);
-    Task<Guid> CreateAggregateEvaluationResultAsync(MultiTurnExecutionContext context, CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Batch-fetches all turns for test cases in a test set in a single optimized query
+    /// Returns a dictionary mapping testCaseId to its list of turns
+    /// Used by orchestrator to avoid N+1 query problem when processing multi-turn test cases
+    /// Uses a join to testcases table instead of IN operator to handle large test sets
+    /// </summary>
+    Task<Dictionary<Guid, List<TestCaseTurn>>> GetAllTurnsForTestCasesAsync(
+        Guid testSetId, 
+        CancellationToken cancellationToken = default);
     
     /// <summary>
     /// Gets the aggregate result for a test case in an evaluation run

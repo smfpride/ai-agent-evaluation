@@ -5,6 +5,8 @@
 **Decision Maker**: User (Product Owner)  
 **Implementation Status**: Phase 1 ✅ | Phase 2 ✅ | Phase 3 ⏳
 
+**Latest Decision**: November 26, 2025 - Progress-Based Timeout Implementation (See Decision 7)
+
 ---
 
 ## Implementation Status
@@ -463,9 +465,140 @@ Should the new architecture be rolled out gradually with feature flags, or deplo
 
 ---
 
+## Decision 7: Progress-Based Timeout Implementation
+
+### Question
+Should the Monitor Function continue using both total runtime timeout (120 min) and progress-based timeout (30 min), or switch to pure progress-based detection?
+
+### Context
+**Current State:**
+- Monitor Function checks two independent timeout conditions:
+  1. **Total Runtime**: `StartTime` → Errored if > 120 minutes
+  2. **No Progress**: `LastProgressUpdate` → Errored if > 30 minutes (hard-coded)
+- Problem: Large evaluations making steady progress are killed after 2 hours
+- Architectural misalignment: System tracks progress but ignores it for total timeout
+
+**Scenario Example:**
+- Evaluation with 10,000 test cases starts at 10:00 AM
+- Makes progress every 5 minutes consistently
+- At 12:01 PM (121 minutes), still has 2,000 test cases remaining
+- Current behavior: Marked as Errored (exceeded total runtime)
+- Desired behavior: Continue running (making steady progress)
+
+### Options Considered
+
+#### Option A: Keep Both Timeouts (Status Quo)
+**Pros:**
+- No code changes required
+- Absolute maximum runtime provides safety net
+- Predictable completion times
+
+**Cons:**
+- Kills healthy evaluations after 2 hours
+- False positives for large workloads
+- Conflicting timeout philosophies
+- Hard-coded progress threshold (30 min)
+
+#### Option B: Pure Progress-Based Timeout (RECOMMENDED)
+**Pros:**
+- ✅ Evaluations can run indefinitely if making progress
+- ✅ Stalled evaluations detected quickly
+- ✅ Simpler logic (one timeout mechanism)
+- ✅ Configurable threshold for different workloads
+- ✅ Aligns with progress tracking architecture
+
+**Cons:**
+- Requires configuration change
+- Must ensure fallback to StartTime works correctly
+- No absolute maximum runtime (evaluation could run for days if making progress)
+
+#### Option C: Increase Total Runtime Limit
+**Pros:**
+- Simple configuration change
+- Maintains safety net
+
+**Cons:**
+- Doesn't solve the fundamental problem
+- Still arbitrary limit
+- Still hard-coded progress threshold
+
+### ✅ Decision: **Option B - Pure Progress-Based Timeout**
+
+**Rationale:**
+1. **Better aligns with architecture**: System already tracks `LastProgressUpdate` for every test case completion
+2. **More flexible**: Different workload sizes can complete naturally
+3. **Faster stall detection**: 30-minute no-progress threshold catches issues quickly
+4. **Configurable**: `Evaluation__MaxNoProgressMinutes` adjustable without code changes
+5. **Simpler logic**: One timeout mechanism instead of two competing approaches
+
+**Date**: November 26, 2025  
+**Status**: 📋 Planning Phase - Documentation Complete  
+**Implementation**: See `docs/implementation/progress-based-timeout-implementation-plan.md`
+
+### Implementation Requirements
+
+#### Configuration Changes
+- Remove: `Evaluation__MaxRunningTimeMinutes` (or leave for backward compatibility)
+- Add: `Evaluation__MaxNoProgressMinutes` (default: 30, configurable)
+- Make hard-coded constant `MaxNoProgressMinutes` configurable
+
+#### Code Changes
+**File**: `MonitorFunction.cs`
+- Remove total runtime check (lines ~90-104)
+- Update progress check to use `_settings.Evaluation.MaxNoProgressMinutes`
+- Update log messages to clarify progress-based detection
+
+**File**: `AppSettings.cs`
+- Rename `MaxRunningTimeMinutes` → `MaxNoProgressMinutes`
+- Add XML documentation explaining behavior
+
+#### Testing Requirements
+- ✅ Long-running evaluation with progress does not timeout
+- ✅ Stalled evaluation (no progress) times out correctly
+- ✅ Configurable threshold value respected
+- ✅ Fallback to StartTime when LastProgressUpdate is null
+
+#### Documentation Updates
+- ✅ ARCHITECTURE.md - Monitor Function section
+- ✅ PRD - Monitoring workflow section
+- ✅ Story 03 - Stall detection acceptance criteria
+- ✅ Test documentation - TC-MON-005 updated
+- ✅ Implementation plan created
+- ✅ README.md - Features section
+
+### Success Metrics
+
+**Functional:**
+- Evaluations making steady progress are not terminated
+- Stalled evaluations detected within configured threshold
+- Configuration value properly loaded and applied
+
+**Operational:**
+- Fewer false-positive timeouts in Application Insights
+- Clear log messages for troubleshooting
+- No increase in truly stalled evaluations
+
+### Risks & Mitigations
+
+| Risk | Mitigation |
+|------|------------|
+| Evaluation runs for days | Default 30-min threshold catches stalls |
+| Configuration not loaded | Validate in health check, use sensible default |
+| False negatives (stalls missed) | Monitor Application Insights for long-running evals |
+
+### Rollback Plan
+
+If issues arise:
+1. Set `Evaluation__MaxNoProgressMinutes` to high value (e.g., 1440 = 24 hours)
+2. Revert code changes if necessary
+3. Re-enable `MaxRunningTimeMinutes` check temporarily
+
+---
+
 ## Document History
 
 | Date | Author | Changes |
 |------|--------|---------|
 | 2025-11-18 | Planning Agent | Initial decisions document created |
 | 2025-11-18 | Planning Agent | All decisions approved by user |
+| 2025-11-26 | Planning Agent | Added Decision 7: Progress-Based Timeout Implementation |

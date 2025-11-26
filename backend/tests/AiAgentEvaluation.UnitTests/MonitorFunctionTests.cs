@@ -3,6 +3,7 @@ using AiAgentEvaluation.Models;
 using AiAgentEvaluation.Services;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Moq;
 using Xunit;
 
@@ -31,10 +32,20 @@ public class MonitorFunctionTests
         _mockDataverseService.Setup(x => x.CheckHealthAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);
         _mockServiceBusService.Setup(x => x.CheckHealthAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);
 
+        var mockSettings = new Mock<IOptions<AppSettings>>();
+        mockSettings.Setup(x => x.Value).Returns(new AppSettings
+        {
+            Evaluation = new EvaluationSettings
+            {
+                MaxNoProgressMinutes = 30
+            }
+        });
+
         _monitorFunction = new MonitorFunction(
             _mockLogger.Object,
             _mockDataverseService.Object,
-            _mockServiceBusService.Object);
+            _mockServiceBusService.Object,
+            mockSettings.Object);
     }
 
     #region TC-MON-001: Timer Trigger Execution
@@ -189,6 +200,18 @@ public class MonitorFunctionTests
             .ReturnsAsync(new List<AiAgentEvaluation.Models.EvaluationRun> { evaluationRun });
         _mockDataverseService.Setup(x => x.GetEvaluationResultsAsync(evaluationRunId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(results);
+        
+        // Mock the count queries that MonitorFunction uses
+        _mockDataverseService.Setup(x => x.GetEvaluationResultCountAsync(evaluationRunId, 778760002, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(3); // Completed
+        _mockDataverseService.Setup(x => x.GetEvaluationResultCountAsync(evaluationRunId, 778760003, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1); // Failed
+        _mockDataverseService.Setup(x => x.GetEvaluationResultCountAsync(evaluationRunId, 778760004, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0); // NotApplicable
+        _mockDataverseService.Setup(x => x.GetEvaluationResultCountAsync(evaluationRunId, 1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0); // Created
+        _mockDataverseService.Setup(x => x.GetEvaluationResultCountAsync(evaluationRunId, 778760001, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0); // Execute
 
         var timerInfo = CreateTimerInfo(isPastDue: false);
 
@@ -233,6 +256,18 @@ public class MonitorFunctionTests
             .ReturnsAsync(new List<AiAgentEvaluation.Models.EvaluationRun> { evaluationRun });
         _mockDataverseService.Setup(x => x.GetEvaluationResultsAsync(evaluationRunId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(results);
+        
+        // Mock the count queries
+        _mockDataverseService.Setup(x => x.GetEvaluationResultCountAsync(evaluationRunId, 778760002, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(2); // Completed
+        _mockDataverseService.Setup(x => x.GetEvaluationResultCountAsync(evaluationRunId, 778760003, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1); // Failed
+        _mockDataverseService.Setup(x => x.GetEvaluationResultCountAsync(evaluationRunId, 778760004, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0); // NotApplicable
+        _mockDataverseService.Setup(x => x.GetEvaluationResultCountAsync(evaluationRunId, 1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1); // Created (pending)
+        _mockDataverseService.Setup(x => x.GetEvaluationResultCountAsync(evaluationRunId, 778760001, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1); // Execute (pending)
 
         var timerInfo = CreateTimerInfo(isPastDue: false);
 
@@ -276,6 +311,18 @@ public class MonitorFunctionTests
             .ReturnsAsync(new List<AiAgentEvaluation.Models.EvaluationRun> { evaluationRun });
         _mockDataverseService.Setup(x => x.GetEvaluationResultsAsync(evaluationRunId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(results);
+        
+        // Mock the count queries - all 3 are complete (2 completed + 1 failed)
+        _mockDataverseService.Setup(x => x.GetEvaluationResultCountAsync(evaluationRunId, 778760002, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(2); // Completed
+        _mockDataverseService.Setup(x => x.GetEvaluationResultCountAsync(evaluationRunId, 778760003, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1); // Failed
+        _mockDataverseService.Setup(x => x.GetEvaluationResultCountAsync(evaluationRunId, 778760004, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0); // NotApplicable
+        _mockDataverseService.Setup(x => x.GetEvaluationResultCountAsync(evaluationRunId, 1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0); // Created
+        _mockDataverseService.Setup(x => x.GetEvaluationResultCountAsync(evaluationRunId, 778760001, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0); // Execute
 
         var timerInfo = CreateTimerInfo(isPastDue: false);
 
@@ -319,6 +366,18 @@ public class MonitorFunctionTests
             .ReturnsAsync(new List<AiAgentEvaluation.Models.EvaluationRun> { evaluationRun });
         _mockDataverseService.Setup(x => x.GetEvaluationResultsAsync(evaluationRunId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(results);
+        
+        // Mock the count queries - only 1 completed, 1 pending
+        _mockDataverseService.Setup(x => x.GetEvaluationResultCountAsync(evaluationRunId, 778760002, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1); // Completed
+        _mockDataverseService.Setup(x => x.GetEvaluationResultCountAsync(evaluationRunId, 778760003, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0); // Failed
+        _mockDataverseService.Setup(x => x.GetEvaluationResultCountAsync(evaluationRunId, 778760004, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0); // NotApplicable
+        _mockDataverseService.Setup(x => x.GetEvaluationResultCountAsync(evaluationRunId, 1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1); // Created (pending)
+        _mockDataverseService.Setup(x => x.GetEvaluationResultCountAsync(evaluationRunId, 778760001, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0); // Execute
 
         var timerInfo = CreateTimerInfo(isPastDue: false);
 
@@ -372,6 +431,18 @@ public class MonitorFunctionTests
             .ReturnsAsync(new List<AiAgentEvaluation.Models.EvaluationRun> { evaluationRun });
         _mockDataverseService.Setup(x => x.GetEvaluationResultsAsync(evaluationRunId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(results);
+        
+        // Mock the count queries - 2 completed, 1 failed, 2 not applicable (all done)
+        _mockDataverseService.Setup(x => x.GetEvaluationResultCountAsync(evaluationRunId, 778760002, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(2); // Completed
+        _mockDataverseService.Setup(x => x.GetEvaluationResultCountAsync(evaluationRunId, 778760003, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1); // Failed
+        _mockDataverseService.Setup(x => x.GetEvaluationResultCountAsync(evaluationRunId, 778760004, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(2); // NotApplicable
+        _mockDataverseService.Setup(x => x.GetEvaluationResultCountAsync(evaluationRunId, 1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0); // Created
+        _mockDataverseService.Setup(x => x.GetEvaluationResultCountAsync(evaluationRunId, 778760001, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0); // Execute
 
         var timerInfo = CreateTimerInfo(isPastDue: false);
 
@@ -418,6 +489,183 @@ public class MonitorFunctionTests
         mockHttpRequestData.Setup(r => r.Body).Returns(new System.IO.MemoryStream());
         
         return mockHttpRequestData.Object;
+    }
+
+    #endregion
+
+    #region Progress-Based Timeout Tests (Nov 2025)
+
+    [Fact]
+    public async Task MonitorEvaluationRuns_LongRunningWithProgress_DoesNotTimeout()
+    {
+        // Arrange - Evaluation running for 3 hours but made progress 5 minutes ago
+        var evaluationRunId = Guid.NewGuid();
+        var evaluationRun = new EvaluationRun
+        {
+            Id = evaluationRunId,
+            Name = "Long Running Test",
+            StatusCode = EvaluationRunStatus.Running,
+            TotalTestCases = 10000,
+            CompletedTestCases = 8000,
+            StartTime = DateTime.UtcNow.AddHours(-3), // Started 3 hours ago
+            LastProgressUpdate = DateTime.UtcNow.AddMinutes(-5) // Progress 5 minutes ago
+        };
+
+        _mockDataverseService
+            .Setup(x => x.GetRunningEvaluationRunsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<EvaluationRun> { evaluationRun });
+
+        _mockDataverseService
+            .Setup(x => x.GetEvaluationResultCountAsync(evaluationRunId, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0);
+
+        var timerInfo = CreateTimerInfo(isPastDue: false);
+
+        // Act
+        await _monitorFunction.MonitorEvaluationRuns(timerInfo, CancellationToken.None);
+
+        // Assert - Should NOT be marked as errored (still in progress)
+        _mockDataverseService.Verify(
+            x => x.UpdateEvaluationRunCompletionAsync(
+                evaluationRunId,
+                EvaluationRunStatus.Errored,
+                It.IsAny<decimal?>(),
+                It.IsAny<bool>(),
+                It.IsAny<DateTime>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never,
+            "Evaluation with recent progress should not timeout regardless of total runtime");
+    }
+
+    [Fact]
+    public async Task MonitorEvaluationRuns_NoProgressForThreshold_MarksAsErrored()
+    {
+        // Arrange - No progress for 35 minutes (threshold is 30)
+        var evaluationRunId = Guid.NewGuid();
+        var evaluationRun = new EvaluationRun
+        {
+            Id = evaluationRunId,
+            Name = "Stalled Test",
+            StatusCode = EvaluationRunStatus.Running,
+            TotalTestCases = 100,
+            CompletedTestCases = 50,
+            StartTime = DateTime.UtcNow.AddMinutes(-40),
+            LastProgressUpdate = DateTime.UtcNow.AddMinutes(-35) // No progress for 35 minutes
+        };
+
+        _mockDataverseService
+            .Setup(x => x.GetRunningEvaluationRunsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<EvaluationRun> { evaluationRun });
+
+        var timerInfo = CreateTimerInfo(isPastDue: false);
+
+        // Act
+        await _monitorFunction.MonitorEvaluationRuns(timerInfo, CancellationToken.None);
+
+        // Assert - Should be marked as errored due to lack of progress
+        _mockDataverseService.Verify(
+            x => x.UpdateEvaluationRunCompletionAsync(
+                evaluationRunId,
+                EvaluationRunStatus.Errored,
+                null,
+                false,
+                It.IsAny<DateTime>(),
+                It.IsAny<CancellationToken>()),
+            Times.Once,
+            "Evaluation with no progress beyond threshold should be marked as errored");
+    }
+
+    [Theory]
+    [InlineData(30)] // Default
+    [InlineData(60)] // Extended
+    [InlineData(15)] // Shortened
+    public async Task MonitorEvaluationRuns_RespectsConfigurableThreshold(int thresholdMinutes)
+    {
+        // Arrange - Configure threshold
+        var mockSettings = new Mock<IOptions<AppSettings>>();
+        mockSettings.Setup(x => x.Value).Returns(new AppSettings
+        {
+            Evaluation = new EvaluationSettings
+            {
+                MaxNoProgressMinutes = thresholdMinutes
+            }
+        });
+        
+        var monitorFunction = new MonitorFunction(
+            _mockLogger.Object, 
+            _mockDataverseService.Object, 
+            _mockServiceBusService.Object, 
+            mockSettings.Object);
+        
+        var evaluationRun = new EvaluationRun
+        {
+            Id = Guid.NewGuid(),
+            Name = "Threshold Test",
+            StatusCode = EvaluationRunStatus.Running,
+            TotalTestCases = 100,
+            CompletedTestCases = 50,
+            StartTime = DateTime.UtcNow.AddMinutes(-(thresholdMinutes + 5)),
+            LastProgressUpdate = DateTime.UtcNow.AddMinutes(-(thresholdMinutes + 5))
+        };
+
+        _mockDataverseService
+            .Setup(x => x.GetRunningEvaluationRunsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<EvaluationRun> { evaluationRun });
+
+        var timerInfo = CreateTimerInfo(isPastDue: false);
+
+        // Act
+        await monitorFunction.MonitorEvaluationRuns(timerInfo, CancellationToken.None);
+
+        // Assert - Should timeout when exceeding configured threshold
+        _mockDataverseService.Verify(
+            x => x.UpdateEvaluationRunCompletionAsync(
+                It.IsAny<Guid>(),
+                EvaluationRunStatus.Errored,
+                It.IsAny<decimal?>(),
+                It.IsAny<bool>(),
+                It.IsAny<DateTime>(),
+                It.IsAny<CancellationToken>()),
+            Times.Once,
+            $"Evaluation should timeout after {thresholdMinutes} minutes of no progress");
+    }
+
+    [Fact]
+    public async Task MonitorEvaluationRuns_FallbackToStartTime_WhenLastProgressUpdateNull()
+    {
+        // Arrange - Evaluation with no LastProgressUpdate (just started)
+        var evaluationRunId = Guid.NewGuid();
+        var evaluationRun = new EvaluationRun
+        {
+            Id = evaluationRunId,
+            Name = "New Evaluation",
+            StatusCode = EvaluationRunStatus.Running,
+            TotalTestCases = 100,
+            CompletedTestCases = 0,
+            StartTime = DateTime.UtcNow.AddMinutes(-35), // Started 35 minutes ago
+            LastProgressUpdate = null // No progress updates yet
+        };
+
+        _mockDataverseService
+            .Setup(x => x.GetRunningEvaluationRunsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<EvaluationRun> { evaluationRun });
+
+        var timerInfo = CreateTimerInfo(isPastDue: false);
+
+        // Act
+        await _monitorFunction.MonitorEvaluationRuns(timerInfo, CancellationToken.None);
+
+        // Assert - Should be marked as errored because StartTime exceeds threshold
+        _mockDataverseService.Verify(
+            x => x.UpdateEvaluationRunCompletionAsync(
+                evaluationRunId,
+                EvaluationRunStatus.Errored,
+                null,
+                false,
+                It.IsAny<DateTime>(),
+                It.IsAny<CancellationToken>()),
+            Times.Once,
+            "Evaluation should timeout when no progress since start and StartTime exceeds threshold");
     }
 
     #endregion

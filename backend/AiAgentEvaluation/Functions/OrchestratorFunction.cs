@@ -72,65 +72,122 @@ public class OrchestratorFunction
                     $"Evaluation run is not in Execute state. Current status: {evaluationRun.StatusCode}");
             }
 
+            // Queue orchestration message for async processing
+            var orchestrationMessage = new StartOrchestrationMessage
+            {
+                EvaluationRunId = request.EvaluationRunId
+            };
+            
+            await _serviceBusService.SendOrchestrationMessageAsync(orchestrationMessage, cancellationToken);
+            
+            _logger.LogInformation("Queued orchestration message for evaluation run {EvaluationRunId}", request.EvaluationRunId);
+
+            // Build status URL
+            var hostUrl = req.Url.GetLeftPart(UriPartial.Authority);
+            var statusUrl = $"{hostUrl}/api/evaluations/{request.EvaluationRunId}/status";
+
+            // Create response
+            var response = new StartEvaluationRunResponse
+            {
+                EvaluationRunId = request.EvaluationRunId,
+                Status = "Queued",
+                TotalTestCases = 0, // Will be updated by orchestration processor
+                StartTime = DateTime.UtcNow,
+                EstimatedCompletionTime = null,
+                StatusUrl = statusUrl,
+                Message = "Evaluation run queued for processing"
+            };
+
+            _logger.LogInformation("Successfully queued evaluation run {EvaluationRunId}", request.EvaluationRunId);
+
+            return await CreateJsonResponse(req, HttpStatusCode.Accepted, response);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error starting evaluation run");
+            return await CreateErrorResponse(req, HttpStatusCode.InternalServerError, "Internal server error occurred");
+        }
+    }
+
+    /// <summary>
+    /// Processes orchestration messages from Service Bus to execute evaluation runs in the background
+    /// </summary>
+    [Function("ProcessOrchestration")]
+    public async Task ProcessOrchestration(
+        [ServiceBusTrigger("orchestration-queue", Connection = "ServiceBusNamespace")] StartOrchestrationMessage message,
+        CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("Processing orchestration for evaluation run {EvaluationRunId}", message.EvaluationRunId);
+
+        try
+        {
+            // Get the evaluation run from Dataverse
+            var evaluationRun = await _dataverseService.GetEvaluationRunAsync(message.EvaluationRunId, CancellationToken.None);
+            if (evaluationRun == null)
+            {
+                _logger.LogError("Evaluation run {EvaluationRunId} not found", message.EvaluationRunId);
+                return;
+            }
+
             // Update status to Running
-            await _dataverseService.UpdateEvaluationRunStatusAsync(request.EvaluationRunId, EvaluationRunStatus.Running, cancellationToken);
-            await _dataverseService.SetEvaluationRunStartTimeAsync(request.EvaluationRunId, DateTime.UtcNow, cancellationToken);
+            await _dataverseService.UpdateEvaluationRunStatusAsync(message.EvaluationRunId, EvaluationRunStatus.Running, CancellationToken.None);
+            await _dataverseService.SetEvaluationRunStartTimeAsync(message.EvaluationRunId, DateTime.UtcNow, CancellationToken.None);
 
             // Get all test cases for this evaluation run
-            var testCases = await _dataverseService.GetTestCasesAsync(request.EvaluationRunId, cancellationToken);
+            var testCases = await _dataverseService.GetTestCasesAsync(message.EvaluationRunId, CancellationToken.None);
             if (!testCases.Any())
             {
-                await _dataverseService.UpdateEvaluationRunStatusAsync(request.EvaluationRunId, EvaluationRunStatus.Completed, cancellationToken);
-                await _dataverseService.SetEvaluationRunEndTimeAsync(request.EvaluationRunId, DateTime.UtcNow, cancellationToken);
-                
-                return await CreateErrorResponse(req, HttpStatusCode.BadRequest, "No test cases found for this evaluation run");
+                _logger.LogWarning("No test cases found for evaluation run {EvaluationRunId}", message.EvaluationRunId);
+                await _dataverseService.UpdateEvaluationRunStatusAsync(message.EvaluationRunId, EvaluationRunStatus.Completed, CancellationToken.None);
+                await _dataverseService.SetEvaluationRunEndTimeAsync(message.EvaluationRunId, DateTime.UtcNow, CancellationToken.None);
+                return;
             }
 
             _logger.LogInformation("Found {TestCaseCount} test cases for evaluation run {EvaluationRunId}", 
-                testCases.Count, request.EvaluationRunId);
+                testCases.Count, message.EvaluationRunId);
 
             // Get the Direct Line URL from the AgentToEval lookup
             string directLineUrl;
             if (evaluationRun.AgentToEvalId.HasValue)
             {
-                var agentToEval = await _dataverseService.GetAgentToEvalAsync(evaluationRun.AgentToEvalId.Value, cancellationToken);
+                var agentToEval = await _dataverseService.GetAgentToEvalAsync(evaluationRun.AgentToEvalId.Value, CancellationToken.None);
                 if (agentToEval == null || string.IsNullOrEmpty(agentToEval.DirectLineSpeechUrl))
                 {
-                    await _dataverseService.UpdateEvaluationRunStatusAsync(request.EvaluationRunId, EvaluationRunStatus.Errored, cancellationToken);
-                    return await CreateErrorResponse(req, HttpStatusCode.BadRequest, 
-                        "Agent to evaluate not found or Direct Line URL is not configured");
+                    _logger.LogError("Agent to evaluate not found or Direct Line URL is not configured for evaluation run {EvaluationRunId}", message.EvaluationRunId);
+                    await _dataverseService.UpdateEvaluationRunStatusAsync(message.EvaluationRunId, EvaluationRunStatus.Errored, CancellationToken.None);
+                    return;
                 }
                 directLineUrl = agentToEval.DirectLineSpeechUrl;
                 _logger.LogInformation("Using Direct Line URL from AgentToEval: {DirectLineUrl}", directLineUrl);
             }
             else
             {
-                await _dataverseService.UpdateEvaluationRunStatusAsync(request.EvaluationRunId, EvaluationRunStatus.Errored, cancellationToken);
-                return await CreateErrorResponse(req, HttpStatusCode.BadRequest, 
-                    "Evaluation run does not have an AgentToEval lookup configured");
+                _logger.LogError("Evaluation run {EvaluationRunId} does not have an AgentToEval lookup configured", message.EvaluationRunId);
+                await _dataverseService.UpdateEvaluationRunStatusAsync(message.EvaluationRunId, EvaluationRunStatus.Errored, CancellationToken.None);
+                return;
             }
 
             // Fetch evaluator types for this run (N:N lookup)
             var evaluatorTypes = await _dataverseService.GetEvaluatorTypesForRunAsync(
-                request.EvaluationRunId, 
-                cancellationToken);
+                message.EvaluationRunId, 
+                CancellationToken.None);
             
             if (!evaluatorTypes.Any())
             {
-                await _dataverseService.UpdateEvaluationRunStatusAsync(request.EvaluationRunId, EvaluationRunStatus.Errored, cancellationToken);
-                return await CreateErrorResponse(req, HttpStatusCode.BadRequest, 
-                    "Evaluation run must have at least one evaluator type configured");
+                _logger.LogError("Evaluation run {EvaluationRunId} must have at least one evaluator type configured", message.EvaluationRunId);
+                await _dataverseService.UpdateEvaluationRunStatusAsync(message.EvaluationRunId, EvaluationRunStatus.Errored, CancellationToken.None);
+                return;
             }
 
             _logger.LogInformation("Found {EvaluatorCount} evaluator types for evaluation run {EvaluationRunId}",
-                evaluatorTypes.Count, request.EvaluationRunId);
+                evaluatorTypes.Count, message.EvaluationRunId);
 
             // Calculate total evaluation units (TestCase × EvaluatorType pairs)
             int totalUnits = CalculateTotalEvaluationUnits(testCases, evaluatorTypes.Count);
             await _dataverseService.SetEvaluationRunTotalTestCasesAsync(
-                request.EvaluationRunId, 
+                message.EvaluationRunId, 
                 totalUnits, 
-                cancellationToken);
+                CancellationToken.None);
 
             _logger.LogInformation("Total evaluation units: {TotalUnits} ({TestCaseCount} test cases × {EvaluatorCount} evaluators)",
                 totalUnits, testCases.Count, evaluatorTypes.Count);
@@ -140,59 +197,57 @@ public class OrchestratorFunction
             var singleTurnTestCases = testCases.Where(tc => !tc.IsMultiTurn).ToList();
             var multiTurnTestCases = testCases.Where(tc => tc.IsMultiTurn).ToList();
 
-            _logger.LogWarning("[DIAGNOSTIC] Test case breakdown: {SingleTurn} single-turn, {MultiTurn} multi-turn",
+            _logger.LogInformation("Test case breakdown: {SingleTurn} single-turn, {MultiTurn} multi-turn",
                 singleTurnTestCases.Count, multiTurnTestCases.Count);
-            
-            // Log each test case type for debugging
-            foreach (var tc in testCases)
-            {
-                _logger.LogWarning("[DIAGNOSTIC] Test case {TestCaseId} ({Name}): IsMultiTurn={IsMultiTurn}",
-                    tc.Id, tc.Name ?? "unnamed", tc.IsMultiTurn);
-            }
 
             // Process single-turn test cases (Phase 1: New Architecture)
-            // Queue to agent-call-queue instead of test-case-processing queue
-            foreach (var testCase in singleTurnTestCases)
-            {
-                // Get all evaluator type IDs for this test case
-                var evaluatorTypeIds = evaluatorTypes.Select(e => e.Id).ToList();
-                
-                // Queue agent call message (NA handling moved to AgentWorkerFunction)
-                var message = new AgentCallMessage
-                {
-                    EvaluationRunId = request.EvaluationRunId,
-                    TestCaseId = testCase.Id,
-                    DirectLineUrl = directLineUrl,
-                    UserInput = testCase.UserInput,
-                    ExpectedResponse = testCase.ExpectedResponse ?? string.Empty,
-                    EvaluatorTypeIds = evaluatorTypeIds,
-                    ConversationId = testCase.ConversationId,
-                    PassingThreshold = passingThreshold
-                };
-                
-                await _serviceBusService.SendAgentCallMessageAsync(message, cancellationToken);
-            }
-            
+            // Queue to agent-call-queue in parallel for performance
             if (singleTurnTestCases.Any())
             {
-                _logger.LogInformation("Sent {Count} single-turn agent call messages to agent-call-queue",
-                    singleTurnTestCases.Count);
+                _logger.LogInformation("Queuing {Count} single-turn test cases in parallel", singleTurnTestCases.Count);
+                var singleTurnStopwatch = Stopwatch.StartNew();
+                
+                var evaluatorTypeIds = evaluatorTypes.Select(e => e.Id).ToList();
+                
+                var queueTasks = singleTurnTestCases.Select(async testCase =>
+                {
+                    var agentCallMessage = new AgentCallMessage
+                    {
+                        EvaluationRunId = message.EvaluationRunId,
+                        TestCaseId = testCase.Id,
+                        DirectLineUrl = directLineUrl,
+                        UserInput = testCase.UserInput,
+                        ExpectedResponse = testCase.ExpectedResponse ?? string.Empty,
+                        EvaluatorTypeIds = evaluatorTypeIds,
+                        ConversationId = testCase.ConversationId,
+                        PassingThreshold = passingThreshold
+                    };
+                    
+                    await _serviceBusService.SendAgentCallMessageAsync(agentCallMessage, CancellationToken.None);
+                });
+                
+                await Task.WhenAll(queueTasks);
+                singleTurnStopwatch.Stop();
+                
+                _logger.LogInformation("Sent {Count} single-turn agent call messages to agent-call-queue in {Ms}ms",
+                    singleTurnTestCases.Count, singleTurnStopwatch.ElapsedMilliseconds);
             }
 
-            // Process multi-turn test cases (Story 11: Service Bus Migration)
+            // Process multi-turn test cases (Story 11: Service Bus Migration with Performance Optimization)
             // Queue Turn 1 messages to multi-turn-agent-call-queue
             if (multiTurnTestCases.Any())
             {
                 _logger.LogInformation("Processing {Count} multi-turn test cases with {EvaluatorCount} evaluators each", 
                     multiTurnTestCases.Count, evaluatorTypes.Count);
                 
+                var multiTurnOverallStopwatch = Stopwatch.StartNew();
+                
                 // PERFORMANCE: Fetch all existing aggregates for this evaluation run in one batch query
-                // instead of querying per test case (for idempotency checks)
                 _logger.LogInformation("Fetching all existing aggregate results for evaluation run {EvaluationRunId} to check idempotency",
-                    request.EvaluationRunId);
+                    message.EvaluationRunId);
                 var allExistingAggregatesStopwatch = Stopwatch.StartNew();
                 var allExistingAggregates = await _dataverseService.GetAggregateResultsForEvaluationRunAsync(
-                    request.EvaluationRunId, cancellationToken);
+                    message.EvaluationRunId, CancellationToken.None);
                 allExistingAggregatesStopwatch.Stop();
                 _logger.LogInformation("Fetched {Count} existing aggregate results in {Ms}ms", 
                     allExistingAggregates.Count, allExistingAggregatesStopwatch.ElapsedMilliseconds);
@@ -206,20 +261,45 @@ public class OrchestratorFunction
                 // Get all evaluator type IDs for this run
                 var evaluatorTypeIds = evaluatorTypes.Select(e => e.Id).ToList();
                 
+                // PERFORMANCE: Batch-fetch ALL turns for ALL multi-turn test cases in one query
+                // Use testSetId to avoid IN operator issues with large test case lists
+                _logger.LogInformation("Batch-fetching turns for {Count} multi-turn test cases from test set {TestSetId}", 
+                    multiTurnTestCases.Count, evaluationRun.TestSetId);
+                var allTurnsStopwatch = Stopwatch.StartNew();
+                var allTurnsByTestCase = await _dataverseService.GetAllTurnsForTestCasesAsync(
+                    evaluationRun.TestSetId!.Value, 
+                    CancellationToken.None);
+                allTurnsStopwatch.Stop();
+                _logger.LogInformation("Fetched turns for {TestCaseCount} test cases in {Ms}ms", 
+                    allTurnsByTestCase.Count, allTurnsStopwatch.ElapsedMilliseconds);
+                
+                // Filter test cases that need processing
+                var testCasesToProcess = new List<(TestCase TestCase, int TurnCount)>();
+                
                 foreach (var testCase in multiTurnTestCases)
                 {
-                    // Check if any aggregate result already exists for this test case + evaluator combination
-                    // If all evaluators have completed aggregates, skip this test case
+                    _logger.LogInformation("[DIAGNOSTIC] Processing test case {TestCaseId} ({Name})", 
+                        testCase.Id, testCase.Name ?? "unnamed");
+                    
+                    // Check if all evaluators have completed aggregates
                     var allEvaluatorsCompleted = evaluatorTypes.All(evaluatorType =>
                     {
                         var lookupKey = (testCase.Id, evaluatorType.Id);
                         if (aggregateLookup.TryGetValue(lookupKey, out var existingAggregate))
                         {
-                            return existingAggregate.StatusCode != EvaluationResultStatus.Errored &&
+                            var isCompleted = existingAggregate.StatusCode != EvaluationResultStatus.Errored &&
                                    existingAggregate.StatusCode != EvaluationResultStatus.Pending;
+                            _logger.LogInformation("[DIAGNOSTIC] Test case {TestCaseId}, Evaluator {EvaluatorId}: Aggregate exists with status {Status}, isCompleted={IsCompleted}",
+                                testCase.Id, evaluatorType.Id, existingAggregate.StatusCode, isCompleted);
+                            return isCompleted;
                         }
+                        _logger.LogInformation("[DIAGNOSTIC] Test case {TestCaseId}, Evaluator {EvaluatorId}: No aggregate found",
+                            testCase.Id, evaluatorType.Id);
                         return false;
                     });
+                    
+                    _logger.LogInformation("[DIAGNOSTIC] Test case {TestCaseId}: allEvaluatorsCompleted={AllCompleted}",
+                        testCase.Id, allEvaluatorsCompleted);
                     
                     if (allEvaluatorsCompleted)
                     {
@@ -229,109 +309,128 @@ public class OrchestratorFunction
                         continue;
                     }
                     
-                    // Get turn count from test case
-                    var turns = await _dataverseService.GetTestCaseTurnsAsync(testCase.Id, cancellationToken);
-                    if (!turns.Any())
+                    // Check if turns exist for this test case
+                    if (!allTurnsByTestCase.TryGetValue(testCase.Id, out var turns))
                     {
-                        _logger.LogWarning("Multi-turn test case {TestCaseId} has no turns defined, skipping", testCase.Id);
+                        _logger.LogWarning("[DIAGNOSTIC] Multi-turn test case {TestCaseId} not found in allTurnsByTestCase dictionary (keys: {Keys})", 
+                            testCase.Id, string.Join(", ", allTurnsByTestCase.Keys));
                         continue;
                     }
                     
-                    var totalTurns = turns.Count;
-                    
-                    // Create aggregate placeholder results for each evaluator
-                    foreach (var evaluatorType in evaluatorTypes)
+                    if (!turns.Any())
                     {
-                        var lookupKey = (testCase.Id, evaluatorType.Id);
-                        if (!aggregateLookup.ContainsKey(lookupKey))
-                        {
-                            // Create aggregate placeholder
-                            await _dataverseService.CreateEvaluationResultAsync(new CreateEvaluationResultRequest
-                            {
-                                EvaluationRunId = request.EvaluationRunId,
-                                TestCaseId = testCase.Id,
-                                EvaluatorTypeId = evaluatorType.Id,
-                                TestCaseTurnId = null, // Aggregate has no specific turn
-                                StatusCode = EvaluationResultStatus.Pending,
-                                IsAggregate = true,
-                                Score = 0.0m,
-                                Passed = false,
-                                Reasoning = "Multi-turn aggregate - awaiting turn completion"
-                            }, cancellationToken);
-                            
-                            _logger.LogInformation(
-                                "Created aggregate placeholder for test case {TestCaseId}, evaluator {EvaluatorId}",
-                                testCase.Id,
-                                evaluatorType.Id);
-                        }
+                        _logger.LogWarning("[DIAGNOSTIC] Multi-turn test case {TestCaseId} has empty turns list", testCase.Id);
+                        continue;
                     }
                     
-                    // Queue Turn 1 message (one message per test case, includes ALL evaluators)
-                    var message = new MultiTurnAgentCallMessage
-                    {
-                        EvaluationRunId = request.EvaluationRunId,
-                        TestCaseId = testCase.Id,
-                        EvaluatorTypeIds = evaluatorTypeIds,
-                        TurnSequence = 1,
-                        TotalTurns = totalTurns,
-                        DirectLineUrl = directLineUrl,
-                        ConversationId = null, // Turn 1 starts new conversation
-                        DirectLineToken = null, // Will be populated from Turn 1 response
-                        PassingThreshold = passingThreshold,
-                        RetryCount = 0
-                    };
+                    _logger.LogInformation("[DIAGNOSTIC] Test case {TestCaseId} has {TurnCount} turns, adding to processing queue",
+                        testCase.Id, turns.Count);
+                    testCasesToProcess.Add((testCase, turns.Count));
+                }
+                
+                _logger.LogInformation("{ProcessCount} multi-turn test cases need processing (out of {TotalCount})",
+                    testCasesToProcess.Count, multiTurnTestCases.Count);
+                
+                if (testCasesToProcess.Any())
+                {
+                    // PERFORMANCE: Create aggregate placeholders in parallel with throttling to respect Dataverse rate limits
+                    _logger.LogInformation("Creating aggregate placeholders for {Count} test cases with {EvaluatorCount} evaluators (parallel, throttled)",
+                        testCasesToProcess.Count, evaluatorTypes.Count);
+                    var createPlaceholdersStopwatch = Stopwatch.StartNew();
                     
-                    await _serviceBusService.SendMultiTurnAgentCallMessageAsync(message, cancellationToken);
+                    // Use SemaphoreSlim to throttle concurrent Dataverse writes (limit: 10)
+                    var dataverseSemaphore = new SemaphoreSlim(10, 10);
+                    
+                    var createTasks = testCasesToProcess.SelectMany(tuple =>
+                    {
+                        var testCase = tuple.TestCase;
+                        
+                        return evaluatorTypes.Select(async evaluatorType =>
+                        {
+                            var lookupKey = (testCase.Id, evaluatorType.Id);
+                            if (!aggregateLookup.ContainsKey(lookupKey))
+                            {
+                                await dataverseSemaphore.WaitAsync(CancellationToken.None);
+                                try
+                                {
+                                    await _dataverseService.CreateEvaluationResultAsync(new CreateEvaluationResultRequest
+                                    {
+                                        EvaluationRunId = message.EvaluationRunId,
+                                        TestCaseId = testCase.Id,
+                                        EvaluatorTypeId = evaluatorType.Id,
+                                        TestCaseTurnId = null,
+                                        StatusCode = EvaluationResultStatus.Pending,
+                                        IsAggregate = true,
+                                        Score = 0.0m,
+                                        Passed = false,
+                                        Reasoning = "Multi-turn aggregate - awaiting turn completion"
+                                    }, CancellationToken.None);
+                                }
+                                finally
+                                {
+                                    dataverseSemaphore.Release();
+                                }
+                            }
+                        });
+                    });
+                    
+                    await Task.WhenAll(createTasks);
+                    createPlaceholdersStopwatch.Stop();
+                    _logger.LogInformation("Created aggregate placeholders in {Ms}ms", createPlaceholdersStopwatch.ElapsedMilliseconds);
+                    
+                    // PERFORMANCE: Queue all Turn 1 messages in parallel
+                    _logger.LogInformation("Queuing Turn 1 messages for {Count} test cases in parallel", testCasesToProcess.Count);
+                    var queueMessagesStopwatch = Stopwatch.StartNew();
+                    
+                    var queueTasks = testCasesToProcess.Select(async tuple =>
+                    {
+                        var (testCase, totalTurns) = tuple;
+                        
+                        var multiTurnMessage = new MultiTurnAgentCallMessage
+                        {
+                            EvaluationRunId = message.EvaluationRunId,
+                            TestCaseId = testCase.Id,
+                            EvaluatorTypeIds = evaluatorTypeIds,
+                            TurnSequence = 1,
+                            TotalTurns = totalTurns,
+                            DirectLineUrl = directLineUrl,
+                            ConversationId = null,
+                            DirectLineToken = null,
+                            PassingThreshold = passingThreshold,
+                            RetryCount = 0
+                        };
+                        
+                        await _serviceBusService.SendMultiTurnAgentCallMessageAsync(multiTurnMessage, CancellationToken.None);
+                    });
+                    
+                    await Task.WhenAll(queueTasks);
+                    queueMessagesStopwatch.Stop();
+                    
+                    multiTurnOverallStopwatch.Stop();
                     
                     _logger.LogInformation(
-                        "Queued Turn 1/{TotalTurns} for multi-turn test case {TestCaseId} with {EvaluatorCount} evaluators",
-                        totalTurns,
-                        testCase.Id,
-                        evaluatorTypeIds.Count);
+                        "Sent {Count} multi-turn Turn 1 messages to multi-turn-agent-call-queue in {QueueMs}ms (total multi-turn processing: {TotalMs}ms)",
+                        testCasesToProcess.Count,
+                        queueMessagesStopwatch.ElapsedMilliseconds,
+                        multiTurnOverallStopwatch.ElapsedMilliseconds);
                 }
-
-                _logger.LogInformation("Sent {Count} multi-turn Turn 1 messages to multi-turn-agent-call-queue",
-                    multiTurnTestCases.Count);
+                else
+                {
+                    _logger.LogInformation("No multi-turn test cases need processing (all already completed or have no turns)");
+                }
             }
             else
             {
                 _logger.LogInformation("No multi-turn test cases found");
             }
 
-            // Calculate estimated completion time
-            // Estimate: ~30 seconds per evaluation unit on average (copilot + LLM judge)
-            // With concurrency of 100 (from host.json maxConcurrentActivityFunctions)
-            var startTime = DateTime.UtcNow;
-            var estimatedSecondsPerTest = 30;
-            var estimatedConcurrency = 100;
-            var estimatedTotalSeconds = (totalUnits * estimatedSecondsPerTest) / estimatedConcurrency;
-            var estimatedCompletionTime = startTime.AddSeconds(estimatedTotalSeconds);
-
-            // Build status URL
-            var hostUrl = req.Url.GetLeftPart(UriPartial.Authority);
-            var statusUrl = $"{hostUrl}/api/evaluations/{request.EvaluationRunId}/status";
-
-            // Create response
-            var response = new StartEvaluationRunResponse
-            {
-                EvaluationRunId = request.EvaluationRunId,
-                Status = "Running",
-                TotalTestCases = totalUnits,
-                StartTime = startTime,
-                EstimatedCompletionTime = estimatedCompletionTime,
-                StatusUrl = statusUrl,
-                Message = $"Evaluation run started successfully with {testCases.Count} test cases and {evaluatorTypes.Count} evaluators ({totalUnits} total evaluation units)"
-            };
-
-            _logger.LogInformation("Successfully started evaluation run {EvaluationRunId} with {TestCaseCount} test cases and {EvaluatorCount} evaluators ({TotalUnits} units)", 
-                request.EvaluationRunId, testCases.Count, evaluatorTypes.Count, totalUnits);
-
-            return await CreateJsonResponse(req, HttpStatusCode.Accepted, response);
+            _logger.LogInformation("Successfully queued all test cases for evaluation run {EvaluationRunId} with {TestCaseCount} test cases and {EvaluatorCount} evaluators ({TotalUnits} units)", 
+                message.EvaluationRunId, testCases.Count, evaluatorTypes.Count, totalUnits);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error starting evaluation run");
-            return await CreateErrorResponse(req, HttpStatusCode.InternalServerError, "Internal server error occurred");
+            _logger.LogError(ex, "Error processing orchestration for evaluation run {EvaluationRunId}", message.EvaluationRunId);
+            await _dataverseService.UpdateEvaluationRunStatusAsync(message.EvaluationRunId, EvaluationRunStatus.Errored, CancellationToken.None);
         }
     }
 

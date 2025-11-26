@@ -23,7 +23,14 @@ The Monitor Function is a timer-triggered Azure Function that periodically check
 - Implements error isolation - failures in one evaluation don't affect others
 
 #### 3. Stalled Evaluation Detection
-- Detects evaluations running longer than 120 minutes (2 hours)
+- **Current Implementation:** Dual timeout approach
+  - Total runtime: Detects evaluations running > 120 minutes (2 hours)
+  - Progress-based: Detects evaluations with no progress > 30 minutes
+- **Planned Change (Nov 2025):** Pure progress-based detection
+  - Remove total runtime limit
+  - Use only `LastProgressUpdate` timestamp with configurable threshold
+  - Allows long evaluations to complete if making continuous progress
+  - See: `docs/implementation/progress-based-timeout-implementation-plan.md`
 - Automatically marks stalled evaluations as `778760003` (Errored)
 - Logs warnings for troubleshooting and alerting
 

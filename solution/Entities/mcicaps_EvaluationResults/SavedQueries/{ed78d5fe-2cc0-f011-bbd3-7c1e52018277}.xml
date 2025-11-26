@@ -1,0 +1,61 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<savedqueries xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <savedquery>
+    <IsCustomizable>1</IsCustomizable>
+    <CanBeDeleted>1</CanBeDeleted>
+    <isquickfindquery>0</isquickfindquery>
+    <isprivate>0</isprivate>
+    <isdefault>0</isdefault>
+    <savedqueryid>{ed78d5fe-2cc0-f011-bbd3-7c1e52018277}</savedqueryid>
+    <layoutxml>
+      <grid name="resultset" jump="mcicaps_evaluationresultname" select="1" icon="1" preview="1">
+        <row name="result" id="mcicaps_evaluationresultsid">
+          <cell name="mcicaps_evaluationresultname" width="100" />
+          <cell name="mcicaps_evaluatortypeid" width="126" />
+          <cell name="mcicaps_score" width="60" />
+          <cell name="mcicaps_passed" width="64" />
+          <cell name="mcicaps_actualresponse" width="150" />
+          <cell name="mcicaps_reasoning" width="150" />
+          <cell name="mcicaps_errormessage" width="123" />
+          <cell name="mcicaps_testcase" width="150" />
+          <cell name="mcicaps_testcaseturnid" width="125" />
+          <cell name="mcicaps_isaggregate" width="152" />
+          <cell name="mcicaps_executiontime" width="130" />
+          <cell name="statuscode" width="119" />
+        </row>
+      </grid>
+    </layoutxml>
+    <querytype>0</querytype>
+    <fetchxml>
+      <fetch version="1.0" mapping="logical" distinct="true">
+        <entity name="mcicaps_evaluationresults">
+          <attribute name="mcicaps_evaluationresultsid" />
+          <attribute name="mcicaps_evaluationresultname" />
+          <attribute name="createdon" />
+          <attribute name="mcicaps_testcase" />
+          <attribute name="mcicaps_actualresponse" />
+          <attribute name="mcicaps_score" />
+          <attribute name="mcicaps_reasoning" />
+          <attribute name="mcicaps_passed" />
+          <attribute name="mcicaps_errormessage" />
+          <attribute name="mcicaps_executiontime" />
+          <attribute name="mcicaps_testcaseturnid" />
+          <attribute name="mcicaps_isaggregate" />
+          <attribute name="statuscode" />
+          <attribute name="mcicaps_evaluatortypeid" />
+          <order attribute="mcicaps_testcase" descending="false" />
+          <order attribute="mcicaps_testcaseturnid" descending="false" />
+          <order attribute="statuscode" descending="false" />
+          <filter type="and">
+            <condition attribute="statecode" operator="eq" value="0" />
+            <condition attribute="statuscode" operator="ne" value="778760004" />
+          </filter>
+        </entity>
+      </fetch>
+    </fetchxml>
+    <IntroducedVersion>1.0.0.0</IntroducedVersion>
+    <LocalizedNames>
+      <LocalizedName description="Evaluation Results for Run" languagecode="1033" />
+    </LocalizedNames>
+  </savedquery>
+</savedqueries>

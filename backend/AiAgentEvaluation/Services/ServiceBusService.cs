@@ -141,6 +141,41 @@ public class ServiceBusService : IServiceBusService, IDisposable
     }
 
     /// <summary>
+    /// Sends agent call message to agent-call-queue with scheduled enqueue time (for retries)
+    /// </summary>
+    public async Task SendAgentCallMessageAsync(AgentCallMessage message, DateTimeOffset scheduledEnqueueTime, CancellationToken cancellationToken = default)
+    {
+        await _resilientService.ExecuteAsync(
+            async (ct) =>
+            {
+                if (_serviceBusClient == null)
+                {
+                    throw new InvalidOperationException("Service Bus client not initialized. Check configuration.");
+                }
+
+                await using var sender = _serviceBusClient.CreateSender("agent-call-queue");
+                var messageBody = JsonSerializer.Serialize(message, _jsonOptions);
+                var serviceBusMessage = new ServiceBusMessage(Encoding.UTF8.GetBytes(messageBody))
+                {
+                    ContentType = "application/json",
+                    MessageId = Guid.NewGuid().ToString(),
+                    ScheduledEnqueueTime = scheduledEnqueueTime
+                };
+
+                await sender.SendMessageAsync(serviceBusMessage, ct);
+                
+                _logger.LogInformation(
+                    "Sent scheduled agent call message to queue: TestCase={TestCaseId}, Run={EvaluationRunId}, ScheduledTime={ScheduledTime}",
+                    message.TestCaseId,
+                    message.EvaluationRunId,
+                    scheduledEnqueueTime);
+            },
+            "SendScheduledAgentCallMessage",
+            null,
+            cancellationToken);
+    }
+
+    /// <summary>
     /// Sends evaluator job message to evaluator-processing-queue (Phase 1 - New Architecture)
     /// </summary>
     public async Task SendEvaluatorJobMessageAsync(EvaluatorJobMessage message, CancellationToken cancellationToken = default)
@@ -275,6 +310,38 @@ public class ServiceBusService : IServiceBusService, IDisposable
                     message.RetryCount);
             },
             "SendMultiTurnAgentCallMessageScheduled",
+            null,
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Sends orchestration start message to orchestration-queue to trigger background processing
+    /// </summary>
+    public async Task SendOrchestrationMessageAsync(StartOrchestrationMessage message, CancellationToken cancellationToken = default)
+    {
+        await _resilientService.ExecuteAsync(
+            async (ct) =>
+            {
+                if (_serviceBusClient == null)
+                {
+                    throw new InvalidOperationException("Service Bus client not initialized. Check configuration.");
+                }
+
+                await using var sender = _serviceBusClient.CreateSender("orchestration-queue");
+                var messageBody = JsonSerializer.Serialize(message, _jsonOptions);
+                var serviceBusMessage = new ServiceBusMessage(Encoding.UTF8.GetBytes(messageBody))
+                {
+                    ContentType = "application/json",
+                    MessageId = Guid.NewGuid().ToString()
+                };
+
+                await sender.SendMessageAsync(serviceBusMessage, ct);
+                
+                _logger.LogInformation(
+                    "Sent orchestration message to queue: EvaluationRunId={EvaluationRunId}",
+                    message.EvaluationRunId);
+            },
+            "SendOrchestrationMessage",
             null,
             cancellationToken);
     }

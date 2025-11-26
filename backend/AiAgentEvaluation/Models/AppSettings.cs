@@ -67,21 +67,39 @@ public class CopilotStudioSettings
     public int TimeoutSeconds { get; set; } = 60;
     
     /// <summary>
-    /// Maximum retry attempts for failed requests
-    /// </summary>
-    public int MaxRetryAttempts { get; set; } = 3;
-    
-    /// <summary>
     /// Maximum time to wait for bot response in seconds (polling timeout)
     /// </summary>
     public int BotResponseTimeoutSeconds { get; set; } = 60;
     
     /// <summary>
+    /// DEPRECATED: Use MaxRequestsPerSecond instead
     /// Delay in milliseconds between consecutive Copilot Studio requests
-    /// Helps prevent rate limiting when many orchestrations run simultaneously
-    /// Default: 500ms (recommended range: 100-2000ms)
     /// </summary>
-    public int RequestDelayMs { get; set; } = 500;
+    [Obsolete("Use MaxRequestsPerSecond for rate limiting instead")]
+    public int RequestDelayMs { get; set; } = 0;
+    
+    /// <summary>
+    /// Maximum requests per second to Copilot Studio (sustainable rate)
+    /// Uses token bucket algorithm for smooth rate limiting
+    /// Default: 10 requests/second (recommended range: 5-20 depending on service tier)
+    /// Set to 0 to disable rate limiting
+    /// </summary>
+    public int MaxRequestsPerSecond { get; set; } = 10;
+    
+    /// <summary>
+    /// Maximum burst capacity for short-term spikes
+    /// Allows accumulating tokens during idle periods
+    /// Default: 20 (2x sustained rate, recommended range: 1.5x - 3x MaxRequestsPerSecond)
+    /// </summary>
+    public int BurstCapacity { get; set; } = 20;
+    
+    /// <summary>
+    /// Maximum concurrent requests to Copilot Studio
+    /// Limits parallel execution to prevent overwhelming the service
+    /// Default: 50 (recommended range: 20-100 depending on service capacity)
+    /// Set to 0 for unlimited concurrency (not recommended)
+    /// </summary>
+    public int MaxConcurrentRequests { get; set; } = 50;
 }
 
 public class AzureOpenAISettings
@@ -99,8 +117,6 @@ public class AzureOpenAISettings
     public string ApiVersion { get; set; } = "2024-02-01";
     public int MaxTokens { get; set; } = 4000;
     public double Temperature { get; set; } = 0.0;
-    public int TimeoutSeconds { get; set; } = 60;
-    public int MaxRetryAttempts { get; set; } = 5; // Increased from 3 to 5 for better rate limit handling
 }
 
 public class ServiceBusSettings
@@ -128,9 +144,43 @@ public class KeyVaultSettings
 public class EvaluationSettings
 {
     public int DefaultTimeoutMinutes { get; set; } = 5;
-    public int MaxRetryAttempts { get; set; } = 3;
+    public int MaxRetryAttempts { get; set; } = 10; // Increased to 10 for better resilience against transient failures
     public int RetryDelaySeconds { get; set; } = 30;
     public bool EnableDetailedLogging { get; set; } = true;
     public double MinScore { get; set; } = 0.0;
     public double MaxScore { get; set; } = 10.0;
+    
+    /// <summary>
+    /// Maximum time without progress before marking evaluation as stalled (minutes)
+    /// If an evaluation shows no progress updates for this duration, it's marked as Errored
+    /// This allows long evaluations to run as long as they make continuous progress
+    /// Default: 30 minutes
+    /// Monitored by MonitorFunction timer trigger
+    /// Override via Azure app setting: Evaluation__MaxNoProgressMinutes
+    /// </summary>
+    public int MaxNoProgressMinutes { get; set; } = 30;
+    
+    /// <summary>
+    /// Threshold in minutes for detecting stalled evaluation runs (no progress)
+    /// If an evaluation run shows no progress (completed/failed/NA count unchanged) for this duration,
+    /// StalePendingResultRecoveryFunction will trigger recovery of stuck pending results
+    /// Default: 60 minutes
+    /// Override via Azure app setting: Evaluation__StalePendingThresholdMinutes
+    /// </summary>
+    public int StalePendingThresholdMinutes { get; set; } = 60;
+    
+    /// <summary>
+    /// Random startup delay range for worker functions to distribute load (milliseconds)
+    /// Helps prevent thundering herd when many instances start simultaneously
+    /// Min delay in milliseconds (default: 100ms)
+    /// Set both to 0 to disable random delay
+    /// Override via Azure app setting: Evaluation__RandomDelayMinMs and Evaluation__RandomDelayMaxMs
+    /// </summary>
+    public int RandomDelayMinMs { get; set; } = 100;
+    
+    /// <summary>
+    /// Maximum random startup delay in milliseconds (default: 500ms)
+    /// Since calls take 17-45 seconds, a 100-500ms delay is negligible but helps distribute load
+    /// </summary>
+    public int RandomDelayMaxMs { get; set; } = 500;
 }

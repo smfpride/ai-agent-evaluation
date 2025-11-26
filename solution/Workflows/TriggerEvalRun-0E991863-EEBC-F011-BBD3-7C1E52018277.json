@@ -1,0 +1,85 @@
+{
+  "properties": {
+    "connectionReferences": {
+      "shared_commondataserviceforapps_1": {
+        "runtimeSource": "embedded",
+        "connection": {
+          "connectionReferenceLogicalName": "mcicaps_sharedcommondataserviceforapps_bb5c4"
+        },
+        "api": {
+          "name": "shared_commondataserviceforapps"
+        }
+      }
+    },
+    "definition": {
+      "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+      "contentVersion": "1.0.0.0",
+      "parameters": {
+        "$connections": {
+          "defaultValue": {},
+          "type": "Object"
+        },
+        "$authentication": {
+          "defaultValue": {},
+          "type": "SecureObject"
+        },
+        "Evaluation Orchestrator URL (mcicaps_EvaluationOrchestratorURL)": {
+          "defaultValue": "https://func-aiestagingmbwc.azurewebsites.net/api/evaluations/start",
+          "type": "String",
+          "metadata": {
+            "schemaName": "mcicaps_EvaluationOrchestratorURL"
+          }
+        }
+      },
+      "triggers": {
+        "When_a_row_is_added,_modified_or_deleted": {
+          "metadata": {
+            "operationMetadataId": "4bac84ab-7b97-4125-9447-ca46e1c34745"
+          },
+          "type": "OpenApiConnectionWebhook",
+          "inputs": {
+            "host": {
+              "connectionName": "shared_commondataserviceforapps_1",
+              "operationId": "SubscribeWebhookTrigger",
+              "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps"
+            },
+            "parameters": {
+              "subscriptionRequest/message": 3,
+              "subscriptionRequest/entityname": "mcicaps_evaluationruns",
+              "subscriptionRequest/scope": 4,
+              "subscriptionRequest/filterexpression": "statuscode eq 778760001"
+            },
+            "authentication": "@parameters('$authentication')"
+          }
+        }
+      },
+      "actions": {
+        "HTTP": {
+          "runAfter": {},
+          "limit": {
+            "timeout": "PT10M"
+          },
+          "metadata": {
+            "operationMetadataId": "f6c133e1-f243-477e-9105-ce7b3d4e0b39"
+          },
+          "type": "Http",
+          "inputs": {
+            "method": "POST",
+            "uri": "@parameters('Evaluation Orchestrator URL (mcicaps_EvaluationOrchestratorURL)')",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "evaluationRunId": "@{triggerOutputs()?['body/mcicaps_evaluationrunsid']}"
+            },
+            "retryPolicy": {
+              "type": "none"
+            }
+          }
+        }
+      }
+    },
+    "templateName": ""
+  },
+  "schemaVersion": "1.0.0.0"
+}

@@ -17,8 +17,12 @@ This folder contains implementation tracking, gap analyses, and development summ
 - **[STORY_IMPLEMENTATION_REVIEW.md](STORY_IMPLEMENTATION_REVIEW.md)** - Review of story implementation against requirements
 
 ### Feature-Specific Guides
+- **[progress-based-timeout-implementation-plan.md](progress-based-timeout-implementation-plan.md)** - 🆕 **Nov 2025** - Plan to switch Monitor Function from total runtime timeout to pure progress-based timeout
 - **[dynamic-deployment-names-implementation-guide.md](dynamic-deployment-names-implementation-guide.md)** - Guide for implementing dynamic resource naming in Bicep
 - **[STORY_08_COMPLETION_SUMMARY.md](STORY_08_COMPLETION_SUMMARY.md)** - Story 08 (Dynamic Deployment Names) completion summary
+- **[last-turn-aggregate-optimization.md](last-turn-aggregate-optimization.md)** - Multi-turn aggregate result optimization
+- **[multi-turn-reliability-analysis.md](multi-turn-reliability-analysis.md)** - Multi-turn execution reliability analysis
+- **[orchestrator-parallelization-optimization.md](orchestrator-parallelization-optimization.md)** - Orchestrator parallelization patterns
 
 ---
 

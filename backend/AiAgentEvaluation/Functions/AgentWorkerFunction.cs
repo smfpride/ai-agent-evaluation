@@ -1,5 +1,6 @@
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using AiAgentEvaluation.Models;
 using AiAgentEvaluation.Services;
 using System.Text.Json;
@@ -18,17 +19,20 @@ public class AgentWorkerFunction
     private readonly IDataverseService _dataverseService;
     private readonly ICopilotStudioService _copilotStudioService;
     private readonly IServiceBusService _serviceBusService;
+    private readonly AppSettings _settings;
 
     public AgentWorkerFunction(
         ILogger<AgentWorkerFunction> logger,
         IDataverseService dataverseService,
         ICopilotStudioService copilotStudioService,
-        IServiceBusService serviceBusService)
+        IServiceBusService serviceBusService,
+        IOptions<AppSettings> settings)
     {
         _logger = logger;
         _dataverseService = dataverseService;
         _copilotStudioService = copilotStudioService;
         _serviceBusService = serviceBusService;
+        _settings = settings.Value;
     }
 
     [Function("ProcessAgentCall")]
@@ -38,6 +42,20 @@ public class AgentWorkerFunction
         CancellationToken cancellationToken)
     {
         _logger.LogInformation("Processing agent call message: {MessageBody}", messageBody);
+
+        // Apply random delay to distribute load across instances (configurable)
+        if (_settings.Evaluation.RandomDelayMaxMs > 0)
+        {
+            var delayMs = Random.Shared.Next(
+                _settings.Evaluation.RandomDelayMinMs,
+                _settings.Evaluation.RandomDelayMaxMs);
+            
+            if (delayMs > 0)
+            {
+                _logger.LogDebug("Applying random startup delay: {DelayMs}ms", delayMs);
+                await Task.Delay(delayMs, cancellationToken);
+            }
+        }
 
         AgentCallMessage? message = null;
         var stopwatch = Stopwatch.StartNew();
@@ -81,7 +99,64 @@ public class AgentWorkerFunction
                     message.TestCaseId,
                     copilotResponse.ErrorMessage);
 
-                await HandleAgentCallError(message, copilotResponse.ErrorMessage ?? "Copilot Studio call failed", cancellationToken);
+                // Check if this is a user error (should NOT be retried)
+                bool isUserError = copilotResponse.ErrorMessage != null && (
+                    copilotResponse.ErrorMessage.Contains("PSA-1009") ||
+                    copilotResponse.ErrorMessage.Contains("PSA-1010") ||
+                    copilotResponse.ErrorMessage.Contains("PSA-1011") ||
+                    copilotResponse.ErrorMessage.Contains("Status: 400") ||
+                    copilotResponse.ErrorMessage.Contains("Status: 404"));
+
+                if (isUserError)
+                {
+                    // User errors indicate bad test data - mark as failed immediately without retry
+                    _logger.LogWarning(
+                        "User error detected for test case {TestCaseId} - marking as failed without retry",
+                        message.TestCaseId);
+                    await HandleAgentCallError(message, copilotResponse.ErrorMessage ?? "User error", cancellationToken);
+                    return;
+                }
+
+                // Retry logic with exponential backoff (Service Bus-level retry in addition to ResilientService retries)
+                var maxRetries = _settings.Evaluation?.MaxRetryAttempts ?? 3;
+                if (message.RetryCount < maxRetries)
+                {
+                    var nextRetryCount = message.RetryCount + 1;
+                    var retryDelaySeconds = (_settings.Evaluation?.RetryDelaySeconds ?? 30) * nextRetryCount;
+                    var scheduledEnqueueTime = DateTimeOffset.UtcNow.AddSeconds(retryDelaySeconds);
+
+                    _logger.LogInformation(
+                        "Retrying agent call for test case {TestCaseId} in {DelaySeconds} seconds (attempt {RetryCount}/{MaxRetries})",
+                        message.TestCaseId,
+                        retryDelaySeconds,
+                        nextRetryCount,
+                        maxRetries);
+
+                    // Re-queue with incremented retry count and scheduled time
+                    var retryMessage = new AgentCallMessage
+                    {
+                        EvaluationRunId = message.EvaluationRunId,
+                        TestCaseId = message.TestCaseId,
+                        DirectLineUrl = message.DirectLineUrl,
+                        UserInput = message.UserInput,
+                        ExpectedResponse = message.ExpectedResponse,
+                        EvaluatorTypeIds = message.EvaluatorTypeIds,
+                        ConversationId = message.ConversationId,
+                        DirectLineToken = message.DirectLineToken,
+                        PassingThreshold = message.PassingThreshold,
+                        TestCaseTurnId = message.TestCaseTurnId,
+                        RetryCount = nextRetryCount
+                    };
+
+                    await _serviceBusService.SendAgentCallMessageAsync(retryMessage, scheduledEnqueueTime, cancellationToken);
+                    return;
+                }
+
+                // Max retries exceeded - create error results
+                _logger.LogError(
+                    "Max retries exceeded for test case {TestCaseId}",
+                    message.TestCaseId);
+                await HandleAgentCallError(message, copilotResponse.ErrorMessage ?? "Copilot Studio call failed after retries", cancellationToken);
                 return;
             }
 
