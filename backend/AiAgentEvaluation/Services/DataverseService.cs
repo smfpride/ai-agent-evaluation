@@ -2019,6 +2019,235 @@ public class DataverseService : IDataverseService, IDisposable
         }
     }
 
+    /// <summary>
+    /// Checks if all turn results are completed for a specific test case, evaluation run, and evaluator type.
+    /// Used for last-turn aggregate optimization.
+    /// </summary>
+    public async Task<bool> CheckIfAllTurnsCompleteForEvaluatorAsync(
+        Guid testCaseId,
+        Guid evaluationRunId,
+        Guid evaluatorTypeId,
+        int expectedTurnCount,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            _logger.LogInformation(
+                "Checking turn completion for TestCase={TestCaseId}, Run={RunId}, Evaluator={EvaluatorId}, ExpectedTurns={ExpectedTurns}",
+                testCaseId, evaluationRunId, evaluatorTypeId, expectedTurnCount);
+
+            // Get all turn results for this combination
+            var turnResults = await GetTurnResultsForTestCaseAsync(
+                testCaseId,
+                evaluationRunId,
+                evaluatorTypeId,
+                cancellationToken);
+
+            // Must have expected number of turns
+            if (turnResults.Count != expectedTurnCount)
+            {
+                _logger.LogInformation(
+                    "Turn count mismatch: Expected {Expected}, Found {Actual}",
+                    expectedTurnCount, turnResults.Count);
+                return false;
+            }
+
+            // Check if any are still pending
+            // Note: "Complete" here means "finished processing" (not pending), regardless of success/failure.
+            // The aggregate calculation handles different statuses (Completed, Errored, NotApplicable).
+            var pendingCount = turnResults.Count(r => r.StatusCode == EvaluationResultStatus.Pending);
+            
+            _logger.LogInformation(
+                "Turn completion check: {TotalCount} turns, {PendingCount} pending",
+                turnResults.Count, pendingCount);
+
+            return pendingCount == 0;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Error checking turn completion for TestCase={TestCaseId}, Run={RunId}, Evaluator={EvaluatorId}",
+                testCaseId, evaluationRunId, evaluatorTypeId);
+            return false; // Fail safe - don't trigger aggregate on error
+        }
+    }
+
+    /// <summary>
+    /// Calculates and updates the aggregate result for a multi-turn test case and evaluator.
+    /// Called by EvaluatorWorkerFunction when last turn completes (optimization).
+    /// </summary>
+    public async Task CalculateAndUpdateAggregateAsync(
+        Guid aggregateResultId,
+        Guid testCaseId,
+        Guid evaluationRunId,
+        Guid evaluatorTypeId,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            _logger.LogInformation(
+                "Calculating aggregate for Result={ResultId}, TestCase={TestCaseId}, Run={RunId}, Evaluator={EvaluatorId}",
+                aggregateResultId, testCaseId, evaluationRunId, evaluatorTypeId);
+
+            // Get all turn results
+            var turnResults = await GetTurnResultsForTestCaseAsync(
+                testCaseId,
+                evaluationRunId,
+                evaluatorTypeId,
+                cancellationToken);
+
+            if (!turnResults.Any())
+            {
+                _logger.LogWarning("No turn results found for aggregate calculation");
+                return;
+            }
+
+            // Apply same logic as AggregateEvaluationProcessorFunction
+            var completedTurns = turnResults.Where(r => r.StatusCode == EvaluationResultStatus.Completed).ToList();
+            var erroredTurns = turnResults.Where(r => r.StatusCode == EvaluationResultStatus.Errored).ToList();
+            var notApplicableTurns = turnResults.Where(r => r.StatusCode == EvaluationResultStatus.NotApplicable).ToList();
+
+            decimal aggregateScore;
+            bool aggregatePassed;
+            string? errorMessage = null;
+            int statusCode;
+
+            if (erroredTurns.Any())
+            {
+                aggregateScore = 0m;
+                aggregatePassed = false;
+                errorMessage = $"{erroredTurns.Count} of {turnResults.Count} turns errored";
+                statusCode = EvaluationResultStatus.Errored;
+            }
+            else if (notApplicableTurns.Count == turnResults.Count)
+            {
+                aggregateScore = 0m;
+                aggregatePassed = false;
+                statusCode = EvaluationResultStatus.NotApplicable;
+            }
+            else if (completedTurns.Any())
+            {
+                aggregateScore = completedTurns.Average(r => r.Score ?? 0m);
+                
+                var evaluationRun = await GetEvaluationRunAsync(evaluationRunId, cancellationToken);
+                var passingThreshold = evaluationRun?.PassingThreshold ?? 0.7m;
+                
+                aggregatePassed = aggregateScore >= passingThreshold;
+                statusCode = EvaluationResultStatus.Completed;
+            }
+            else
+            {
+                aggregateScore = 0m;
+                aggregatePassed = false;
+                errorMessage = "No completed turns to calculate aggregate";
+                statusCode = EvaluationResultStatus.Errored;
+            }
+
+            var totalExecutionTime = turnResults.Sum(r => r.ExecutionTimeMs ?? 0);
+
+            // Update aggregate result
+            await UpdateEvaluationResultAsync(
+                aggregateResultId,
+                new UpdateEvaluationResultRequest
+                {
+                    StatusCode = statusCode,
+                    Score = aggregateScore,
+                    Passed = aggregatePassed,
+                    ErrorMessage = errorMessage,
+                    ExecutionTimeMs = totalExecutionTime,
+                    Reasoning = $"Aggregate of {turnResults.Count} turns: {completedTurns.Count} completed, {erroredTurns.Count} errored, {notApplicableTurns.Count} NA (calculated on last turn completion)"
+                },
+                cancellationToken);
+
+            // Increment completion counter
+            await IncrementCompletedTestCasesAsync(
+                evaluationRunId,
+                !aggregatePassed,
+                cancellationToken);
+
+            _logger.LogInformation(
+                "Aggregate updated via last-turn optimization: Result={ResultId}, Status={Status}, Score={Score:F2}, Passed={Passed}",
+                aggregateResultId,
+                EvaluationResultStatus.GetName(statusCode),
+                aggregateScore,
+                aggregatePassed);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Error calculating aggregate for Result={ResultId}",
+                aggregateResultId);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Gets the pending aggregate result for a test case and evaluator type combination.
+    /// Used to find the aggregate result to update when the last turn completes.
+    /// </summary>
+    public async Task<EvaluationResult?> GetAggregateResultForTestCaseAndEvaluatorAsync(
+        Guid testCaseId,
+        Guid evaluationRunId,
+        Guid evaluatorTypeId,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            EnsureClientReady();
+
+            var query = new QueryExpression(Prefixed("evaluationresults"))
+            {
+                ColumnSet = new ColumnSet(
+                    Prefixed("evaluationresultsid"),
+                    Prefixed("evaluation"),
+                    Prefixed("testcase"),
+                    Prefixed("evaluatortypeid"),
+                    Prefixed("isaggregate"),
+                    "statuscode"
+                ),
+                Criteria = new FilterExpression(LogicalOperator.And),
+                PageInfo = new PagingInfo { Count = 1, PageNumber = 1 }
+            };
+
+            // Add explicit ordering to ensure deterministic result if multiple exist
+            query.AddOrder("createdon", OrderType.Ascending);
+
+            query.Criteria.AddCondition(Prefixed("testcase"), ConditionOperator.Equal, testCaseId);
+            query.Criteria.AddCondition(Prefixed("evaluation"), ConditionOperator.Equal, evaluationRunId);
+            query.Criteria.AddCondition(Prefixed("evaluatortypeid"), ConditionOperator.Equal, evaluatorTypeId);
+            query.Criteria.AddCondition(Prefixed("isaggregate"), ConditionOperator.Equal, true);
+            query.Criteria.AddCondition("statuscode", ConditionOperator.Equal, EvaluationResultStatus.Pending);
+
+            var results = await Task.Run(() => _serviceClient!.RetrieveMultiple(query), cancellationToken);
+            
+            if (results.Entities.Count == 0)
+            {
+                _logger.LogInformation(
+                    "No pending aggregate found for TestCase={TestCaseId}, Run={RunId}, Evaluator={EvaluatorId}",
+                    testCaseId, evaluationRunId, evaluatorTypeId);
+                return null;
+            }
+
+            var entity = results.Entities.First();
+            return new EvaluationResult
+            {
+                Id = entity.Id,
+                EvaluationRunId = evaluationRunId,
+                TestCaseId = testCaseId,
+                EvaluatorTypeId = evaluatorTypeId,
+                IsAggregate = true,
+                StatusCode = entity.GetAttributeValue<OptionSetValue>("statuscode")?.Value ?? 1
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Error getting aggregate result for TestCase={TestCaseId}, Run={RunId}, Evaluator={EvaluatorId}",
+                testCaseId, evaluationRunId, evaluatorTypeId);
+            throw;
+        }
+    }
+
     public void Dispose()
     {
         Dispose(true);

@@ -125,4 +125,52 @@ public interface IDataverseService
         Guid evaluationRunId,
         Guid evaluatorTypeId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Checks if all turn results are completed for a specific test case, evaluation run, and evaluator type.
+    /// Used to determine when to trigger aggregate calculation for last turn optimization.
+    /// </summary>
+    /// <param name="testCaseId">Test case ID</param>
+    /// <param name="evaluationRunId">Evaluation run ID</param>
+    /// <param name="evaluatorTypeId">Evaluator type ID</param>
+    /// <param name="expectedTurnCount">Expected number of turns</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>True if all turns are completed (not pending), false otherwise</returns>
+    Task<bool> CheckIfAllTurnsCompleteForEvaluatorAsync(
+        Guid testCaseId,
+        Guid evaluationRunId,
+        Guid evaluatorTypeId,
+        int expectedTurnCount,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Calculates and updates the aggregate result for a multi-turn test case and evaluator.
+    /// Called by EvaluatorWorkerFunction when last turn completes (optimization).
+    /// </summary>
+    /// <param name="aggregateResultId">ID of the pending aggregate result to update</param>
+    /// <param name="testCaseId">Test case ID</param>
+    /// <param name="evaluationRunId">Evaluation run ID</param>
+    /// <param name="evaluatorTypeId">Evaluator type ID</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    Task CalculateAndUpdateAggregateAsync(
+        Guid aggregateResultId,
+        Guid testCaseId,
+        Guid evaluationRunId,
+        Guid evaluatorTypeId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets the pending aggregate result for a test case and evaluator type combination.
+    /// Used to find the aggregate result to update when the last turn completes.
+    /// </summary>
+    /// <param name="testCaseId">Test case ID</param>
+    /// <param name="evaluationRunId">Evaluation run ID</param>
+    /// <param name="evaluatorTypeId">Evaluator type ID</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>The pending aggregate result if found, otherwise null</returns>
+    Task<EvaluationResult?> GetAggregateResultForTestCaseAndEvaluatorAsync(
+        Guid testCaseId,
+        Guid evaluationRunId,
+        Guid evaluatorTypeId,
+        CancellationToken cancellationToken = default);
 }

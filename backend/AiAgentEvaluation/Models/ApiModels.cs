@@ -201,6 +201,40 @@ public class EvaluatorJobMessage
     /// </summary>
     [JsonPropertyName("retryCount")]
     public int RetryCount { get; set; } = 0;
+
+    // ===== PROPERTIES FOR LAST-TURN AGGREGATE OPTIMIZATION =====
+
+    /// <summary>
+    /// Indicates this evaluation is for a multi-turn test case.
+    /// When true, EvaluatorWorkerFunction should check if all turns are complete
+    /// for this evaluator after each turn completion and trigger aggregate calculation.
+    /// </summary>
+    [JsonPropertyName("isMultiTurn")]
+    public bool IsMultiTurn { get; set; }
+
+    /// <summary>
+    /// Test case ID (needed for aggregate calculation for multi-turn tests)
+    /// </summary>
+    [JsonPropertyName("testCaseId")]
+    public Guid? TestCaseId { get; set; }
+
+    /// <summary>
+    /// Evaluator type ID (needed for aggregate calculation)
+    /// </summary>
+    [JsonPropertyName("evaluatorTypeId")]
+    public Guid? EvaluatorTypeId { get; set; }
+
+    /// <summary>
+    /// Turn sequence number (for logging/debugging)
+    /// </summary>
+    [JsonPropertyName("turnSequence")]
+    public int? TurnSequence { get; set; }
+
+    /// <summary>
+    /// Total number of turns for this test case (for validation)
+    /// </summary>
+    [JsonPropertyName("totalTurns")]
+    public int? TotalTurns { get; set; }
 }
 
 /// <summary>

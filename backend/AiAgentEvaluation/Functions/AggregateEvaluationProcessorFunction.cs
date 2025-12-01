@@ -298,7 +298,7 @@ public class AggregateEvaluationProcessorFunction
                 Passed = aggregatePassed,
                 ErrorMessage = errorMessage,
                 ExecutionTimeMs = totalExecutionTime,
-                Reasoning = $"Aggregate of {turnResults.Count} turns: {completedTurns.Count} completed, {erroredTurns.Count} errored, {notApplicableTurns.Count} NA"
+                Reasoning = $"Aggregate of {turnResults.Count} turns: {completedTurns.Count} completed, {erroredTurns.Count} errored, {notApplicableTurns.Count} NA (calculated by timer fallback at {DateTime.UtcNow:o})"
             },
             cancellationToken);
 
@@ -309,7 +309,7 @@ public class AggregateEvaluationProcessorFunction
             cancellationToken);
 
         _logger.LogInformation(
-            "Successfully processed aggregate result {ResultId}: Status={Status}, Score={Score:F2}, Passed={Passed}",
+            "Successfully processed aggregate result {ResultId} via timer fallback: Status={Status}, Score={Score:F2}, Passed={Passed}",
             aggregate.Id, 
             EvaluationResultStatus.GetName(statusCode),
             aggregateScore,

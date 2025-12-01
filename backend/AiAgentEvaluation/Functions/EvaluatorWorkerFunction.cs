@@ -283,6 +283,83 @@ public class EvaluatorWorkerFunction
                 judgeResponse.Score,
                 judgeResponse.Score >= passingThreshold,
                 stopwatch.ElapsedMilliseconds);
+
+            // ===== AGGREGATE OPTIMIZATION: Check for completion after EVERY multi-turn evaluation =====
+            // This handles out-of-order completion (e.g., Turn 3 finishes before Turn 2)
+            if (message.IsMultiTurn && message.TestCaseId.HasValue && message.EvaluatorTypeId.HasValue && message.TotalTurns.HasValue)
+            {
+                _logger.LogInformation(
+                    "Multi-turn evaluation completed (Turn {TurnSequence}/{TotalTurns}), checking if all turns done for evaluator {EvaluatorTypeId}",
+                    message.TurnSequence,
+                    message.TotalTurns,
+                    message.EvaluatorTypeId);
+
+                try
+                {
+                    // Check if ALL turns are now complete for this test case + evaluator + run
+                    // This accounts for parallel execution and out-of-order completion
+                    var allTurnsComplete = await _dataverseService.CheckIfAllTurnsCompleteForEvaluatorAsync(
+                        message.TestCaseId.Value,
+                        message.EvaluationRunId,
+                        message.EvaluatorTypeId.Value,
+                        message.TotalTurns.Value,
+                        cancellationToken);
+
+                    if (allTurnsComplete)
+                    {
+                        _logger.LogInformation(
+                            "All {TotalTurns} turns completed for evaluator {EvaluatorTypeId}, triggering aggregate calculation (completed on turn {TurnSequence})",
+                            message.TotalTurns,
+                            message.EvaluatorTypeId,
+                            message.TurnSequence);
+
+                        // Find the aggregate result for this test case + evaluator
+                        var aggregate = await _dataverseService.GetAggregateResultForTestCaseAndEvaluatorAsync(
+                            message.TestCaseId.Value,
+                            message.EvaluationRunId,
+                            message.EvaluatorTypeId.Value,
+                            cancellationToken);
+
+                        if (aggregate != null)
+                        {
+                            await _dataverseService.CalculateAndUpdateAggregateAsync(
+                                aggregate.Id,
+                                message.TestCaseId.Value,
+                                message.EvaluationRunId,
+                                message.EvaluatorTypeId.Value,
+                                cancellationToken);
+
+                            _logger.LogInformation(
+                                "Aggregate {AggregateId} calculated successfully via turn-completion optimization",
+                                aggregate.Id);
+                        }
+                        else
+                        {
+                            _logger.LogWarning(
+                                "No pending aggregate found for TestCase={TestCaseId}, Evaluator={EvaluatorId} - may have already been processed (race condition)",
+                                message.TestCaseId,
+                                message.EvaluatorTypeId);
+                        }
+                    }
+                    else
+                    {
+                        _logger.LogInformation(
+                            "Not all turns complete yet for evaluator {EvaluatorTypeId} after turn {TurnSequence} - aggregate calculation deferred",
+                            message.EvaluatorTypeId,
+                            message.TurnSequence);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex,
+                        "Error during aggregate calculation for TestCase={TestCaseId}, Evaluator={EvaluatorId}, Turn={TurnSequence} - timer will pick up as fallback. Error: {ErrorType}",
+                        message.TestCaseId,
+                        message.EvaluatorTypeId,
+                        message.TurnSequence,
+                        ex.GetType().Name);
+                    // Don't throw - allow timer to handle as fallback
+                }
+            }
         }
         catch (Exception ex)
         {
