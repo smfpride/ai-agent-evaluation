@@ -14,8 +14,8 @@ public class BasicHealthFunction
     private readonly ILogger<BasicHealthFunction> _logger;
     
     // Build timestamp to track deployments - updated with each build
-    private static readonly string BuildTimestamp = "2025-11-26T19:30:00Z";
-    private static readonly string DeploymentVersion = "1.0.69"; // Progress-based timeout implementation
+    private static readonly string BuildTimestamp = "2025-11-27T20:15:00Z";
+    private static readonly string DeploymentVersion = "1.0.70"; // Last-turn aggregate optimization
 
     public BasicHealthFunction(ILogger<BasicHealthFunction> logger)
     {
