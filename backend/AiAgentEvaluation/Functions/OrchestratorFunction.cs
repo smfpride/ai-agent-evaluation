@@ -215,6 +215,7 @@ public class OrchestratorFunction
                     {
                         EvaluationRunId = message.EvaluationRunId,
                         TestCaseId = testCase.Id,
+                        AgentToEvalId = evaluationRun.AgentToEvalId,
                         DirectLineUrl = directLineUrl,
                         UserInput = testCase.UserInput,
                         ExpectedResponse = testCase.ExpectedResponse ?? string.Empty,
