@@ -127,6 +127,24 @@ catch (Exception ex)
     Console.WriteLine($"Warning: Failed to register ServiceBusService: {ex.Message}");
 }
 
+// Register adapter factory and adapters
+try
+{
+    builder.Services.AddScoped<AiAgentEvaluation.Services.Adapters.IAgentAdapterFactory, AiAgentEvaluation.Services.Adapters.AgentAdapterFactory>();
+    
+    // Register adapters
+    builder.Services.AddScoped<AiAgentEvaluation.Services.Adapters.DirectLineAdapter>();
+    builder.Services.AddScoped<AiAgentEvaluation.Services.Adapters.TeamsAdapter>();
+    builder.Services.AddScoped<AiAgentEvaluation.Services.Adapters.M365CopilotAdapter>();
+    builder.Services.AddScoped<AiAgentEvaluation.Services.Adapters.SharePointAdapter>();
+    builder.Services.AddScoped<AiAgentEvaluation.Services.Adapters.M365AgentsSDKAdapter>();
+    builder.Services.AddScoped<AiAgentEvaluation.Services.Adapters.SlackAdapter>();
+}
+catch (Exception ex)
+{
+    Console.WriteLine($"Warning: Failed to register agent adapters: {ex.Message}");
+}
+
 // Add logging
 builder.Services.AddLogging();
 

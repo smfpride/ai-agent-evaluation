@@ -1,5 +1,7 @@
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json;
 using System.Text.Json.Serialization;
+using AiAgentEvaluation.Services.Adapters;
 
 namespace AiAgentEvaluation.Models;
 
@@ -17,8 +19,13 @@ public class AgentToEval
     public string Name { get; set; } = string.Empty;
 
     [JsonPropertyName("mcicaps_directlinespeechurl")]
-    [Required]
     public string DirectLineSpeechUrl { get; set; } = string.Empty;
+
+    [JsonPropertyName("mcicaps_agenttype")]
+    public int? AgentType { get; set; }
+
+    [JsonPropertyName("mcicaps_agentconfiguration")]
+    public string? AgentConfiguration { get; set; }
 
     [JsonPropertyName("statecode")]
     public int StateCode { get; set; }
@@ -31,4 +38,41 @@ public class AgentToEval
 
     [JsonPropertyName("modifiedon")]
     public DateTime ModifiedOn { get; set; }
+
+    /// <summary>
+    /// Parse configuration JSON into strongly-typed object
+    /// </summary>
+    public AgentConfiguration GetConfiguration()
+    {
+        var config = new Dictionary<string, object>();
+        
+        if (!string.IsNullOrEmpty(AgentConfiguration))
+        {
+            try
+            {
+                config = JsonSerializer.Deserialize<Dictionary<string, object>>(AgentConfiguration) 
+                    ?? new Dictionary<string, object>();
+            }
+            catch (JsonException ex)
+            {
+                throw new InvalidOperationException(
+                    $"Failed to parse agent configuration JSON for agent {Name}", ex);
+            }
+        }
+        
+        // Backward compatibility: If no AgentType set, default to DirectLine
+        var agentType = AgentType ?? 778760000;
+        
+        // Backward compatibility: If DirectLineSpeechUrl set but no config, migrate
+        if (config.Count == 0 && !string.IsNullOrEmpty(DirectLineSpeechUrl))
+        {
+            config["directLineUrl"] = DirectLineSpeechUrl;
+        }
+        
+        return new AgentConfiguration
+        {
+            AgentType = agentType,
+            Config = config
+        };
+    }
 }

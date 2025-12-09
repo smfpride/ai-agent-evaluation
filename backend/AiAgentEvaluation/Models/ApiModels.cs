@@ -144,6 +144,9 @@ public class AgentCallMessage
     [JsonPropertyName("testCaseId")]
     public Guid TestCaseId { get; set; }
 
+    [JsonPropertyName("agentToEvalId")]
+    public Guid? AgentToEvalId { get; set; }
+
     [JsonPropertyName("directLineUrl")]
     public string DirectLineUrl { get; set; } = string.Empty;
 
