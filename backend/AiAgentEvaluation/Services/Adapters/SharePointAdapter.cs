@@ -141,11 +141,10 @@ public class SharePointAdapter : BaseAgentAdapter
             };
             
             var jsonContent = JsonSerializer.Serialize(requestContent);
-            var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
             
             using (var httpRequest = new HttpRequestMessage(HttpMethod.Post, agentEndpoint))
             {
-                httpRequest.Content = content;
+                httpRequest.Content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
                 httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.Token);
                 
                 var response = await _httpClient.SendAsync(httpRequest, cancellationToken);

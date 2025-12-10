@@ -166,13 +166,12 @@ public class TeamsAdapter : BaseAgentAdapter
             };
             
             var activityJson = JsonSerializer.Serialize(activity);
-            var content = new StringContent(activityJson, Encoding.UTF8, "application/json");
             
             using (var postRequest = new HttpRequestMessage(HttpMethod.Post, 
                 $"{DirectLineEndpoint}/conversations/{conversationId}/activities"))
             {
                 postRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-                postRequest.Content = content;
+                postRequest.Content = new StringContent(activityJson, Encoding.UTF8, "application/json");
                 
                 var response = await _httpClient.SendAsync(postRequest, ct);
                 response.EnsureSuccessStatusCode();
@@ -194,12 +193,15 @@ public class TeamsAdapter : BaseAgentAdapter
                 
                 // Find bot's response (skip user's message)
                 var activities = activitiesResponse.GetProperty("activities");
-                foreach (var act in activities.EnumerateArray())
+                var botActivities = activities.EnumerateArray()
+                    .Where(act => act.TryGetProperty("from", out var from) && 
+                                  from.TryGetProperty("id", out var fromId) &&
+                                  fromId.GetString() != userId &&
+                                  act.TryGetProperty("text", out var _));
+                
+                foreach (var act in botActivities)
                 {
-                    if (act.TryGetProperty("from", out var from) && 
-                        from.TryGetProperty("id", out var fromId) &&
-                        fromId.GetString() != userId &&
-                        act.TryGetProperty("text", out var text))
+                    if (act.TryGetProperty("text", out var text))
                     {
                         return text.GetString() ?? string.Empty;
                     }

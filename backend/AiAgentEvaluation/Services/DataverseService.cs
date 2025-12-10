@@ -2303,9 +2303,9 @@ public class DataverseService : IDataverseService, IDisposable
                 var currentValue = entity.GetAttributeValue<AliasedValue>("envvalue.value")?.Value as string;
                 if (!string.IsNullOrEmpty(currentValue))
                 {
-                    // Check if this is a Key Vault reference by looking at the schema value
-                    var isKeyVaultRef = entity.Contains("envvalue.valueschema") && 
-                        entity.GetAttributeValue<AliasedValue>("envvalue.valueschema")?.Value != null;
+                    // Check if this is a Key Vault reference by looking at the valueschema from the definition
+                    var isKeyVaultRef = entity.Contains("valueschema") && 
+                        entity.GetAttributeValue<string>("valueschema") != null;
                     var source = isKeyVaultRef ? "Key Vault" : "Direct";
                     
                     _logger.LogInformation(

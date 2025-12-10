@@ -111,11 +111,10 @@ public class M365AgentsSDKAdapter : BaseAgentAdapter
             };
             
             var jsonContent = JsonSerializer.Serialize(requestPayload);
-            var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
             
             using var httpRequest = new HttpRequestMessage(HttpMethod.Post, agentEndpoint);
             httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
-            httpRequest.Content = content;
+            httpRequest.Content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
             
             Logger.LogDebug("Sending request to M365 Agent endpoint: {Endpoint}", agentEndpoint);
             

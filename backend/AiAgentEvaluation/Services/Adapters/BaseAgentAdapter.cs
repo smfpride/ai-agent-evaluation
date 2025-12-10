@@ -156,7 +156,7 @@ public abstract class BaseAgentAdapter : IAgentAdapter
     
     private async Task<TokenCredential> GetUserPasswordCredentialAsync(
         AgentConfiguration configuration,
-        string[] scopes,
+        string[] scopes, // Note: scopes parameter kept for interface consistency but not used in credential construction
         CancellationToken cancellationToken)
     {
         var credentials = await GetAllCredentialsFromEnvironmentVariablesAsync(configuration, cancellationToken);
@@ -170,6 +170,7 @@ public abstract class BaseAgentAdapter : IAgentAdapter
         var password = credentials.GetValueOrDefault("password") ?? 
             throw new InvalidOperationException("UserCredentials mode requires 'password' in environmentVariables");
         
+        // UsernamePasswordCredential doesn't take scopes at construction - scopes are provided when requesting tokens
         return new UsernamePasswordCredential(username, password, tenantId, clientId);
     }
 }
