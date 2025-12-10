@@ -96,22 +96,23 @@ public class TeamsAdapter : BaseAgentAdapter
     {
         try
         {
-            var content = new FormUrlEncodedContent(new[]
+            using (var content = new FormUrlEncodedContent(new[]
             {
                 new KeyValuePair<string, string>("grant_type", "client_credentials"),
                 new KeyValuePair<string, string>("client_id", appId),
                 new KeyValuePair<string, string>("client_secret", appSecret),
                 new KeyValuePair<string, string>("scope", "https://api.botframework.com/.default")
-            });
-            
-            var response = await _httpClient.PostAsync(TokenEndpoint, content, ct);
-            response.EnsureSuccessStatusCode();
-            
-            var responseContent = await response.Content.ReadAsStringAsync(ct);
-            var tokenResponse = JsonSerializer.Deserialize<JsonElement>(responseContent);
-            
-            return tokenResponse.GetProperty("access_token").GetString() 
-                ?? throw new InvalidOperationException("Failed to get access token from response");
+            }))
+            {
+                var response = await _httpClient.PostAsync(TokenEndpoint, content, ct);
+                response.EnsureSuccessStatusCode();
+                
+                var responseContent = await response.Content.ReadAsStringAsync(ct);
+                var tokenResponse = JsonSerializer.Deserialize<JsonElement>(responseContent);
+                
+                return tokenResponse.GetProperty("access_token").GetString() 
+                    ?? throw new InvalidOperationException("Failed to get access token from response");
+            }
         }
         catch (Exception ex)
         {
