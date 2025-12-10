@@ -171,7 +171,12 @@ public class TeamsAdapter : BaseAgentAdapter
             response.EnsureSuccessStatusCode();
             
             // Wait for bot response (poll for activities)
-            await Task.Delay(2000, ct); // Give bot time to respond
+            int responseDelayMs = 2000;
+            if (Configuration != null && Configuration.TryGetValue("responseDelayMs", out var delayObj) && delayObj is JsonElement delayElem && delayElem.ValueKind == JsonValueKind.Number && delayElem.TryGetInt32(out var delayVal))
+            {
+                responseDelayMs = delayVal;
+            }
+            await Task.Delay(responseDelayMs, ct); // Give bot time to respond
             
             var getRequest = new HttpRequestMessage(HttpMethod.Get, 
                 $"{DirectLineEndpoint}/conversations/{conversationId}/activities");
