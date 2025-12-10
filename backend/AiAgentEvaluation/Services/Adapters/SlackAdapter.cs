@@ -107,7 +107,7 @@ public class SlackAdapter : BaseAgentAdapter
             var jsonContent = JsonSerializer.Serialize(requestPayload);
             var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
             
-            var httpRequest = new HttpRequestMessage(HttpMethod.Post, $"{SlackApiBase}/chat.postMessage");
+            using var httpRequest = new HttpRequestMessage(HttpMethod.Post, $"{SlackApiBase}/chat.postMessage");
             httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", botToken);
             httpRequest.Content = content;
             
