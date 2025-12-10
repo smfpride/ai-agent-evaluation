@@ -77,10 +77,9 @@ public abstract class BaseAgentAdapter : IAgentAdapter
             return new Dictionary<string, string>();
         }
         
-        Logger.LogInformation(
-            "Retrieving {Count} credentials from environment variables: {EnvVars}",
-            envVarNames.Count,
-            string.Join(", ", envVarNames.Values));
+        Logger.LogDebug(
+            "Retrieving {Count} credentials from environment variables",
+            envVarNames.Count);
         
         var credentials = new Dictionary<string, string>();
         
