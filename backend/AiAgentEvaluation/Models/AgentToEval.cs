@@ -69,6 +69,13 @@ public class AgentToEval
             config["directLineUrl"] = DirectLineSpeechUrl;
         }
         
+        // Validate that either legacy DirectLineSpeechUrl or new AgentConfiguration is provided
+        if (config.Count == 0 && string.IsNullOrEmpty(DirectLineSpeechUrl))
+        {
+            throw new InvalidOperationException(
+                $"Agent '{Name}' (ID: {Id}) must have either DirectLineSpeechUrl (legacy) or AgentConfiguration set");
+        }
+        
         return new AgentConfiguration
         {
             AgentType = agentType,

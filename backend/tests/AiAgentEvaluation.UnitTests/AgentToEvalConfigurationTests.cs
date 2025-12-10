@@ -70,7 +70,7 @@ public class AgentToEvalConfigurationTests
     }
 
     [Fact]
-    public void GetConfiguration_EmptyConfiguration_ReturnsEmptyConfig()
+    public void GetConfiguration_EmptyConfiguration_ThrowsInvalidOperationException()
     {
         // Arrange
         var agent = new AgentToEval
@@ -78,15 +78,13 @@ public class AgentToEvalConfigurationTests
             Id = Guid.NewGuid(),
             Name = "Test Agent",
             AgentType = 778760000,
-            AgentConfiguration = null
+            AgentConfiguration = null,
+            DirectLineSpeechUrl = string.Empty
         };
 
-        // Act
-        var config = agent.GetConfiguration();
-
-        // Assert
-        Assert.Equal(778760000, config.AgentType);
-        Assert.Empty(config.Config);
+        // Act & Assert
+        var exception = Assert.Throws<InvalidOperationException>(() => agent.GetConfiguration());
+        Assert.Contains("must have either DirectLineSpeechUrl (legacy) or AgentConfiguration set", exception.Message);
     }
 
     [Fact]

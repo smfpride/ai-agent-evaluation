@@ -65,7 +65,8 @@ public class TeamsAdapter : BaseAgentAdapter
             var botResponse = await SendMessageToBotAsync(
                 conversationId, 
                 request.UserInput, 
-                token, 
+                token,
+                request,
                 cancellationToken);
             
             return new AgentResponse
@@ -147,56 +148,63 @@ public class TeamsAdapter : BaseAgentAdapter
     private async Task<string> SendMessageToBotAsync(
         string conversationId, 
         string message, 
-        string token, 
+        string token,
+        AgentCallRequest request,
         CancellationToken ct)
     {
         try
         {
             // Send activity
+            var userId = request.Configuration.GetValue<string>("userId") 
+                ?? $"test-user-{request.TestCaseId}";
+            
             var activity = new
             {
                 type = "message",
-                from = new { id = "user1" },
+                from = new { id = userId },
                 text = message
             };
             
             var activityJson = JsonSerializer.Serialize(activity);
             var content = new StringContent(activityJson, Encoding.UTF8, "application/json");
             
-            var request = new HttpRequestMessage(HttpMethod.Post, 
-                $"{DirectLineEndpoint}/conversations/{conversationId}/activities");
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-            request.Content = content;
-            
-            var response = await _httpClient.SendAsync(request, ct);
-            response.EnsureSuccessStatusCode();
+            using (var postRequest = new HttpRequestMessage(HttpMethod.Post, 
+                $"{DirectLineEndpoint}/conversations/{conversationId}/activities"))
+            {
+                postRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+                postRequest.Content = content;
+                
+                var response = await _httpClient.SendAsync(postRequest, ct);
+                response.EnsureSuccessStatusCode();
+            }
             
             // Wait for bot response (poll for activities)
             await Task.Delay(2000, ct); // Give bot time to respond
             
-            var getRequest = new HttpRequestMessage(HttpMethod.Get, 
-                $"{DirectLineEndpoint}/conversations/{conversationId}/activities");
-            getRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-            
-            var getResponse = await _httpClient.SendAsync(getRequest, ct);
-            getResponse.EnsureSuccessStatusCode();
-            
-            var activitiesContent = await getResponse.Content.ReadAsStringAsync(ct);
-            var activitiesResponse = JsonSerializer.Deserialize<JsonElement>(activitiesContent);
-            
-            // Find bot's response (skip user's message)
-            var activities = activitiesResponse.GetProperty("activities");
-            foreach (var act in activities.EnumerateArray())
+            using (var getRequest = new HttpRequestMessage(HttpMethod.Get, 
+                $"{DirectLineEndpoint}/conversations/{conversationId}/activities"))
             {
-                if (act.TryGetProperty("from", out var from) && 
-                    from.TryGetProperty("id", out var fromId) &&
-                    fromId.GetString() != "user1" &&
-                    act.TryGetProperty("text", out var text))
+                getRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+                
+                var getResponse = await _httpClient.SendAsync(getRequest, ct);
+                getResponse.EnsureSuccessStatusCode();
+                
+                var activitiesContent = await getResponse.Content.ReadAsStringAsync(ct);
+                var activitiesResponse = JsonSerializer.Deserialize<JsonElement>(activitiesContent);
+                
+                // Find bot's response (skip user's message)
+                var activities = activitiesResponse.GetProperty("activities");
+                foreach (var act in activities.EnumerateArray())
                 {
-                    return text.GetString() ?? string.Empty;
+                    if (act.TryGetProperty("from", out var from) && 
+                        from.TryGetProperty("id", out var fromId) &&
+                        fromId.GetString() != userId &&
+                        act.TryGetProperty("text", out var text))
+                    {
+                        return text.GetString() ?? string.Empty;
+                    }
                 }
             }
-            
             Logger.LogWarning("No bot response found in conversation {ConversationId}", conversationId);
             return string.Empty;
         }

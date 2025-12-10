@@ -2303,7 +2303,15 @@ public class DataverseService : IDataverseService, IDisposable
                 var currentValue = entity.GetAttributeValue<AliasedValue>("envvalue.value")?.Value as string;
                 if (!string.IsNullOrEmpty(currentValue))
                 {
-                    _logger.LogInformation("Retrieved environment variable {SchemaName} from current value", schemaName);
+                    // Check if this is a Key Vault reference by looking at the schema value
+                    var isKeyVaultRef = entity.Contains("envvalue.valueschema") && 
+                        entity.GetAttributeValue<AliasedValue>("envvalue.valueschema")?.Value != null;
+                    var source = isKeyVaultRef ? "Key Vault" : "Direct";
+                    
+                    _logger.LogInformation(
+                        "Retrieved environment variable {SchemaName} from current value (source: {Source})",
+                        schemaName,
+                        source);
                     return currentValue;
                 }
             }

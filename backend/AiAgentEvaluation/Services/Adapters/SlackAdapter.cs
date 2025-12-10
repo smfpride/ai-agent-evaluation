@@ -154,7 +154,7 @@ public class SlackAdapter : BaseAgentAdapter
                 
                 // Get conversation history
                 var url = $"{SlackApiBase}/conversations.history?channel={channelId}&oldest={afterTimestamp}&limit=10";
-                var httpRequest = new HttpRequestMessage(HttpMethod.Get, url);
+                using var httpRequest = new HttpRequestMessage(HttpMethod.Get, url);
                 httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", botToken);
                 
                 var response = await _httpClient.SendAsync(httpRequest, cancellationToken);

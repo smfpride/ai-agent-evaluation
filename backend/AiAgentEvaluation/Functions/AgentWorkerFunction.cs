@@ -97,7 +97,21 @@ public class AgentWorkerFunction
                 }
                 
                 configuration = agentToEval.GetConfiguration();
-                var adapter = _agentAdapterFactory.GetAdapter(configuration.AgentType);
+                
+                // Get adapter with error handling for invalid agent types
+                IAgentAdapter adapter;
+                try
+                {
+                    adapter = _agentAdapterFactory.GetAdapter(configuration.AgentType);
+                }
+                catch (NotSupportedException ex)
+                {
+                    _logger.LogError(ex, "Invalid agent type {AgentType} for test case {TestCaseId}", 
+                        configuration.AgentType, message.TestCaseId);
+                    await HandleAgentCallError(message, 
+                        $"Agent type {configuration.AgentType} is not supported", cancellationToken);
+                    return;
+                }
                 
                 _logger.LogInformation(
                     "Using adapter for agent type {AgentType} for test case {TestCaseId}",

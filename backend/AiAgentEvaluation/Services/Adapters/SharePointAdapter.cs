@@ -67,6 +67,7 @@ public class SharePointAdapter : BaseAgentAdapter
                 // Call SharePoint agent endpoint
                 var responseText = await CallSharePointAgentAsync(
                     graphClient,
+                    credential,
                     siteUrl,
                     agentId,
                     request.UserInput,
@@ -99,6 +100,7 @@ public class SharePointAdapter : BaseAgentAdapter
     
     private async Task<string> CallSharePointAgentAsync(
         GraphServiceClient graphClient,
+        Azure.Core.TokenCredential credential,
         string siteUrl,
         string agentId,
         string userInput,
@@ -126,13 +128,8 @@ public class SharePointAdapter : BaseAgentAdapter
             // In production, replace with actual SharePoint Agents API
             var agentEndpoint = $"{siteUrl}/_api/agents/{agentId}/query";
             
-            // Get access token using the same credential we used for Graph
+            // Reuse the credential passed from the caller
             var scopes = new[] { "https://graph.microsoft.com/.default" };
-            var credential = await GetAzureCredentialAsync(
-                configuration,
-                scopes,
-                cancellationToken);
-            
             var tokenRequestContext = new Azure.Core.TokenRequestContext(scopes);
             var token = await credential.GetTokenAsync(tokenRequestContext, cancellationToken);
             
@@ -146,33 +143,32 @@ public class SharePointAdapter : BaseAgentAdapter
             var jsonContent = JsonSerializer.Serialize(requestContent);
             var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
             
-            var httpRequest = new HttpRequestMessage(HttpMethod.Post, agentEndpoint);
-            httpRequest.Content = content;
-            httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.Token);
-            
-            var response = await _httpClient.SendAsync(httpRequest, cancellationToken);
-            
-            if (!response.IsSuccessStatusCode)
+            using (var httpRequest = new HttpRequestMessage(HttpMethod.Post, agentEndpoint))
             {
-                var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
-                Logger.LogWarning("SharePoint agent call failed with status {StatusCode}: {Error}", 
-                    response.StatusCode, errorContent);
+                httpRequest.Content = content;
+                httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.Token);
                 
-                // Return a simulated response for demonstration
-                return $"SharePoint agent '{agentId}' response to: {userInput}. " +
-                       $"(Note: Using simulated endpoint. Site: {site.DisplayName}. " +
-                       $"Replace with actual SharePoint Agents API when available.)";
+                var response = await _httpClient.SendAsync(httpRequest, cancellationToken);
+                
+                if (!response.IsSuccessStatusCode)
+                {
+                    var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
+                    Logger.LogError("SharePoint agent call failed with status {StatusCode}: {Error}", 
+                        response.StatusCode, errorContent);
+                    throw new InvalidOperationException(
+                        $"SharePoint agent call failed with status {response.StatusCode}: {errorContent}");
+                }
+                
+                var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
+                var responseObj = JsonSerializer.Deserialize<JsonElement>(responseContent);
+                
+                if (responseObj.TryGetProperty("answer", out var answer))
+                {
+                    return answer.GetString() ?? string.Empty;
+                }
+                
+                return responseContent;
             }
-            
-            var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
-            var responseObj = JsonSerializer.Deserialize<JsonElement>(responseContent);
-            
-            if (responseObj.TryGetProperty("answer", out var answer))
-            {
-                return answer.GetString() ?? string.Empty;
-            }
-            
-            return responseContent;
         }
         catch (Exception ex)
         {
