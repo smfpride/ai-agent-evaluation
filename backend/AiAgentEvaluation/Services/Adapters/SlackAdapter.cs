@@ -154,12 +154,40 @@ public class SlackAdapter : BaseAgentAdapter
                 
                 // Get conversation history
                 var url = $"{SlackApiBase}/conversations.history?channel={channelId}&oldest={afterTimestamp}&limit=10";
-                var httpRequest = new HttpRequestMessage(HttpMethod.Get, url);
-                httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", botToken);
-                
-                var response = await _httpClient.SendAsync(httpRequest, cancellationToken);
-                var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
-                
+                using (var httpRequest = new HttpRequestMessage(HttpMethod.Get, url))
+                {
+                    httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", botToken);
+
+                    var response = await _httpClient.SendAsync(httpRequest, cancellationToken);
+                    var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
+
+                    var responseObj = JsonSerializer.Deserialize<JsonElement>(responseContent);
+
+                    if (!responseObj.TryGetProperty("ok", out var ok) || !ok.GetBoolean())
+                    {
+                        var error = responseObj.TryGetProperty("error", out var err) ? err.GetString() : "Unknown error";
+                        Logger.LogWarning("Slack conversations.history error: {Error}", error);
+                        continue;
+                    }
+
+                    if (responseObj.TryGetProperty("messages", out var messages))
+                    {
+                        foreach (var msg in messages.EnumerateArray())
+                        {
+                            // Look for bot messages (not from user, and after our message)
+                            if (msg.TryGetProperty("bot_id", out _) && 
+                                msg.TryGetProperty("text", out var text))
+                            {
+                                var messageText = text.GetString();
+                                if (!string.IsNullOrEmpty(messageText))
+                                {
+                                    Logger.LogInformation("Received bot response from Slack");
+                                    return messageText;
+                                }
+                            }
+                        }
+                    }
+                }
                 var responseObj = JsonSerializer.Deserialize<JsonElement>(responseContent);
                 
                 if (!responseObj.TryGetProperty("ok", out var ok) || !ok.GetBoolean())
