@@ -38,31 +38,39 @@ public class M365CopilotAdapter : BaseAgentAdapter
                 "M365CopilotAdapter: Calling M365 Copilot for test case {TestCaseId} with auth mode {AuthMode}",
                 request.TestCaseId,
                 request.Configuration.GetValue<string>("authMode") ?? "ManagedIdentity");
-            
-            // Get appropriate credential based on auth mode
-            var credential = await GetAzureCredentialAsync(
-                request.Configuration,
-                scopes,
-                cancellationToken);
-            
-            // Create Graph client with chosen credential
-            var graphClient = new GraphServiceClient(credential, scopes);
-            
-            // For M365 Copilot, we'll use Microsoft Graph Chat API
-            // Note: As of now, M365 Copilot doesn't have a direct API, so we simulate the interaction
-            // using Graph Chat API or fallback to a message-based approach
-            
-            var userId = request.Configuration.GetValue<string>("userId") ?? "me";
-            
-            // Try to send a chat message (this is a placeholder - actual M365 Copilot API may differ)
-            
-            // Since M365 Copilot API is evolving, we'll simulate by creating a chat or sending to a specific endpoint
-            // In production, this would use the actual M365 Copilot API endpoint
-            var responseText = await SimulateM365CopilotInteractionAsync(
-                graphClient, 
-                request.UserInput, 
-                userId,
-                cancellationToken);
+            using (var graphClient = new GraphServiceClient(credential, scopes))
+            {
+                // For M365 Copilot, we'll use Microsoft Graph Chat API
+                // Note: As of now, M365 Copilot doesn't have a direct API, so we simulate the interaction
+                // using Graph Chat API or fallback to a message-based approach
+                
+                var userId = request.Configuration.GetValue<string>("userId") ?? "me";
+                
+                // Try to send a chat message (this is a placeholder - actual M365 Copilot API may differ)
+                var chatMessage = new ChatMessage
+                {
+                    Body = new ItemBody
+                    {
+                        Content = request.UserInput,
+                        ContentType = BodyType.Text
+                    }
+                };
+                
+                // Since M365 Copilot API is evolving, we'll simulate by creating a chat or sending to a specific endpoint
+                // In production, this would use the actual M365 Copilot API endpoint
+                var responseText = await SimulateM365CopilotInteractionAsync(
+                    graphClient, 
+                    request.UserInput, 
+                    userId,
+                    cancellationToken);
+                
+                return new AgentResponse
+                {
+                    Success = true,
+                    ResponseText = responseText,
+                    ExecutionTimeMs = (int)sw.ElapsedMilliseconds
+                };
+            }
             
             return new AgentResponse
             {
