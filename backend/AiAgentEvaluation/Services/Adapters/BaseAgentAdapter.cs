@@ -42,10 +42,8 @@ public abstract class BaseAgentAdapter : IAgentAdapter
                 $"Configuration must contain 'environmentVariables.{credentialField}' with environment variable name");
         }
         
-        Logger.LogInformation(
-            "Retrieving credential '{CredentialField}' from environment variable '{EnvVarName}'",
-            credentialField,
-            envVarName);
+        Logger.LogDebug(
+            "Retrieving credential from environment variable");
         
         var value = await DataverseService.GetEnvironmentVariableValueAsync(
             envVarName,
