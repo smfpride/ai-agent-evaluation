@@ -31,7 +31,6 @@ public class M365CopilotAdapter : BaseAgentAdapter
         
         try
         {
-            var tenantId = request.Configuration.GetValue<string>("tenantId");
             var scopes = request.Configuration.GetValue<string[]>("scopes") ?? 
                 new[] { "https://graph.microsoft.com/.default" };
             
