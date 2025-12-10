@@ -110,9 +110,9 @@ public class M365CopilotAdapter : BaseAgentAdapter
             // In production, this would be something like:
             // var response = await graphClient.Me.Copilot.Chat.PostAsync(new CopilotChatRequest { Message = userInput });
             
-            return $"M365 Copilot response to: {userInput}. " +
-                   $"(Note: Using Graph API with {graphClient.RequestAdapter.GetType().Name}. " +
-                   $"Replace with actual M365 Copilot API when available.)";
+            throw new NotImplementedException(
+                "M365 Copilot API is not yet available. This adapter is a placeholder. " +
+                "Configure agent type 778760000 (DirectLine) for production use.");
         }
         catch (Exception ex)
         {
