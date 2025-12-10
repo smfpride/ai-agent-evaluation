@@ -127,10 +127,9 @@ public class M365AgentsSDKAdapter : BaseAgentAdapter
                 Logger.LogWarning("M365 Agent call failed with status {StatusCode}: {Error}", 
                     response.StatusCode, errorContent);
                 
-                // Return a simulated response for demonstration
-                return $"M365 Agent '{agentId}' response to: {userInput}. " +
-                       $"(Note: Using conceptual M365 Agents SDK endpoint. " +
-                       $"Replace with actual SDK when available.)";
+                // Throw exception to propagate actual API error
+                throw new InvalidOperationException(
+                    $"M365 Agent call failed with status {response.StatusCode}: {errorContent}");
             }
             
             var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
