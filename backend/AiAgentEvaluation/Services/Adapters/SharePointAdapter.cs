@@ -156,11 +156,8 @@ public class SharePointAdapter : BaseAgentAdapter
                 var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
                 Logger.LogWarning("SharePoint agent call failed with status {StatusCode}: {Error}", 
                     response.StatusCode, errorContent);
-                
-                // Return a simulated response for demonstration
-                return $"SharePoint agent '{agentId}' response to: {userInput}. " +
-                       $"(Note: Using simulated endpoint. Site: {site.DisplayName}. " +
-                       $"Replace with actual SharePoint Agents API when available.)";
+                throw new InvalidOperationException(
+                    $"SharePoint agent call failed with status {response.StatusCode}: {errorContent}");
             }
             
             var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
