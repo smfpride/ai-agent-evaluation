@@ -143,35 +143,36 @@ public class SharePointAdapter : BaseAgentAdapter
                 agentId = agentId
             };
             
-            using (var httpRequest = new HttpRequestMessage(HttpMethod.Post, agentEndpoint))
+            var jsonContent = JsonSerializer.Serialize(requestContent);
+            var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+            
+            var httpRequest = new HttpRequestMessage(HttpMethod.Post, agentEndpoint);
+            httpRequest.Content = content;
+            httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.Token);
+            
+            var response = await _httpClient.SendAsync(httpRequest, cancellationToken);
+            
+            if (!response.IsSuccessStatusCode)
             {
-                httpRequest.Content = content;
-                httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.Token);
-
-                var response = await _httpClient.SendAsync(httpRequest, cancellationToken);
-
-                if (!response.IsSuccessStatusCode)
-                {
-                    var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
-                    Logger.LogWarning("SharePoint agent call failed with status {StatusCode}: {Error}", 
-                        response.StatusCode, errorContent);
-
-                    // Return a simulated response for demonstration
-                    return $"SharePoint agent '{agentId}' response to: {userInput}. " +
-                           $"(Note: Using simulated endpoint. Site: {site.DisplayName}. " +
-                           $"Replace with actual SharePoint Agents API when available.)";
-                }
-
-                var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
-                var responseObj = JsonSerializer.Deserialize<JsonElement>(responseContent);
-
-                if (responseObj.TryGetProperty("answer", out var answer))
-                {
-                    return answer.GetString() ?? string.Empty;
-                }
-
-                return responseContent;
+                var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
+                Logger.LogWarning("SharePoint agent call failed with status {StatusCode}: {Error}", 
+                    response.StatusCode, errorContent);
+                
+                // Return a simulated response for demonstration
+                return $"SharePoint agent '{agentId}' response to: {userInput}. " +
+                       $"(Note: Using simulated endpoint. Site: {site.DisplayName}. " +
+                       $"Replace with actual SharePoint Agents API when available.)";
             }
+            
+            var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
+            var responseObj = JsonSerializer.Deserialize<JsonElement>(responseContent);
+            
+            if (responseObj.TryGetProperty("answer", out var answer))
+            {
+                return answer.GetString() ?? string.Empty;
+            }
+            
+            return responseContent;
         }
         catch (Exception ex)
         {

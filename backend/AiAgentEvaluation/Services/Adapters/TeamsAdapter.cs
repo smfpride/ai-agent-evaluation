@@ -168,66 +168,37 @@ public class TeamsAdapter : BaseAgentAdapter
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
             request.Content = content;
             
-            using (var request = new HttpRequestMessage(HttpMethod.Post, 
-                $"{DirectLineEndpoint}/conversations/{conversationId}/activities"))
-            {
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-                request.Content = content;
-
-                var response = await _httpClient.SendAsync(request, ct);
-                response.EnsureSuccessStatusCode();
-            }
+            var response = await _httpClient.SendAsync(request, ct);
+            response.EnsureSuccessStatusCode();
             
             // Wait for bot response (poll for activities)
             await Task.Delay(2000, ct); // Give bot time to respond
             
-            using (var getRequest = new HttpRequestMessage(HttpMethod.Get, 
-                $"{DirectLineEndpoint}/conversations/{conversationId}/activities"))
+            var getRequest = new HttpRequestMessage(HttpMethod.Get, 
+                $"{DirectLineEndpoint}/conversations/{conversationId}/activities");
+            getRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            
+            var getResponse = await _httpClient.SendAsync(getRequest, ct);
+            getResponse.EnsureSuccessStatusCode();
+            
+            var activitiesContent = await getResponse.Content.ReadAsStringAsync(ct);
+            var activitiesResponse = JsonSerializer.Deserialize<JsonElement>(activitiesContent);
+            
+            // Find bot's response (skip user's message)
+            var activities = activitiesResponse.GetProperty("activities");
+            foreach (var act in activities.EnumerateArray())
             {
-                getRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-
-            using var content = new StringContent(activityJson, Encoding.UTF8, "application/json");
-            
-            using (var request = new HttpRequestMessage(HttpMethod.Post, 
-                $"{DirectLineEndpoint}/conversations/{conversationId}/activities"))
-            {
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-                request.Content = content;
-                
-                var response = await _httpClient.SendAsync(request, ct);
-                response.EnsureSuccessStatusCode();
-            }
-            
-            // Wait for bot response (poll for activities)
-            await Task.Delay(2000, ct); // Give bot time to respond
-            
-            using (var getRequest = new HttpRequestMessage(HttpMethod.Get, 
-                $"{DirectLineEndpoint}/conversations/{conversationId}/activities"))
-            {
-                getRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-                
-                var getResponse = await _httpClient.SendAsync(getRequest, ct);
-                getResponse.EnsureSuccessStatusCode();
-                
-                var activitiesContent = await getResponse.Content.ReadAsStringAsync(ct);
-                var activitiesResponse = JsonSerializer.Deserialize<JsonElement>(activitiesContent);
-            
-                // Find bot's response (skip user's message)
-                var activities = activitiesResponse.GetProperty("activities");
-                foreach (var act in activities.EnumerateArray())
+                if (act.TryGetProperty("from", out var from) && 
+                    from.TryGetProperty("id", out var fromId) &&
+                    fromId.GetString() != "user1" &&
+                    act.TryGetProperty("text", out var text))
                 {
-                    if (act.TryGetProperty("from", out var from) && 
-                        from.TryGetProperty("id", out var fromId) &&
-                        fromId.GetString() != "user1" &&
-                        act.TryGetProperty("text", out var text))
-                    {
-                        return text.GetString() ?? string.Empty;
-                    }
+                    return text.GetString() ?? string.Empty;
                 }
-                
-                Logger.LogWarning("No bot response found in conversation {ConversationId}", conversationId);
-                return string.Empty;
             }
+            
+            Logger.LogWarning("No bot response found in conversation {ConversationId}", conversationId);
+            return string.Empty;
         }
         catch (Exception ex)
         {
