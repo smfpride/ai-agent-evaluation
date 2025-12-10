@@ -62,23 +62,24 @@ public class SharePointAdapter : BaseAgentAdapter
                 cancellationToken);
             
             // Create Graph client for SharePoint access
-            var graphClient = new GraphServiceClient(credential, scopes);
-            
-            // Call SharePoint agent endpoint
-            var responseText = await CallSharePointAgentAsync(
-                graphClient,
-                siteUrl,
-                agentId,
-                request.UserInput,
-                request.Configuration,
-                cancellationToken);
-            
-            return new AgentResponse
+            using (var graphClient = new GraphServiceClient(credential, scopes))
             {
-                Success = true,
-                ResponseText = responseText,
-                ExecutionTimeMs = (int)sw.ElapsedMilliseconds
-            };
+                // Call SharePoint agent endpoint
+                var responseText = await CallSharePointAgentAsync(
+                    graphClient,
+                    siteUrl,
+                    agentId,
+                    request.UserInput,
+                    request.Configuration,
+                    cancellationToken);
+
+                return new AgentResponse
+                {
+                    Success = true,
+                    ResponseText = responseText,
+                    ExecutionTimeMs = (int)sw.ElapsedMilliseconds
+                };
+            }
         }
         catch (Exception ex)
         {
