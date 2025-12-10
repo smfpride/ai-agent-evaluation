@@ -125,7 +125,7 @@ public class TeamsAdapter : BaseAgentAdapter
     {
         try
         {
-            var request = new HttpRequestMessage(HttpMethod.Post, $"{DirectLineEndpoint}/conversations");
+            using var request = new HttpRequestMessage(HttpMethod.Post, $"{DirectLineEndpoint}/conversations");
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
             
             var response = await _httpClient.SendAsync(request, ct);
