@@ -1,8 +1,6 @@
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Microsoft.Graph;
-using Microsoft.Graph.Models;
-
 namespace AiAgentEvaluation.Services.Adapters;
 
 /// <summary>
