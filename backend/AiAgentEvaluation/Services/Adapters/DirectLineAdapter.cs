@@ -33,7 +33,7 @@ public class DirectLineAdapter : IAgentAdapter
             if (string.IsNullOrEmpty(directLineUrl))
             {
                 throw new InvalidOperationException(
-                    "DirectLine adapter requires 'directLineUrl' in configuration");
+                    "DirectLineAdapter requires 'directLineUrl' in configuration");
             }
             
             _logger.LogInformation(

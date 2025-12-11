@@ -2319,10 +2319,15 @@ public class DataverseService : IDataverseService, IDisposable
                                 isKeyVaultRef = schemaObj.TryGetProperty("vaultName", out _) || 
                                                 schemaObj.TryGetProperty("secretName", out _);
                             }
-                            catch
+                            catch (Exception ex)
                             {
                                 // If parsing fails, it's not a valid Key Vault reference
                                 isKeyVaultRef = false;
+                                _logger.LogWarning(
+                                    ex,
+                                    "Failed to parse valueschema for environment variable {SchemaName}. Value: {SchemaValue}",
+                                    schemaName,
+                                    schemaValue);
                             }
                         }
                     }

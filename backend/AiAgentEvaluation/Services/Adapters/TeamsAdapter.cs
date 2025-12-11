@@ -15,6 +15,7 @@ public class TeamsAdapter : BaseAgentAdapter
     private readonly HttpClient _httpClient;
     private const string DirectLineEndpoint = "https://directline.botframework.com/v3/directline";
     private const string TokenEndpoint = "https://login.microsoftonline.com/botframework.com/oauth2/v2.0/token";
+    private const int BotResponseDelayMs = 2000;
     
     public TeamsAdapter(
         ILogger<TeamsAdapter> logger,
@@ -182,7 +183,8 @@ public class TeamsAdapter : BaseAgentAdapter
             }
             
             // Wait for bot response (poll for activities)
-            await Task.Delay(2000, ct); // Give bot time to respond
+            // Note: Configurable wait time may be added to agent configuration in future versions
+            await Task.Delay(BotResponseDelayMs, ct); // Give bot time to respond
             
             using (var getRequest = new HttpRequestMessage(HttpMethod.Get, 
                 $"{DirectLineEndpoint}/conversations/{conversationId}/activities"))

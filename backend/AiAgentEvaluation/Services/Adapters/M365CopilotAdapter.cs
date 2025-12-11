@@ -67,13 +67,6 @@ public class M365CopilotAdapter : BaseAgentAdapter
                     ExecutionTimeMs = (int)sw.ElapsedMilliseconds
                 };
             }
-            
-            return new AgentResponse
-            {
-                Success = true,
-                ResponseText = responseText,
-                ExecutionTimeMs = (int)sw.ElapsedMilliseconds
-            };
         }
         catch (Exception ex)
         {

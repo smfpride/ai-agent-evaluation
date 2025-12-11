@@ -14,6 +14,9 @@ public class SlackAdapter : BaseAgentAdapter
 {
     private readonly HttpClient _httpClient;
     private const string SlackApiBase = "https://slack.com/api";
+    private const int MaxPollingAttempts = 10;
+    private const int InitialDelayMs = 1000;
+    private const int MaxDelayMs = 5000;
     
     public SlackAdapter(
         ILogger<SlackAdapter> logger,
@@ -144,10 +147,9 @@ public class SlackAdapter : BaseAgentAdapter
         try
         {
             // Poll for bot response with exponential backoff (max 30 seconds)
-            var maxAttempts = 10;
-            var delayMs = 1000;
+            var delayMs = InitialDelayMs;
             
-            for (int attempt = 0; attempt < maxAttempts; attempt++)
+            for (int attempt = 0; attempt < MaxPollingAttempts; attempt++)
             {
                 await Task.Delay(delayMs, cancellationToken);
                 
@@ -187,11 +189,11 @@ public class SlackAdapter : BaseAgentAdapter
                 }
                 
                 // Exponential backoff
-                delayMs = Math.Min(delayMs * 2, 5000);
+                delayMs = Math.Min(delayMs * 2, MaxDelayMs);
             }
             
             Logger.LogWarning("No bot response found in Slack channel {ChannelId} after {Attempts} attempts", 
-                channelId, maxAttempts);
+                channelId, MaxPollingAttempts);
             return string.Empty;
         }
         catch (Exception ex)

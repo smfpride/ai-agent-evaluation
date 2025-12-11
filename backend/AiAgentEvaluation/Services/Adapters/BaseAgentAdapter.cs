@@ -156,7 +156,7 @@ public abstract class BaseAgentAdapter : IAgentAdapter
     
     private async Task<TokenCredential> GetUserPasswordCredentialAsync(
         AgentConfiguration configuration,
-        string[] scopes, // Note: scopes parameter kept for interface consistency but not used in credential construction
+        string[] scopes, // Note: scopes parameter is not used in credential construction, but is required later when requesting tokens from the credential
         CancellationToken cancellationToken)
     {
         var credentials = await GetAllCredentialsFromEnvironmentVariablesAsync(configuration, cancellationToken);
