@@ -1,6 +1,7 @@
 using AiAgentEvaluation.Functions;
 using AiAgentEvaluation.Models;
 using AiAgentEvaluation.Services;
+using AiAgentEvaluation.Services.Adapters;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Moq;
@@ -18,6 +19,7 @@ public class AgentWorkerFunctionTests
     private readonly Mock<ILogger<AgentWorkerFunction>> _mockLogger;
     private readonly Mock<IDataverseService> _mockDataverseService;
     private readonly Mock<ICopilotStudioService> _mockCopilotStudioService;
+    private readonly Mock<IAgentAdapterFactory> _mockAgentAdapterFactory;
     private readonly Mock<IServiceBusService> _mockServiceBusService;
     private readonly IOptions<AppSettings> _mockSettings;
     private readonly AgentWorkerFunction _agentWorker;
@@ -27,6 +29,7 @@ public class AgentWorkerFunctionTests
         _mockLogger = new Mock<ILogger<AgentWorkerFunction>>();
         _mockDataverseService = new Mock<IDataverseService>();
         _mockCopilotStudioService = new Mock<ICopilotStudioService>();
+        _mockAgentAdapterFactory = new Mock<IAgentAdapterFactory>();
         _mockServiceBusService = new Mock<IServiceBusService>();
         
         _mockSettings = Options.Create(new AppSettings
@@ -42,6 +45,7 @@ public class AgentWorkerFunctionTests
             _mockLogger.Object,
             _mockDataverseService.Object,
             _mockCopilotStudioService.Object,
+            _mockAgentAdapterFactory.Object,
             _mockServiceBusService.Object,
             _mockSettings);
     }

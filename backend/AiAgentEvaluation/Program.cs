@@ -127,6 +127,27 @@ catch (Exception ex)
     Console.WriteLine($"Warning: Failed to register ServiceBusService: {ex.Message}");
 }
 
+// Register adapter factory and adapters
+try
+{
+    // Register adapter factory and adapters using IHttpClientFactory for proper HttpClient management
+    builder.Services.AddScoped<AiAgentEvaluation.Services.Adapters.IAgentAdapterFactory, AiAgentEvaluation.Services.Adapters.AgentAdapterFactory>();
+    
+    // Register DirectLineAdapter without HttpClient (uses ICopilotStudioService instead)
+    builder.Services.AddScoped<AiAgentEvaluation.Services.Adapters.DirectLineAdapter>();
+    
+    // Register adapters with HttpClient for proper connection pooling and DNS refresh
+    builder.Services.AddHttpClient<AiAgentEvaluation.Services.Adapters.TeamsAdapter>();
+    builder.Services.AddHttpClient<AiAgentEvaluation.Services.Adapters.M365CopilotAdapter>();
+    builder.Services.AddHttpClient<AiAgentEvaluation.Services.Adapters.SharePointAdapter>();
+    builder.Services.AddHttpClient<AiAgentEvaluation.Services.Adapters.M365AgentsSDKAdapter>();
+    builder.Services.AddHttpClient<AiAgentEvaluation.Services.Adapters.SlackAdapter>();
+}
+catch (Exception ex)
+{
+    Console.WriteLine($"Warning: Failed to register agent adapters: {ex.Message}");
+}
+
 // Add logging
 builder.Services.AddLogging();
 

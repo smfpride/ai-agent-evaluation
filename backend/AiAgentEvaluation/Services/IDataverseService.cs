@@ -173,4 +173,12 @@ public interface IDataverseService
         Guid evaluationRunId,
         Guid evaluatorTypeId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Get environment variable value from Dataverse
+    /// Dataverse automatically retrieves from Key Vault if configured
+    /// </summary>
+    Task<string?> GetEnvironmentVariableValueAsync(
+        string schemaName, 
+        CancellationToken cancellationToken = default);
 }

@@ -6,6 +6,7 @@ using Microsoft.PowerPlatform.Dataverse.Client;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Query;
 using System.ServiceModel;
+using System.Text.Json;
 
 namespace AiAgentEvaluation.Services;
 
@@ -1382,6 +1383,8 @@ public class DataverseService : IDataverseService, IDisposable
                 Prefixed("agenttoevalid"),
                 Prefixed("name"),
                 Prefixed("directlinespeechurl"),
+                Prefixed("agenttype"),
+                Prefixed("agentconfiguration"),
                 "statecode",
                 "statuscode",
                 "createdon",
@@ -1409,6 +1412,8 @@ public class DataverseService : IDataverseService, IDisposable
                 Id = entity.Id,
                 Name = entity.GetAttributeValue<string>(Prefixed("name")) ?? string.Empty,
                 DirectLineSpeechUrl = entity.GetAttributeValue<string>(Prefixed("directlinespeechurl")) ?? string.Empty,
+                AgentType = entity.GetAttributeValue<OptionSetValue>(Prefixed("agenttype"))?.Value,
+                AgentConfiguration = entity.GetAttributeValue<string>(Prefixed("agentconfiguration")),
                 StateCode = GetIntValue(entity, "statecode"),
                 StatusCode = entity.GetAttributeValue<OptionSetValue>("statuscode")?.Value ?? 1,
                 CreatedOn = entity.GetAttributeValue<DateTime>("createdon"),
@@ -2246,6 +2251,122 @@ public class DataverseService : IDataverseService, IDisposable
                 testCaseId, evaluationRunId, evaluatorTypeId);
             throw;
         }
+    }
+
+    public async Task<string?> GetEnvironmentVariableValueAsync(
+        string schemaName,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Getting environment variable {SchemaName}", schemaName);
+        EnsureClientReady();
+
+        return await _resilientService.ExecuteAsync(async ct =>
+        {
+            // Query environmentvariabledefinition by schemaname
+            var query = new QueryExpression("environmentvariabledefinition")
+            {
+                ColumnSet = new ColumnSet("environmentvariabledefinitionid", "defaultvalue", "valueschema"),
+                Criteria = new FilterExpression
+                {
+                    Conditions =
+                    {
+                        new ConditionExpression("schemaname", ConditionOperator.Equal, schemaName)
+                    }
+                },
+                LinkEntities =
+                {
+                    new LinkEntity
+                    {
+                        LinkFromEntityName = "environmentvariabledefinition",
+                        LinkToEntityName = "environmentvariablevalue",
+                        LinkFromAttributeName = "environmentvariabledefinitionid",
+                        LinkToAttributeName = "environmentvariabledefinitionid",
+                        JoinOperator = JoinOperator.LeftOuter,
+                        Columns = new ColumnSet("value"),
+                        EntityAlias = "envvalue"
+                    }
+                }
+            };
+
+            var results = await Task.Run(() => _serviceClient!.RetrieveMultiple(query), ct);
+            
+            if (results.Entities.Count == 0)
+            {
+                _logger.LogWarning("Environment variable {SchemaName} not found", schemaName);
+                return null;
+            }
+
+            var entity = results.Entities[0];
+            
+            // Check for current value (from environmentvariablevalue - higher priority)
+            if (entity.Contains("envvalue.value"))
+            {
+                var currentValue = entity.GetAttributeValue<AliasedValue>("envvalue.value")?.Value as string;
+                if (!string.IsNullOrEmpty(currentValue))
+                {
+                    // Check if this is a Key Vault reference by examining the valueschema field
+                    // Key Vault references have a specific JSON format in valueschema with vault name and secret name
+                    var isKeyVaultRef = false;
+                    if (entity.Contains("valueschema"))
+                    {
+                        var schemaValue = entity.GetAttributeValue<string>("valueschema");
+                        if (!string.IsNullOrEmpty(schemaValue))
+                        {
+                            try
+                            {
+                                // Parse the valueschema JSON to check if it's a Key Vault reference
+                                var schemaObj = JsonSerializer.Deserialize<JsonElement>(schemaValue);
+                                isKeyVaultRef = schemaObj.TryGetProperty("vaultName", out _) || 
+                                                schemaObj.TryGetProperty("secretName", out _);
+                            }
+                            catch (Exception ex)
+                            {
+                                // If parsing fails, it's not a valid Key Vault reference
+                                isKeyVaultRef = false;
+                                _logger.LogWarning(
+                                    ex,
+                                    "Failed to parse valueschema for environment variable {SchemaName}. Value: {SchemaValue}",
+                                    schemaName,
+                                    schemaValue);
+                            }
+                        }
+                    }
+                    
+                    var source = isKeyVaultRef ? "Key Vault" : "Direct";
+                    
+                    _logger.LogInformation(
+                        "Retrieved environment variable {SchemaName} from current value (source: {Source})",
+                        schemaName,
+                        source);
+                    return currentValue;
+                }
+            }
+            
+            // Fall back to default value (from environmentvariabledefinition)
+            var defaultValue = entity.GetAttributeValue<string>("defaultvalue");
+            if (!string.IsNullOrEmpty(defaultValue))
+            {
+                _logger.LogInformation("Retrieved environment variable {SchemaName} from default value", schemaName);
+                return defaultValue;
+            }
+            
+            // Check valueschema for Azure Key Vault reference
+            var valueSchema = entity.GetAttributeValue<string>("valueschema");
+            if (!string.IsNullOrEmpty(valueSchema))
+            {
+                // If valueschema is set, Dataverse will retrieve from Key Vault automatically
+                // and populate it in the value field above. If we get here, Key Vault lookup failed.
+                _logger.LogWarning(
+                    "Environment variable {SchemaName} has Key Vault schema but no value retrieved", 
+                    schemaName);
+            }
+            
+            _logger.LogWarning("Environment variable {SchemaName} has no value", schemaName);
+            return null;
+            
+        }, "GetEnvironmentVariableValue",
+        exception => exception is FaultException<OrganizationServiceFault>,
+        cancellationToken);
     }
 
     public void Dispose()

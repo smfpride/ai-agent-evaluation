@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using AiAgentEvaluation.Models;
 using AiAgentEvaluation.Services;
+using AiAgentEvaluation.Services.Adapters;
 using System.Text.Json;
 using System.Diagnostics;
 
@@ -17,20 +18,23 @@ public class AgentWorkerFunction
 {
     private readonly ILogger<AgentWorkerFunction> _logger;
     private readonly IDataverseService _dataverseService;
-    private readonly ICopilotStudioService _copilotStudioService;
+    private readonly ICopilotStudioService _copilotStudioService; // Kept for backward compatibility
+    private readonly IAgentAdapterFactory _agentAdapterFactory;
     private readonly IServiceBusService _serviceBusService;
     private readonly AppSettings _settings;
 
     public AgentWorkerFunction(
         ILogger<AgentWorkerFunction> logger,
         IDataverseService dataverseService,
-        ICopilotStudioService copilotStudioService,
+        ICopilotStudioService copilotStudioService, // Kept for backward compatibility
+        IAgentAdapterFactory agentAdapterFactory,
         IServiceBusService serviceBusService,
         IOptions<AppSettings> settings)
     {
         _logger = logger;
         _dataverseService = dataverseService;
         _copilotStudioService = copilotStudioService;
+        _agentAdapterFactory = agentAdapterFactory;
         _serviceBusService = serviceBusService;
         _settings = settings.Value;
     }
@@ -76,36 +80,102 @@ public class AgentWorkerFunction
                 message.EvaluationRunId,
                 message.EvaluatorTypeIds.Count);
 
-            // Validate DirectLineUrl
-            if (string.IsNullOrEmpty(message.DirectLineUrl))
+            // Get agent configuration (new adapter pattern)
+            AgentConfiguration configuration;
+            AgentResponse agentResponse;
+            
+            if (message.AgentToEvalId.HasValue)
             {
-                _logger.LogError("DirectLineUrl is missing for test case {TestCaseId}", message.TestCaseId);
-                await HandleAgentCallError(message, "DirectLineUrl is not configured", cancellationToken);
-                return;
+                // NEW: Use adapter pattern
+                var agentToEval = await _dataverseService.GetAgentToEvalAsync(message.AgentToEvalId.Value, cancellationToken);
+                if (agentToEval == null)
+                {
+                    _logger.LogError("AgentToEval {AgentToEvalId} not found for test case {TestCaseId}", 
+                        message.AgentToEvalId.Value, message.TestCaseId);
+                    await HandleAgentCallError(message, "Agent configuration not found", cancellationToken);
+                    return;
+                }
+                
+                configuration = agentToEval.GetConfiguration();
+                
+                // Get adapter with error handling for invalid agent types
+                IAgentAdapter adapter;
+                try
+                {
+                    adapter = _agentAdapterFactory.GetAdapter(configuration.AgentType);
+                }
+                catch (NotSupportedException ex)
+                {
+                    _logger.LogError(ex, "Invalid agent type {AgentType} for test case {TestCaseId}", 
+                        configuration.AgentType, message.TestCaseId);
+                    await HandleAgentCallError(message, 
+                        $"Agent type {configuration.AgentType} is not supported", cancellationToken);
+                    return;
+                }
+                
+                _logger.LogInformation(
+                    "Using adapter for agent type {AgentType} for test case {TestCaseId}",
+                    configuration.AgentType, message.TestCaseId);
+                
+                var request = new AgentCallRequest
+                {
+                    UserInput = message.UserInput,
+                    ConversationId = message.ConversationId,
+                    DirectLineToken = message.DirectLineToken,
+                    TestCaseId = message.TestCaseId,
+                    EvaluationRunId = message.EvaluationRunId,
+                    Configuration = configuration
+                };
+                
+                agentResponse = await adapter.ExecuteAsync(request, cancellationToken);
+            }
+            else
+            {
+                // BACKWARD COMPATIBILITY: Use DirectLineUrl directly (legacy path)
+                if (string.IsNullOrEmpty(message.DirectLineUrl))
+                {
+                    _logger.LogError("DirectLineUrl is missing for test case {TestCaseId}", message.TestCaseId);
+                    await HandleAgentCallError(message, "DirectLineUrl is not configured", cancellationToken);
+                    return;
+                }
+                
+                _logger.LogInformation(
+                    "Using legacy DirectLine path for test case {TestCaseId}",
+                    message.TestCaseId);
+                
+                var copilotResponse = await _copilotStudioService.SendMessageAsync(
+                    message.DirectLineUrl,
+                    message.UserInput,
+                    message.ConversationId,
+                    message.DirectLineToken,
+                    cancellationToken);
+                
+                // Convert to AgentResponse format
+                agentResponse = new AgentResponse
+                {
+                    Success = copilotResponse.Success,
+                    ResponseText = copilotResponse.Response,
+                    ExecutionTimeMs = copilotResponse.ExecutionTimeMs,
+                    ConversationId = copilotResponse.ConversationId,
+                    ErrorMessage = copilotResponse.ErrorMessage,
+                    RawActivityJson = copilotResponse.RawActivityJson
+                };
             }
 
-            // Call Copilot Studio with retry (exponential backoff handled by ResilientService)
-            var copilotResponse = await _copilotStudioService.SendMessageAsync(
-                message.DirectLineUrl,
-                message.UserInput,
-                message.ConversationId,
-                message.DirectLineToken,
-                cancellationToken);
-
-            if (!copilotResponse.Success)
+            if (!agentResponse.Success)
             {
                 _logger.LogWarning(
-                    "Copilot Studio call failed for test case {TestCaseId}: {ErrorMessage}",
+                    "Agent call failed for test case {TestCaseId}: {ErrorMessage}",
                     message.TestCaseId,
-                    copilotResponse.ErrorMessage);
+                    agentResponse.ErrorMessage);
 
                 // Check if this is a user error (should NOT be retried)
-                bool isUserError = copilotResponse.ErrorMessage != null && (
-                    copilotResponse.ErrorMessage.Contains("PSA-1009") ||
-                    copilotResponse.ErrorMessage.Contains("PSA-1010") ||
-                    copilotResponse.ErrorMessage.Contains("PSA-1011") ||
-                    copilotResponse.ErrorMessage.Contains("Status: 400") ||
-                    copilotResponse.ErrorMessage.Contains("Status: 404"));
+                bool isUserError = agentResponse.ErrorMessage != null && (
+                    agentResponse.ErrorMessage.Contains("PSA-1009") ||
+                    agentResponse.ErrorMessage.Contains("PSA-1010") ||
+                    agentResponse.ErrorMessage.Contains("PSA-1011") ||
+                    agentResponse.ErrorMessage.Contains("Status: 400") ||
+                    agentResponse.ErrorMessage.Contains("Status: 404"));
 
                 if (isUserError)
                 {
@@ -113,7 +183,7 @@ public class AgentWorkerFunction
                     _logger.LogWarning(
                         "User error detected for test case {TestCaseId} - marking as failed without retry",
                         message.TestCaseId);
-                    await HandleAgentCallError(message, copilotResponse.ErrorMessage ?? "User error", cancellationToken);
+                    await HandleAgentCallError(message, agentResponse.ErrorMessage ?? "User configuration error", cancellationToken);
                     return;
                 }
 
@@ -137,6 +207,7 @@ public class AgentWorkerFunction
                     {
                         EvaluationRunId = message.EvaluationRunId,
                         TestCaseId = message.TestCaseId,
+                        AgentToEvalId = message.AgentToEvalId,
                         DirectLineUrl = message.DirectLineUrl,
                         UserInput = message.UserInput,
                         ExpectedResponse = message.ExpectedResponse,
@@ -156,15 +227,15 @@ public class AgentWorkerFunction
                 _logger.LogError(
                     "Max retries exceeded for test case {TestCaseId}",
                     message.TestCaseId);
-                await HandleAgentCallError(message, copilotResponse.ErrorMessage ?? "Copilot Studio call failed after retries", cancellationToken);
+                await HandleAgentCallError(message, agentResponse.ErrorMessage ?? "Agent call failed after retries", cancellationToken);
                 return;
             }
 
             _logger.LogInformation(
-                "Copilot Studio response received: TestCase={TestCaseId}, ExecutionTime={ExecutionTime}ms, ConversationId={ConversationId}",
+                "Agent response received: TestCase={TestCaseId}, ExecutionTime={ExecutionTime}ms, ConversationId={ConversationId}",
                 message.TestCaseId,
-                copilotResponse.ExecutionTimeMs,
-                copilotResponse.ConversationId);
+                agentResponse.ExecutionTimeMs,
+                agentResponse.ConversationId);
 
             // Create pending results for each evaluator and queue evaluator jobs
             var evaluatorJobsTasks = message.EvaluatorTypeIds.Select(async evaluatorTypeId =>
@@ -192,10 +263,10 @@ public class AgentWorkerFunction
                             Score = 0.0m,
                             Passed = false,
                             Reasoning = $"Evaluator '{evaluatorType?.Name}' requires expected response but none provided",
-                            ActualResponse = copilotResponse.Response,
-                            ConversationId = copilotResponse.ConversationId,
-                            McsExecutionTimeMs = copilotResponse.ExecutionTimeMs,
-                            Metadata = copilotResponse.RawActivityJson
+                            ActualResponse = agentResponse.ResponseText,
+                            ConversationId = agentResponse.ConversationId,
+                            McsExecutionTimeMs = agentResponse.ExecutionTimeMs,
+                            Metadata = agentResponse.RawActivityJson
                         }, cancellationToken);
 
                         // Increment completion counter
@@ -215,10 +286,10 @@ public class AgentWorkerFunction
                         EvaluatorTypeId = evaluatorTypeId,
                         TestCaseTurnId = message.TestCaseTurnId,
                         StatusCode = EvaluationResultStatus.Pending,
-                        ActualResponse = copilotResponse.Response,
-                        ConversationId = copilotResponse.ConversationId,
-                        McsExecutionTimeMs = copilotResponse.ExecutionTimeMs,
-                        Metadata = copilotResponse.RawActivityJson
+                        ActualResponse = agentResponse.ResponseText,
+                        ConversationId = agentResponse.ConversationId,
+                        McsExecutionTimeMs = agentResponse.ExecutionTimeMs,
+                        Metadata = agentResponse.RawActivityJson
                     }, cancellationToken);
 
                     _logger.LogInformation(
