@@ -44,21 +44,29 @@ public class M365CopilotAdapter : BaseAgentAdapter
                 cancellationToken);
             
             // Create Graph client with chosen credential
-            var graphClient = new GraphServiceClient(credential, scopes);
-            
-            // For M365 Copilot, we'll use Microsoft Graph Chat API
-            // Note: As of now, M365 Copilot doesn't have a direct API, so we simulate the interaction
-            // using Graph Chat API or fallback to a message-based approach
-            
-            var userId = request.Configuration.GetValue<string>("userId") ?? "me";
-            
-            // Since M365 Copilot API is evolving, we'll simulate interaction
-            // In production, this would use the actual M365 Copilot API endpoint
-            var responseText = await SimulateM365CopilotInteractionAsync(
-                graphClient, 
-                request.UserInput, 
-                userId,
-                cancellationToken);
+            using (var graphClient = new GraphServiceClient(credential, scopes))
+            {
+                // For M365 Copilot, we'll use Microsoft Graph Chat API
+                // Note: As of now, M365 Copilot doesn't have a direct API, so we simulate the interaction
+                // using Graph Chat API or fallback to a message-based approach
+                
+                var userId = request.Configuration.GetValue<string>("userId") ?? "me";
+                
+                // Since M365 Copilot API is evolving, we'll simulate interaction
+                // In production, this would use the actual M365 Copilot API endpoint
+                var responseText = await SimulateM365CopilotInteractionAsync(
+                    graphClient, 
+                    request.UserInput, 
+                    userId,
+                    cancellationToken);
+                
+                return new AgentResponse
+                {
+                    Success = true,
+                    ResponseText = responseText,
+                    ExecutionTimeMs = (int)sw.ElapsedMilliseconds
+                };
+            }
             
             return new AgentResponse
             {
