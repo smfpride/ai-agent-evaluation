@@ -172,18 +172,19 @@ public class SlackAdapter : BaseAgentAdapter
                 
                 if (responseObj.TryGetProperty("messages", out var messages))
                 {
-                    foreach (var msg in messages.EnumerateArray())
+                    // Look for bot messages (not from user, with text)
+                    var botMessage = messages.EnumerateArray()
+                        .Where(msg => msg.TryGetProperty("bot_id", out _) && msg.TryGetProperty("text", out _))
+                        .FirstOrDefault();
+                    
+                    if (botMessage.ValueKind != JsonValueKind.Undefined && 
+                        botMessage.TryGetProperty("text", out var text))
                     {
-                        // Look for bot messages (not from user, and after our message)
-                        if (msg.TryGetProperty("bot_id", out _) && 
-                            msg.TryGetProperty("text", out var text))
+                        var messageText = text.GetString();
+                        if (!string.IsNullOrEmpty(messageText))
                         {
-                            var messageText = text.GetString();
-                            if (!string.IsNullOrEmpty(messageText))
-                            {
-                                Logger.LogInformation("Received bot response from Slack");
-                                return messageText;
-                            }
+                            Logger.LogInformation("Received bot response from Slack");
+                            return messageText;
                         }
                     }
                 }
