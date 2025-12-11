@@ -6,6 +6,7 @@ using Microsoft.PowerPlatform.Dataverse.Client;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Query;
 using System.ServiceModel;
+using System.Text.Json;
 
 namespace AiAgentEvaluation.Services;
 
@@ -2303,9 +2304,29 @@ public class DataverseService : IDataverseService, IDisposable
                 var currentValue = entity.GetAttributeValue<AliasedValue>("envvalue.value")?.Value as string;
                 if (!string.IsNullOrEmpty(currentValue))
                 {
-                    // Check if this is a Key Vault reference by looking at the valueschema from the definition
-                    var isKeyVaultRef = entity.Contains("valueschema") && 
-                        entity.GetAttributeValue<string>("valueschema") != null;
+                    // Check if this is a Key Vault reference by examining the valueschema field
+                    // Key Vault references have a specific JSON format in valueschema with vault name and secret name
+                    var isKeyVaultRef = false;
+                    if (entity.Contains("valueschema"))
+                    {
+                        var schemaValue = entity.GetAttributeValue<string>("valueschema");
+                        if (!string.IsNullOrEmpty(schemaValue))
+                        {
+                            try
+                            {
+                                // Parse the valueschema JSON to check if it's a Key Vault reference
+                                var schemaObj = JsonSerializer.Deserialize<JsonElement>(schemaValue);
+                                isKeyVaultRef = schemaObj.TryGetProperty("vaultName", out _) || 
+                                                schemaObj.TryGetProperty("secretName", out _);
+                            }
+                            catch
+                            {
+                                // If parsing fails, it's not a valid Key Vault reference
+                                isKeyVaultRef = false;
+                            }
+                        }
+                    }
+                    
                     var source = isKeyVaultRef ? "Key Vault" : "Direct";
                     
                     _logger.LogInformation(

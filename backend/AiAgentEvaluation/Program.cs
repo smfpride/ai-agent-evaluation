@@ -133,8 +133,10 @@ try
     // Register adapter factory and adapters using IHttpClientFactory for proper HttpClient management
     builder.Services.AddScoped<AiAgentEvaluation.Services.Adapters.IAgentAdapterFactory, AiAgentEvaluation.Services.Adapters.AgentAdapterFactory>();
     
+    // Register DirectLineAdapter without HttpClient (uses ICopilotStudioService instead)
+    builder.Services.AddScoped<AiAgentEvaluation.Services.Adapters.DirectLineAdapter>();
+    
     // Register adapters with HttpClient for proper connection pooling and DNS refresh
-    builder.Services.AddHttpClient<AiAgentEvaluation.Services.Adapters.DirectLineAdapter>();
     builder.Services.AddHttpClient<AiAgentEvaluation.Services.Adapters.TeamsAdapter>();
     builder.Services.AddHttpClient<AiAgentEvaluation.Services.Adapters.M365CopilotAdapter>();
     builder.Services.AddHttpClient<AiAgentEvaluation.Services.Adapters.SharePointAdapter>();

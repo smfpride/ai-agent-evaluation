@@ -114,38 +114,42 @@ public class M365AgentsSDKAdapter : BaseAgentAdapter
             
             using var httpRequest = new HttpRequestMessage(HttpMethod.Post, agentEndpoint);
             httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
-            httpRequest.Content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
             
-            Logger.LogDebug("Sending request to M365 Agent endpoint: {Endpoint}", agentEndpoint);
-            
-            var response = await _httpClient.SendAsync(httpRequest, cancellationToken);
-            
-            if (!response.IsSuccessStatusCode)
+            using (var stringContent = new StringContent(jsonContent, Encoding.UTF8, "application/json"))
             {
-                var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
-                Logger.LogWarning("M365 Agent call failed with status {StatusCode}: {Error}", 
-                    response.StatusCode, errorContent);
+                httpRequest.Content = stringContent;
                 
-                // Throw exception to propagate actual API error
-                throw new InvalidOperationException(
-                    $"M365 Agent call failed with status {response.StatusCode}: {errorContent}");
+                Logger.LogDebug("Sending request to M365 Agent endpoint: {Endpoint}", agentEndpoint);
+                
+                var response = await _httpClient.SendAsync(httpRequest, cancellationToken);
+                
+                if (!response.IsSuccessStatusCode)
+                {
+                    var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
+                    Logger.LogWarning("M365 Agent call failed with status {StatusCode}: {Error}", 
+                        response.StatusCode, errorContent);
+                    
+                    // Throw exception to propagate actual API error
+                    throw new InvalidOperationException(
+                        $"M365 Agent call failed with status {response.StatusCode}: {errorContent}");
+                }
+                
+                var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
+                var responseObj = JsonSerializer.Deserialize<JsonElement>(responseContent);
+                
+                // Parse response based on M365 Agents SDK response format
+                if (responseObj.TryGetProperty("output", out var output))
+                {
+                    return output.GetString() ?? string.Empty;
+                }
+                
+                if (responseObj.TryGetProperty("response", out var resp))
+                {
+                    return resp.GetString() ?? string.Empty;
+                }
+                
+                return responseContent;
             }
-            
-            var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
-            var responseObj = JsonSerializer.Deserialize<JsonElement>(responseContent);
-            
-            // Parse response based on M365 Agents SDK response format
-            if (responseObj.TryGetProperty("output", out var output))
-            {
-                return output.GetString() ?? string.Empty;
-            }
-            
-            if (responseObj.TryGetProperty("response", out var resp))
-            {
-                return resp.GetString() ?? string.Empty;
-            }
-            
-            return responseContent;
         }
         catch (Exception ex)
         {

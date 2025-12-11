@@ -183,7 +183,7 @@ public class AgentWorkerFunction
                     _logger.LogWarning(
                         "User error detected for test case {TestCaseId} - marking as failed without retry",
                         message.TestCaseId);
-                    await HandleAgentCallError(message, agentResponse.ErrorMessage ?? "User error", cancellationToken);
+                    await HandleAgentCallError(message, agentResponse.ErrorMessage ?? "User configuration error", cancellationToken);
                     return;
                 }
 

@@ -171,10 +171,14 @@ public class TeamsAdapter : BaseAgentAdapter
                 $"{DirectLineEndpoint}/conversations/{conversationId}/activities"))
             {
                 postRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-                postRequest.Content = new StringContent(activityJson, Encoding.UTF8, "application/json");
                 
-                var response = await _httpClient.SendAsync(postRequest, ct);
-                response.EnsureSuccessStatusCode();
+                using (var stringContent = new StringContent(activityJson, Encoding.UTF8, "application/json"))
+                {
+                    postRequest.Content = stringContent;
+                    
+                    var response = await _httpClient.SendAsync(postRequest, ct);
+                    response.EnsureSuccessStatusCode();
+                }
             }
             
             // Wait for bot response (poll for activities)
@@ -199,12 +203,11 @@ public class TeamsAdapter : BaseAgentAdapter
                                   fromId.GetString() != userId &&
                                   act.TryGetProperty("text", out var _));
                 
-                foreach (var act in botActivities)
+                var firstTextActivity = botActivities.FirstOrDefault();
+                if (firstTextActivity.ValueKind != JsonValueKind.Undefined && 
+                    firstTextActivity.TryGetProperty("text", out var text))
                 {
-                    if (act.TryGetProperty("text", out var text))
-                    {
-                        return text.GetString() ?? string.Empty;
-                    }
+                    return text.GetString() ?? string.Empty;
                 }
             }
             Logger.LogWarning("No bot response found in conversation {ConversationId}", conversationId);

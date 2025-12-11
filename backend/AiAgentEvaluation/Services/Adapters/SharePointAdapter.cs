@@ -144,29 +144,32 @@ public class SharePointAdapter : BaseAgentAdapter
             
             using (var httpRequest = new HttpRequestMessage(HttpMethod.Post, agentEndpoint))
             {
-                httpRequest.Content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
-                httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.Token);
-                
-                var response = await _httpClient.SendAsync(httpRequest, cancellationToken);
-                
-                if (!response.IsSuccessStatusCode)
+                using (var stringContent = new StringContent(jsonContent, Encoding.UTF8, "application/json"))
                 {
-                    var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
-                    Logger.LogError("SharePoint agent call failed with status {StatusCode}: {Error}", 
-                        response.StatusCode, errorContent);
-                    throw new InvalidOperationException(
-                        $"SharePoint agent call failed with status {response.StatusCode}: {errorContent}");
+                    httpRequest.Content = stringContent;
+                    httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.Token);
+                    
+                    var response = await _httpClient.SendAsync(httpRequest, cancellationToken);
+                    
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
+                        Logger.LogError("SharePoint agent call failed with status {StatusCode}: {Error}", 
+                            response.StatusCode, errorContent);
+                        throw new InvalidOperationException(
+                            $"SharePoint agent call failed with status {response.StatusCode}: {errorContent}");
+                    }
+                    
+                    var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
+                    var responseObj = JsonSerializer.Deserialize<JsonElement>(responseContent);
+                    
+                    if (responseObj.TryGetProperty("answer", out var answer))
+                    {
+                        return answer.GetString() ?? string.Empty;
+                    }
+                    
+                    return responseContent;
                 }
-                
-                var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
-                var responseObj = JsonSerializer.Deserialize<JsonElement>(responseContent);
-                
-                if (responseObj.TryGetProperty("answer", out var answer))
-                {
-                    return answer.GetString() ?? string.Empty;
-                }
-                
-                return responseContent;
             }
         }
         catch (Exception ex)
