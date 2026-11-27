@@ -18,6 +18,8 @@ param storageAccountType string = 'Standard_LRS'
 @description('Azure OpenAI configuration')
 param azureOpenAILocation string = 'eastus'
 param azureOpenAISkuName string = 'S0'
+@description('gpt-4o model version (2024-08-06 is blocked for new deployments since 2026-03-31)')
+param gpt4oModelVersion string = '2024-11-20'
 
 @description('Application Insights configuration')
 param applicationInsightsType string = 'web'
@@ -147,6 +149,22 @@ resource multiTurnAgentCallQueue 'Microsoft.ServiceBus/namespaces/queues@2022-10
   }
 }
 
+// Orchestration Queue - consumed by ProcessOrchestration (was missing from template)
+resource orchestrationQueue 'Microsoft.ServiceBus/namespaces/queues@2022-10-01-preview' = {
+  parent: serviceBusNamespace
+  name: 'orchestration-queue'
+  properties: {
+    maxSizeInMegabytes: 5120
+    defaultMessageTimeToLive: 'P14D'
+    deadLetteringOnMessageExpiration: true
+    duplicateDetectionHistoryTimeWindow: 'PT10M'
+    maxDeliveryCount: 10
+    lockDuration: 'PT5M'
+    enablePartitioning: false
+    requiresSession: false
+  }
+}
+
 // Deploy Key Vault
 resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   name: keyVaultNameValid
@@ -195,7 +213,7 @@ resource gpt4oDeployment 'Microsoft.CognitiveServices/accounts/deployments@2024-
     model: {
       format: 'OpenAI'
       name: 'gpt-4o'
-      version: '2024-08-06'
+      version: gpt4oModelVersion
     }
     raiPolicyName: 'Microsoft.Default'
   }
@@ -379,7 +397,10 @@ resource storageFileDataPrivilegedContributorRole 'Microsoft.Authorization/roleA
 // Note: Azure OpenAI and Service Bus use Managed Identity (no secrets needed)
 // Only external services like Dataverse require connection strings
 
-resource dataverseConnectionStringSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+@description('Create the placeholder DataverseConnectionString secret. Set false on redeploys so the real secret is not overwritten.')
+param seedDataverseSecret bool = true
+
+resource dataverseConnectionStringSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (seedDataverseSecret) {
   parent: keyVault
   name: 'DataverseConnectionString'
   properties: {
