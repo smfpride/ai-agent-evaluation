@@ -140,6 +140,8 @@ az deployment group create \
 
 **📖 See [Deployment Checklist](./docs/deployment/DEPLOYMENT_CHECKLIST.md) for step-by-step deployment instructions**
 
+After deployment, load evaluator types and a fashion sample test set with [samples/Import-SampleData.ps1](./samples/README.md).
+
 ## Documentation
 
 Comprehensive documentation is available in the [`docs/`](./docs/) folder:

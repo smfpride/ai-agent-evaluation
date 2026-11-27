@@ -1,0 +1,166 @@
+{
+  "$comment": "Sample fashion e-commerce test set for the AI Agent Evaluation platform. Import with samples/Import-SampleData.ps1. importId values are stable keys used for idempotent re-imports - do not change them once imported. Expected responses describe what a correct answer must contain (gender, color, category, behavior) rather than exact wording, so they work with LLM-judged evaluators against any fashion shopping agent. Replace them with catalog-specific product IDs if you use the 'Fashion - Product Id' evaluator.",
+  "testSet": {
+    "name": "Fashion Sample - Product Search"
+  },
+  "evaluationRunPresets": [
+    {
+      "name": "Fashion Core",
+      "description": "Overall fashion quality plus gender and color attribute checks. Recommended first run.",
+      "passingThreshold": 0.7,
+      "evaluators": ["Fashion - Accuracy", "Fashion - Relevancy", "Fashion - Gender Accuracy", "Fashion - Color Accuracy"]
+    },
+    {
+      "name": "Fashion Full",
+      "description": "Every fashion evaluator. Product Id, Intent Support and Rewritten Query expect the structured response format described in backend/prompt-templates/fashion/README.md.",
+      "passingThreshold": 0.7,
+      "evaluators": ["Fashion - Accuracy", "Fashion - Relevancy", "Fashion - Similarity", "Fashion - Gender Accuracy", "Fashion - Color Accuracy", "Fashion - Grounded Data", "Fashion - Intent Support", "Fashion - Rewritten Query", "Fashion - Product Id"]
+    },
+    {
+      "name": "General",
+      "description": "Domain-neutral evaluators.",
+      "passingThreshold": 0.7,
+      "evaluators": ["Accuracy", "Relevancy", "Similarity"]
+    }
+  ],
+  "testCases": [
+    {
+      "importId": "fashion-st-01",
+      "name": "Women's navy blouses",
+      "tags": "fashion;single-turn;gender;color",
+      "prompt": "Show me women's navy blouses",
+      "expectedResponse": "Returns a list of blouses that are all women's items and all navy or dark blue (navy, midnight, indigo are acceptable). No men's items, no non-blouse items such as pants or dresses, and no clearly different colors such as light blue, black or red. Products should be presented with names and come from the catalog."
+    },
+    {
+      "importId": "fashion-st-02",
+      "name": "Men's casual work pants",
+      "tags": "fashion;single-turn;gender;relevancy",
+      "prompt": "I need men's casual pants for work",
+      "expectedResponse": "Returns men's business-casual pants suitable for an office, such as chinos, khakis or tailored trousers. All products are men's. Excludes athletic wear, sweatpants, shorts, jeans with distressing, and women's items."
+    },
+    {
+      "importId": "fashion-st-03",
+      "name": "Red dress for a wedding guest",
+      "tags": "fashion;single-turn;gender;color;occasion",
+      "prompt": "I'm going to a wedding next month. Can you find me a red dress?",
+      "expectedResponse": "Returns women's dresses in red or close shades (crimson, burgundy, scarlet) that are appropriate for a wedding guest, such as cocktail, midi or maxi dresses. Excludes white or ivory dresses, casual t-shirt dresses, and non-dress items."
+    },
+    {
+      "importId": "fashion-st-04",
+      "name": "Women's white sneakers",
+      "tags": "fashion;single-turn;gender;color;footwear",
+      "prompt": "Looking for white sneakers for women",
+      "expectedResponse": "Returns women's sneakers that are predominantly white (off-white or cream acceptable). All items are sneakers or casual athletic shoes; no boots, sandals or heels; no men's-only items."
+    },
+    {
+      "importId": "fashion-st-05",
+      "name": "Men's black leather belt",
+      "tags": "fashion;single-turn;gender;color;accessories",
+      "prompt": "Do you have black leather belts for men?",
+      "expectedResponse": "Returns men's belts that are black and made of leather. Excludes brown belts, fabric or braided belts, and women's belts. If none are available the agent says so clearly rather than substituting unrelated products."
+    },
+    {
+      "importId": "fashion-st-06",
+      "name": "Unisex grey hoodie",
+      "tags": "fashion;single-turn;gender;color",
+      "prompt": "Show me grey hoodies that anyone can wear",
+      "expectedResponse": "Returns hoodies (hooded sweatshirts) in grey shades such as heather grey, charcoal or light grey that are labeled unisex or suitable for any gender. Excludes non-hooded sweaters and non-grey colors."
+    },
+    {
+      "importId": "fashion-st-07",
+      "name": "Women's plus-size black jeans",
+      "tags": "fashion;single-turn;gender;color;size",
+      "prompt": "I wear plus size. Any black jeans for women?",
+      "expectedResponse": "Returns women's jeans in black that are available in plus sizes. All items are jeans or denim pants. Excludes leggings, non-black washes such as light blue, and men's jeans. Acknowledges the plus-size requirement."
+    },
+    {
+      "importId": "fashion-st-08",
+      "name": "Kids' yellow rain jacket",
+      "tags": "fashion;single-turn;color;kids",
+      "prompt": "My son needs a yellow rain jacket for school",
+      "expectedResponse": "Returns boys' or kids' rain jackets or raincoats that are yellow and waterproof or water-resistant. Excludes adult sizes, non-rain outerwear such as fleece, and non-yellow colors."
+    },
+    {
+      "importId": "fashion-st-09",
+      "name": "Vague request - something green for summer",
+      "tags": "fashion;single-turn;ambiguous;color",
+      "prompt": "something green for summer",
+      "expectedResponse": "Either asks a short clarifying question (for example who it is for or what type of clothing) or returns lightweight summer clothing in green shades such as sage, olive, mint or emerald. Products, if shown, are seasonally appropriate (no heavy coats or wool sweaters)."
+    },
+    {
+      "importId": "fashion-st-10",
+      "name": "Out-of-scope request - weather",
+      "tags": "fashion;single-turn;out-of-scope;intent",
+      "prompt": "What's the weather going to be like in Seattle tomorrow?",
+      "expectedResponse": "Recognizes the request is outside the shopping assistant's scope and does not return products or invent a forecast. Politely explains it can help with finding clothing and offers to help, for example suggesting rain gear for Seattle."
+    },
+    {
+      "importId": "fashion-st-11",
+      "name": "Gender mismatch guard - men's dresses",
+      "tags": "fashion;single-turn;gender;edge-case",
+      "prompt": "Show me men's summer dresses",
+      "expectedResponse": "Handles the unusual request gracefully: either returns items that genuinely match (for example men's kaftans or tunics) or explains that dresses are typically in the women's category and offers men's summer alternatives such as linen shirts or shorts. Does not silently return women's dresses labeled as men's."
+    },
+    {
+      "importId": "fashion-mt-01",
+      "name": "Blue shirts shopping (multi-turn)",
+      "tags": "fashion;multi-turn;gender;color;size",
+      "turns": [
+        {
+          "sequence": 1,
+          "prompt": "I would like to see blue shirts for men",
+          "expectedResponse": "Returns men's shirts in blue shades (navy, royal, sky, light blue) such as button-downs, t-shirts or henleys. All items are men's shirts."
+        },
+        {
+          "sequence": 2,
+          "prompt": "I'm a size medium",
+          "expectedResponse": "Narrows the previous results to men's blue shirts available in size medium, keeping the blue color and men's shirt constraints from the first turn."
+        }
+      ]
+    },
+    {
+      "importId": "fashion-mt-02",
+      "name": "Summer dress refinement (multi-turn)",
+      "tags": "fashion;multi-turn;gender;color;refinement",
+      "turns": [
+        {
+          "sequence": 1,
+          "prompt": "Show me women's summer dresses",
+          "expectedResponse": "Returns women's lightweight dresses suitable for summer such as sundresses, maxi or midi dresses in breathable fabrics."
+        },
+        {
+          "sequence": 2,
+          "prompt": "Only floral ones please",
+          "expectedResponse": "Refines to women's summer dresses with floral prints, keeping the women's and summer constraints from the previous turn. Non-floral dresses are removed."
+        },
+        {
+          "sequence": 3,
+          "prompt": "Do any of those come in blue?",
+          "expectedResponse": "Further narrows to women's floral summer dresses where blue is the main or a prominent color. Keeps all earlier constraints (women's, summer, floral). If none exist, says so and offers the closest alternatives."
+        }
+      ]
+    },
+    {
+      "importId": "fashion-mt-03",
+      "name": "Outfit building - complementary items (multi-turn)",
+      "tags": "fashion;multi-turn;gender;color;cross-sell",
+      "turns": [
+        {
+          "sequence": 1,
+          "prompt": "I'm looking for a men's navy blazer",
+          "expectedResponse": "Returns men's blazers or sport coats in navy. All items are men's tailored jackets."
+        },
+        {
+          "sequence": 2,
+          "prompt": "What pants would go well with it?",
+          "expectedResponse": "Recommends men's trousers or chinos that complement a navy blazer, such as grey, khaki, tan or white. Keeps the men's context. Does not recommend navy pants that would look like a mismatched suit unless explained."
+        },
+        {
+          "sequence": 3,
+          "prompt": "And shoes?",
+          "expectedResponse": "Recommends men's dress or smart-casual shoes that suit a navy blazer and the suggested pants, such as brown or tan leather loafers, oxfords or derbies. Keeps the men's context from earlier turns."
+        }
+      ]
+    }
+  ]
+}

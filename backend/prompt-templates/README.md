@@ -64,7 +64,6 @@ General-purpose evaluation template for overall response quality. Assesses:
 
 All templates support the following placeholders that will be replaced with actual values during evaluation:
 
-- `{TestType}` - The type of test being performed (Similarity, Accuracy, or Relevancy)
 - `{UserInput}` - The original user input/question
 - `{ExpectedResponse}` - The expected response for this test case
 - `{ActualResponse}` - The actual response from the AI agent

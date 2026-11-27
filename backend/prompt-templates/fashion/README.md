@@ -125,7 +125,7 @@ Recommended minimum scores for production:
 
 These prompts are designed to work with the AI Agent Evaluation Function application. They:
 
-- Support standard placeholder replacement: `{UserInput}`, `{ExpectedResponse}`, `{ActualResponse}`, `{TestType}`
+- Support standard placeholder replacement: `{UserInput}`, `{ExpectedResponse}`, `{ActualResponse}`, `{ConversationId}`
 - Return structured JSON output: `{"score": [0-1], "reasoning": "..."}`
 - Can be loaded from Azure Blob Storage or used as embedded resources
 - Work with the LLMJudgeService for automated evaluation

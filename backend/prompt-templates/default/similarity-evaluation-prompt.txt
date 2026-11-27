@@ -27,8 +27,6 @@ Provide a score from 0 to 1 based on the following scale:
 
 **Actual Response**: {ActualResponse}
 
-**Test Type**: {TestType}
-
 ## Required Output Format
 
 You must provide your evaluation in the following JSON format:
